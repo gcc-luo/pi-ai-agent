@@ -66,7 +66,7 @@ describe("ws agent", () => {
     await new Promise<void>((r) => ws.on("open", () => r()));
     ws.send(JSON.stringify({ type: "send", sessionId, content: "hi" }));
     await new Promise((r) => setTimeout(r, 100));
-    const stdout = (app.processManager.get(sessionId) as any).stdout as PassThrough;
+    const stdout = ((app as any).processManager.get(sessionId) as any).stdout as PassThrough;
     stdout.write(JSON.stringify({ type: "message_start", sessionId, messageId: "m1", role: "assistant" }) + "\n");
     stdout.write(JSON.stringify({ type: "message_delta", sessionId, messageId: "m1", delta: "hello" }) + "\n");
     await new Promise((r) => setTimeout(r, 100));

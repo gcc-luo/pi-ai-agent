@@ -17,7 +17,7 @@ describe("ProcessManager", () => {
   let manager: ProcessManager;
 
   beforeEach(() => {
-    spawner = vi.fn((_cmd: string, _args: string[], _opts: object) => new FakeProcess());
+    spawner = vi.fn((_cmd: string, _args: string[], _opts: object) => new FakeProcess()) as any;
     manager = new ProcessManager({ spawn: spawner as any, command: "pi", args: ["--rpc"] });
   });
 

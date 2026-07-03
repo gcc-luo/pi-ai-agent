@@ -35,7 +35,7 @@ export class ProcessManager extends EventEmitter {
       env: { ...process.env, PI_RPC: "1" },
     });
 
-    const proc: AgentProcess = new EventEmitter() as AgentProcess;
+    const proc: AgentProcess = new EventEmitter() as unknown as AgentProcess;
     Object.assign(proc, {
       sessionId: input.sessionId,
       projectId: input.projectId,
@@ -55,11 +55,11 @@ export class ProcessManager extends EventEmitter {
     child.stdout!.on("data", () => { proc.lastActivityAt = Date.now(); });
     child.stderr!.on("data", (chunk: Buffer) => {
       const line = chunk.toString();
-      line.split("\n").filter(Boolean).forEach((l) => (proc as EventEmitter).emit("stderr", l));
+      line.split("\n").filter(Boolean).forEach((l) => (proc as unknown as EventEmitter).emit("stderr", l));
     });
-    child.on("exit", (code) => {
+    child.on("exit", (code: number | null) => {
       proc.status = code === 0 ? "suspended" : "crashed";
-      (proc as EventEmitter).emit("exit", code);
+      (proc as unknown as EventEmitter).emit("exit", code);
     });
 
     this.procs.set(input.sessionId, proc);

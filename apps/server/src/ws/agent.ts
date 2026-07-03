@@ -28,7 +28,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata: e.metadata });
           }
         });
-        proc.on("exit", (code) => send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
+        proc.on("exit", (code: number | null) => send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
         state = app.sessionStates.set(session.id, proc, bridge);
         app.sessions.touch(session.id, "active");
       }
