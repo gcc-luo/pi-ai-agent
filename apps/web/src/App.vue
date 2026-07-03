@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { NConfigProvider, NMessageProvider } from "naive-ui";
+import { onMounted } from "vue";
+import { NConfigProvider, NMessageProvider, NDialogProvider } from "naive-ui";
+import { useConnectionStore } from "./stores/connection.js";
+import { useAgentStore } from "./stores/agent.js";
+import StatusBanner from "./components/StatusBanner.vue";
+
+const connection = useConnectionStore();
+const agent = useAgentStore();
+onMounted(() => { connection.init(); agent.init(); });
 </script>
 
 <template>
   <NConfigProvider>
-    <NMessageProvider>
-      <div class="app">
-        <h1>pi-web-ui</h1>
-        <p>Hello from the skeleton.</p>
-      </div>
-    </NMessageProvider>
+    <NDialogProvider>
+      <NMessageProvider>
+        <StatusBanner />
+        <RouterView />
+      </NMessageProvider>
+    </NDialogProvider>
   </NConfigProvider>
 </template>
