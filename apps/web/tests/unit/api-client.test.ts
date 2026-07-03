@@ -1,0 +1,15 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { api } from "../../src/api/client.js";
+
+describe("api client", () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it("creates a project via POST", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "1", name: "x" }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const p = await api.createProject("x");
+    expect(p.id).toBe("1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/projects");
+    expect((fetchMock.mock.calls[0][1] as any).method).toBe("POST");
+  });
+});
