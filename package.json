@@ -1,0 +1,19 @@
+{
+  "name": "pi-web-ui",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4",
+    "prettier": "3.3.3",
+    "@types/node": "20.14.10"
+  },
+  "packageManager": "pnpm@9.6.0",
+  "engines": { "node": ">=20" }
+}

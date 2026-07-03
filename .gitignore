@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.superpowers/
+.DS_Store
+*.sqlite
+*.sqlite-journal
+.env
+.env.local
