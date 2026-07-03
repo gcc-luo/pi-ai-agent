@@ -9,7 +9,8 @@ describe("api client", () => {
     vi.stubGlobal("fetch", fetchMock);
     const p = await api.createProject("x");
     expect(p.id).toBe("1");
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/projects");
-    expect((fetchMock.mock.calls[0][1] as any).method).toBe("POST");
+    const calls = fetchMock.mock.calls as unknown as Array<[unknown, unknown]>;
+    expect(calls[0]![0]).toBe("/api/projects");
+    expect((calls[0]![1] as any).method).toBe("POST");
   });
 });
