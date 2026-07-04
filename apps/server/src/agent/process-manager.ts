@@ -1,5 +1,9 @@
 import { ChildProcess, spawn, SpawnOptions as NodeSpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { FastifyBaseLogger } from "fastify";
 import { ServerEvent } from "@pi-web-ui/shared";
 import { AgentProcess, SpawnOptions } from "./types.js";
 
@@ -9,6 +13,99 @@ export interface ProcessManagerOptions {
   spawn?: Spawner;
   command: string;
   args: string[];
+  provider?: string;
+  model?: string;
+  logger: FastifyBaseLogger;
+}
+
+export interface ModelConfig {
+  provider?: string;
+  model?: string;
+  apiKey?: string | null;
+  apiBaseUrl?: string | null;
+}
+
+const API_KEY_ENV_BY_PROVIDER: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  "ant-ling": "ANT_LING_API_KEY",
+  openai: "OPENAI_API_KEY",
+  "azure-openai-responses": "AZURE_OPENAI_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  nvidia: "NVIDIA_API_KEY",
+  google: "GEMINI_API_KEY",
+  groq: "GROQ_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
+  fireworks: "FIREWORKS_API_KEY",
+  together: "TOGETHER_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+  zai: "ZAI_API_KEY",
+  "zai-coding-cn": "ZAI_CODING_CN_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  moonshotai: "MOONSHOT_API_KEY",
+  opencode: "OPENCODE_API_KEY",
+  "opencode-go": "KIMI_API_KEY",
+  "kimi-coding": "KIMI_API_KEY",
+  xai: "XAI_API_KEY",
+  xiaomi: "XIAOMI_API_KEY",
+  "xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+  "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+  "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+};
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
+function createCustomModelExtension(config: { provider: string; model: string; apiBaseUrl: string }): string {
+  const extensionPath = path.join(
+    os.tmpdir(),
+    `pi-web-ui-model-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
+  );
+  const provider = JSON.stringify(config.provider);
+  const model = JSON.stringify(config.model);
+  const baseUrl = JSON.stringify(normalizeBaseUrl(config.apiBaseUrl));
+
+  fs.writeFileSync(
+    extensionPath,
+    [
+      "export default function (pi) {",
+      `  pi.registerProvider(${provider}, {`,
+      `    name: ${provider},`,
+      `    baseUrl: ${baseUrl},`,
+      "    apiKey: \"$PI_WEB_UI_MODEL_API_KEY\",",
+      "    api: \"openai-completions\",",
+      "    models: [{",
+      `      id: ${model},`,
+      `      name: ${model},`,
+      "      reasoning: false,",
+      "      input: [\"text\"],",
+      "      contextWindow: 128000,",
+      "      maxTokens: 16384,",
+      "      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },",
+      "      compat: { supportsDeveloperRole: false, supportsReasoningEffort: false }",
+      "    }]",
+      "  });",
+      "}",
+      "",
+    ].join("\n"),
+  );
+
+  return extensionPath;
+}
+
+function cleanSpawnEnv(source: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith("npm_config_")) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
+function isIgnorableStderr(line: string): boolean {
+  return /^npm warn Unknown (env|project) config /.test(line);
 }
 
 export class ProcessManager extends EventEmitter {
@@ -16,23 +113,56 @@ export class ProcessManager extends EventEmitter {
   private spawn: Spawner;
   private command: string;
   private args: string[];
+  private provider: string;
+  private model: string;
+  private log: FastifyBaseLogger;
 
   constructor(opts: ProcessManagerOptions) {
     super();
     this.spawn = opts.spawn ?? ((c, a, o) => spawn(c, a, o) as ChildProcess);
     this.command = opts.command;
     this.args = opts.args;
+    this.provider = opts.provider ?? "";
+    this.model = opts.model ?? "";
+    this.log = opts.logger;
   }
 
-  async start(input: { sessionId: string; projectId: string; workdir: string }): Promise<AgentProcess> {
+  async start(input: { sessionId: string; projectId: string; workdir: string; modelConfig?: ModelConfig }): Promise<AgentProcess> {
     const existing = this.procs.get(input.sessionId);
     if (existing && existing.status !== "crashed" && existing.status !== "suspended") {
       return existing;
     }
-    const child = this.spawn(this.command, this.args, {
+    const cfg = input.modelConfig;
+    const provider = cfg?.provider ?? this.provider;
+    const model = cfg?.model ?? this.model;
+
+    const extraArgs: string[] = [];
+    if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
+      extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl }));
+    }
+    if (provider) extraArgs.push("--provider", provider);
+    if (model) extraArgs.push("--model", model);
+
+    const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
+    if (cfg?.apiKey) {
+      env.PI_WEB_UI_MODEL_API_KEY = cfg.apiKey;
+      env[API_KEY_ENV_BY_PROVIDER[provider] ?? "OPENAI_API_KEY"] = cfg.apiKey;
+    }
+    if (cfg?.apiBaseUrl) {
+      if (provider === "anthropic") {
+        env.ANTHROPIC_BASE_URL = cfg.apiBaseUrl;
+      } else {
+        env.OPENAI_BASE_URL = cfg.apiBaseUrl;
+      }
+    }
+
+    const envKeys = Object.keys(env).filter(k => k.includes("API_KEY") || k.includes("BASE_URL") || k === "PI_RPC");
+    this.log.info({ command: this.command, args: [...this.args, ...extraArgs], envKeys }, "spawning agent process");
+
+    const child = this.spawn(this.command, [...this.args, ...extraArgs], {
       cwd: input.workdir,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PI_RPC: "1" },
+      env,
     });
 
     const proc: AgentProcess = new EventEmitter() as unknown as AgentProcess;
@@ -55,7 +185,11 @@ export class ProcessManager extends EventEmitter {
     child.stdout!.on("data", () => { proc.lastActivityAt = Date.now(); });
     child.stderr!.on("data", (chunk: Buffer) => {
       const line = chunk.toString();
-      line.split("\n").filter(Boolean).forEach((l) => (proc as unknown as EventEmitter).emit("stderr", l));
+      line
+        .split("\n")
+        .filter(Boolean)
+        .filter((l) => !isIgnorableStderr(l))
+        .forEach((l) => (proc as unknown as EventEmitter).emit("stderr", l));
     });
     child.on("exit", (code: number | null) => {
       proc.status = code === 0 ? "suspended" : "crashed";

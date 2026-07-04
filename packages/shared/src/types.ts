@@ -65,6 +65,18 @@ export interface FileContentDto {
   mtime: number;
 }
 
+export interface ModelDto {
+  id: string;
+  label: string;
+  provider: string;
+  apiBaseUrl: string | null;
+  apiKey: string | null;
+  hasApiKey: boolean;
+  isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Result<T, E = string> {
   ok: boolean;
   data?: T;

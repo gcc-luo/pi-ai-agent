@@ -20,7 +20,18 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       if (!state) {
         const project = app.projects.findById(session.projectId);
         if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
-        const proc = await app.processManager.start({ sessionId: session.id, projectId: project.id, workdir: project.workdir });
+
+        const defaultModel = app.models.getDefault();
+        app.log.info({ defaultModel: defaultModel ? `${defaultModel.provider}/${defaultModel.id} hasKey=${defaultModel.hasApiKey}` : "none" }, "resolving default model");
+        const modelConfig = defaultModel ? {
+          provider: defaultModel.provider,
+          model: defaultModel.id,
+          apiKey: app.models.getApiKey(defaultModel.id),
+          apiBaseUrl: defaultModel.apiBaseUrl,
+        } : undefined;
+        app.log.info({ provider: modelConfig?.provider, model: modelConfig?.model, hasKey: !!modelConfig?.apiKey, baseUrl: modelConfig?.apiBaseUrl }, "model config resolved");
+
+        const proc = await app.processManager.start({ sessionId: session.id, projectId: project.id, workdir: project.workdir, modelConfig });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
         bridge.onEvent((e) => {
           send(e);
@@ -29,6 +40,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         });
         proc.on("exit", (code: number | null) => send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
+        proc.on("stderr", (line: string) => send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
         state = app.sessionStates.set(session.id, proc, bridge);
         app.sessions.touch(session.id, "active");
       }
@@ -40,7 +52,12 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       } else if (event.type === "interrupt") {
         state.process.kill();
       } else if (event.type === "switchModel") {
-        state.bridge.send({ type: "switchModel", sessionId: event.sessionId, model: event.model });
+        const model = app.models.findById(event.model);
+        if (!model) {
+          send({ type: "error", sessionId: event.sessionId, code: "model_not_found", message: "model not found" });
+          return;
+        }
+        state.bridge.send({ type: "switchModel", sessionId: event.sessionId, provider: model.provider, model: model.id });
       }
     });
   });

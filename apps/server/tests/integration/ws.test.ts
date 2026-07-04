@@ -46,7 +46,12 @@ describe("ws agent", () => {
     sessionId = sessions.create({ projectId: project.id }).id;
 
     const fakeProc = makeFakeProc();
-    const processManager = new ProcessManager({ spawn: () => fakeProc as any, command: "pi", args: [] });
+    const processManager = new ProcessManager({
+      spawn: () => fakeProc as any,
+      command: "pi",
+      args: [],
+      logger: { info() {}, warn() {}, error() {} } as any,
+    });
 
     app = await buildApp(config, {
       db, projects, sessions, messages: new MessageRepository(db), workdirs,

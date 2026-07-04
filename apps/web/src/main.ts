@@ -1,9 +1,14 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
-import { router } from "./router/index.js";
+import "./styles/global.css";
 
 const app = createApp(App);
-app.use(createPinia());
-app.use(router);
+const pinia = createPinia();
+app.use(pinia);
+
+import { useThemeStore } from "./stores/theme.js";
+const themeStore = useThemeStore(pinia);
+themeStore.apply();
+
 app.mount("#app");

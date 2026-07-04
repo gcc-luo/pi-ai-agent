@@ -1,4 +1,16 @@
-import type { ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto } from "@pi-web-ui/shared";
+import type { ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto } from "@pi-web-ui/shared";
+
+export interface ModelOption {
+  id: string;
+  provider: string;
+  label: string;
+}
+
+export interface ConfigDto {
+  provider: string | null;
+  model: string | null;
+  models: ModelOption[];
+}
 
 const BASE = "/api";
 
@@ -31,4 +43,16 @@ export const api = {
     request<FileNodeDto[]>("GET", `/files/${projectId}/list?path=${encodeURIComponent(dir)}`),
   readFile: (projectId: string, path: string) =>
     request<FileContentDto>("GET", `/files/${projectId}/read?path=${encodeURIComponent(path)}`),
+
+  getConfig: () => request<ConfigDto>("GET", "/config"),
+  updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),
+
+  listModels: () => request<ModelDto[]>("GET", "/models"),
+  createModel: (data: { id: string; label: string; provider: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) =>
+    request<ModelDto>("POST", "/models", data),
+  updateModel: (id: string, data: { label?: string; provider?: string; apiBaseUrl?: string | null; apiKey?: string | null; isDefault?: boolean }) =>
+    request<ModelDto>("PUT", "/models", { id, ...data }),
+  deleteModel: (id: string) => request<void>("DELETE", `/models?id=${encodeURIComponent(id)}`),
+  testModel: (data: { id?: string; provider: string; apiBaseUrl?: string; apiKey?: string; modelId?: string }) =>
+    request<{ ok: boolean; error?: string }>("POST", "/models/test", data),
 };

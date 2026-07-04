@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { buildConfiguredApp } from "./wiring.js";
 

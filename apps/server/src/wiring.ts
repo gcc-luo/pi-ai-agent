@@ -3,6 +3,7 @@ import { openDatabase } from "./db/sqlite.js";
 import { ProjectRepository } from "./db/repositories/project.js";
 import { SessionRepository } from "./db/repositories/session.js";
 import { MessageRepository } from "./db/repositories/message.js";
+import { ModelRepository } from "./db/repositories/model.js";
 import { WorkdirManager } from "./workdir/manager.js";
 import { ProcessManager } from "./agent/process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
@@ -11,6 +12,8 @@ import { buildApp } from "./app.js";
 import { projectsRoutes } from "./routes/projects.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { filesRoutes } from "./routes/files.js";
+import { configRoutes } from "./routes/config.js";
+import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
 
 export async function buildConfiguredApp(config: Config) {
@@ -20,9 +23,13 @@ export async function buildConfiguredApp(config: Config) {
   const sessions = new SessionRepository(db);
   sessions.markActiveAsCrashed();
   const messages = new MessageRepository(db);
-  const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs });
+  const models = new ModelRepository(db);
   const sessionStates = new SessionStateStore();
-  const app = await buildApp(config, { db, projects, sessions, messages, workdirs, processManager, sessionStates });
+
+  // Build app first so we can pass app.log to ProcessManager
+  const app = await buildApp(config, { db, projects, sessions, messages, models, workdirs, sessionStates, config });
+  const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, logger: app.log });
+  (app as any).processManager = processManager;
 
   const sweeper = new IdleSweeper({
     idleTimeoutMs: config.idleTimeoutMs,
@@ -39,6 +46,8 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(projectsRoutes, { prefix: "/api/projects" });
   await app.register(sessionsRoutes, { prefix: "/api" });
   await app.register(filesRoutes, { prefix: "/api" });
+  await app.register(configRoutes, { prefix: "/api" });
+  await app.register(modelsRoutes, { prefix: "/api/models" });
   await app.register(agentRoutes);
 
   return app;

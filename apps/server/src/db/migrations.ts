@@ -39,6 +39,21 @@ const MIGRATIONS = [
       CREATE INDEX idx_messages_session_seq ON messages(session_id, seq);
     `,
   },
+  {
+    name: "002_models",
+    sql: `
+      CREATE TABLE models (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        api_base_url TEXT,
+        api_key TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

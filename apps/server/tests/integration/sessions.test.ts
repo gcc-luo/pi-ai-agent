@@ -31,7 +31,7 @@ describe("sessions routes", () => {
     const messages = new MessageRepository(db);
     app = await buildApp(config, {
       db, projects, sessions, messages, workdirs,
-      processManager: new ProcessManager({ command: "pi", args: [] }),
+      processManager: new ProcessManager({ command: "pi", args: [], logger: { info() {}, warn() {}, error() {} } as any }),
       sessionStates: new SessionStateStore(),
     });
     await app.register(sessionsRoutes, { prefix: "/api" });
