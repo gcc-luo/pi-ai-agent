@@ -5,7 +5,6 @@ import fs from "node:fs";
 export interface Config {
   port: number;
   host: string;
-  workdirRoot: string;
   dbPath: string;
   logLevel: string;
   logFile: string;
@@ -26,7 +25,6 @@ export function loadConfig(): Config {
   return {
     port: Number(process.env.PORT ?? 5174),
     host: process.env.HOST ?? "127.0.0.1",
-    workdirRoot: path.join(root, "projects"),
     dbPath: path.join(root, "pi-web-ui.sqlite"),
     logLevel: process.env.LOG_LEVEL ?? "info",
     logFile: process.env.LOG_FILE ?? path.join(root, "logs", "server.log"),

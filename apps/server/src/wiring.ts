@@ -4,7 +4,6 @@ import { ProjectRepository } from "./db/repositories/project.js";
 import { SessionRepository } from "./db/repositories/session.js";
 import { MessageRepository } from "./db/repositories/message.js";
 import { ModelRepository } from "./db/repositories/model.js";
-import { WorkdirManager } from "./workdir/manager.js";
 import { ProcessManager } from "./agent/process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
@@ -15,10 +14,10 @@ import { filesRoutes } from "./routes/files.js";
 import { configRoutes } from "./routes/config.js";
 import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
+import { fsRoutes } from "./routes/fs.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
-  const workdirs = new WorkdirManager({ root: config.workdirRoot });
   const projects = new ProjectRepository(db);
   const sessions = new SessionRepository(db);
   sessions.markActiveAsCrashed();
@@ -27,7 +26,7 @@ export async function buildConfiguredApp(config: Config) {
   const sessionStates = new SessionStateStore();
 
   // Build app first so we can pass app.log to ProcessManager
-  const app = await buildApp(config, { db, projects, sessions, messages, models, workdirs, sessionStates, config });
+  const app = await buildApp(config, { db, projects, sessions, messages, models, sessionStates, config });
   const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, logger: app.log });
   (app as any).processManager = processManager;
 
@@ -48,6 +47,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(filesRoutes, { prefix: "/api" });
   await app.register(configRoutes, { prefix: "/api" });
   await app.register(modelsRoutes, { prefix: "/api/models" });
+  await app.register(fsRoutes, { prefix: "/api/fs" });
   await app.register(agentRoutes);
 
   return app;

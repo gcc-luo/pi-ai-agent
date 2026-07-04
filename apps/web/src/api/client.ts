@@ -27,8 +27,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   listProjects: () => request<ProjectDto[]>("GET", "/projects"),
-  createProject: (name: string, description?: string) =>
-    request<ProjectDto>("POST", "/projects", { name, description }),
+  createProject: (name: string, workdir: string, description?: string) =>
+    request<ProjectDto>("POST", "/projects", { name, workdir, description }),
   getProject: (id: string) => request<ProjectDto>("GET", `/projects/${id}`),
   deleteProject: (id: string) => request<void>("DELETE", `/projects/${id}`),
 
@@ -55,4 +55,7 @@ export const api = {
   deleteModel: (id: string) => request<void>("DELETE", `/models?id=${encodeURIComponent(id)}`),
   testModel: (data: { id?: string; provider: string; apiBaseUrl?: string; apiKey?: string; modelId?: string }) =>
     request<{ ok: boolean; error?: string }>("POST", "/models/test", data),
+
+  browseDir: (dirPath?: string) =>
+    request<{ currentPath: string; parentPath: string; directories: { name: string; path: string }[] }>("GET", `/fs/browse${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
 };

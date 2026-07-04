@@ -12,7 +12,7 @@ describe("project store", () => {
     vi.stubGlobal("fetch", fetchMock);
     const store = useProjectStore();
     await store.loadAll();
-    await store.create("x");
+    await store.create("x", "/tmp/test");
     expect(store.projects.length).toBe(1);
   });
 });

@@ -4,7 +4,7 @@ import { NSpin } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 
-const props = defineProps<{ projectId: string; path: string | null }>();
+const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
 const { t } = useI18n();
 const content = ref<string>("");
 const loading = ref(false);
@@ -43,7 +43,7 @@ const fileName = computed(() => {
 <template>
   <div class="file-viewer">
     <!-- File header -->
-    <div class="viewer-header" v-if="fileName">
+    <div class="viewer-header" v-if="fileName && !hideHeader">
       <span class="file-name">{{ fileName }}</span>
       <span class="file-path">{{ path }}</span>
     </div>

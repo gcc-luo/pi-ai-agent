@@ -3,7 +3,6 @@ import { ref, computed, onMounted, watch } from "vue";
 import { NConfigProvider, darkTheme, NSelect } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
-import FileTree from "./components/FileTree.vue";
 import FileViewer from "./components/FileViewer.vue";
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
@@ -52,9 +51,14 @@ watch(selectedSessionId, async (id) => {
   if (id) await sessionStore.open(id);
 });
 
-async function createProject(name: string) {
-  const p = await projectStore.create(name);
-  selectedProjectId.value = p.id;
+async function createProject(name: string, workdir: string) {
+  try {
+    const p = await projectStore.create(name, workdir);
+    selectedProjectId.value = p.id;
+  } catch (e: any) {
+    console.error("Failed to create project:", e);
+    alert(`${e.message}`);
+  }
 }
 
 async function createSession() {
@@ -165,6 +169,12 @@ const hasWorkspace = computed(
 const modelSelectOptions = computed(() =>
   agent.models.map((m) => ({ label: m.label, value: m.id })),
 );
+
+const showPreview = computed(() => filePath.value !== null);
+
+function closePreview() {
+  filePath.value = null;
+}
 </script>
 
 <template>
@@ -180,6 +190,7 @@ const modelSelectOptions = computed(() =>
           @select-session="selectedSessionId = $event"
           @create-project="createProject"
           @create-session="createSession"
+          @select-file="filePath = $event"
         />
 
         <main class="workspace">
@@ -214,20 +225,31 @@ const modelSelectOptions = computed(() =>
               </div>
             </header>
 
-            <!-- Chat Area -->
-            <div class="workspace-chat">
-              <ChatPanel v-if="selectedSessionId" :session-id="selectedSessionId" />
-            </div>
+            <!-- Main content area: chat + preview panel -->
+            <div class="workspace-body">
+              <!-- Chat Area -->
+              <div class="workspace-main">
+                <div class="workspace-chat">
+                  <ChatPanel v-if="selectedSessionId" :session-id="selectedSessionId" />
+                </div>
+              </div>
 
-            <!-- Files Area -->
-            <div class="workspace-files">
-              <div class="files-tree-panel">
-                <div class="panel-label">{{ t('header.files') }}</div>
-                <FileTree :project-id="selectedProjectId!" @select="filePath = $event" />
-              </div>
-              <div class="files-viewer-panel">
-                <FileViewer :project-id="selectedProjectId!" :path="filePath" />
-              </div>
+              <!-- Right preview panel (slides in) -->
+              <Transition name="preview-slide">
+                <div v-if="showPreview" class="workspace-preview">
+                  <div class="preview-header">
+                    <span class="preview-title">{{ filePath?.split('/').pop() }}</span>
+                    <button class="preview-close" @click="closePreview">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div class="preview-body">
+                    <FileViewer :project-id="selectedProjectId!" :path="filePath" hide-header />
+                  </div>
+                </div>
+              </Transition>
             </div>
           </template>
 
@@ -367,47 +389,118 @@ const modelSelectOptions = computed(() =>
   animation: pulse 1.5s ease infinite;
 }
 
-/* ─── Workspace Areas ─── */
+/* ─── Workspace Body ─── */
+
+.workspace-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ─── Chat Area ─── */
 
 .workspace-chat {
-  flex: 1 1 55%;
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.workspace-files {
-  flex: 0 0 38%;
-  display: flex;
-  border-top: 1px solid var(--border-default);
-  min-height: 160px;
-  max-height: 45%;
-}
+/* ─── Preview Panel ─── */
 
-.files-tree-panel {
-  flex: 0 0 240px;
+.workspace-preview {
+  width: 480px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-default);
+  border-left: 1px solid var(--border-default);
   background: var(--bg-deep);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
 }
 
-.panel-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-faint);
-  padding: 10px 14px 6px;
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 38px;
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
-.files-viewer-panel {
-  flex: 1;
-  min-width: 0;
+.preview-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.preview-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Preview Slide Transition ─── */
+
+.preview-slide-enter-active {
+  animation: previewIn 0.3s var(--ease-spring) both;
+}
+.preview-slide-leave-active {
+  animation: previewOut 0.2s var(--ease-out) both;
+}
+
+@keyframes previewIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes previewOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
 }
 
 /* ─── Welcome ─── */

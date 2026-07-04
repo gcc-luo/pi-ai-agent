@@ -17,8 +17,8 @@ export const useProjectStore = defineStore("projects", {
     async loadOne(id: string) {
       this.current = await api.getProject(id);
     },
-    async create(name: string, description?: string) {
-      const p = await api.createProject(name, description);
+    async create(name: string, workdir: string, description?: string) {
+      const p = await api.createProject(name, workdir, description);
       this.projects.unshift(p);
       return p;
     },

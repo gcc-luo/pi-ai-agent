@@ -4,7 +4,6 @@ import type { ProjectRepository } from "./db/repositories/project.js";
 import type { SessionRepository } from "./db/repositories/session.js";
 import type { MessageRepository } from "./db/repositories/message.js";
 import type { ModelRepository } from "./db/repositories/model.js";
-import type { WorkdirManager } from "./workdir/manager.js";
 import type { ProcessManager } from "./agent/process-manager.js";
 import type { SessionStateStore } from "./agent/session-state.js";
 import type { Config } from "../config.js";
@@ -16,7 +15,6 @@ declare module "fastify" {
     sessions: SessionRepository;
     messages: MessageRepository;
     models: ModelRepository;
-    workdirs: WorkdirManager;
     processManager: ProcessManager;
     sessionStates: SessionStateStore;
     config: Config;

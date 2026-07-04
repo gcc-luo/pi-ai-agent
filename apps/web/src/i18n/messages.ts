@@ -75,6 +75,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Nav
     "nav.chat": "Chat",
     "nav.model": "Models",
+
+    // New Project Dialog
+    "newProject.title": "New Project",
+    "newProject.loading": "Loading...",
+    "newProject.empty": "No directories found",
+    "newProject.open": "Open",
+    "newProject.manualPath": "Enter path manually...",
+    "newProject.go": "Go",
+    "newProject.name": "Name",
+    "newProject.cancel": "Cancel",
+    "newProject.create": "Create",
   },
   zh: {
     "brand.sub": "Agent 工作台",
@@ -141,5 +152,15 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "nav.chat": "对话",
     "nav.model": "模型",
+
+    "newProject.title": "新建项目",
+    "newProject.loading": "加载中...",
+    "newProject.empty": "未找到目录",
+    "newProject.open": "打开",
+    "newProject.manualPath": "手动输入路径...",
+    "newProject.go": "前往",
+    "newProject.name": "名称",
+    "newProject.cancel": "取消",
+    "newProject.create": "创建",
   },
 };

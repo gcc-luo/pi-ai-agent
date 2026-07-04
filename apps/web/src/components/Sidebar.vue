@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NInput, NButton } from "naive-ui";
 import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
+import FileTree from "./FileTree.vue";
+import NewProjectDialog from "./NewProjectDialog.vue";
 import { useI18n } from "../i18n/index.js";
 
 const projectStore = useProjectStore();
@@ -17,27 +18,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "select-project", id: string): void;
   (e: "select-session", id: string): void;
-  (e: "create-project", name: string): void;
+  (e: "create-project", name: string, workdir: string): void;
   (e: "create-session"): void;
+  (e: "select-file", path: string): void;
 }>();
 
 const showNewProject = ref(false);
-const newProjectName = ref("");
 
-function handleCreateProject() {
-  const name = newProjectName.value.trim();
-  if (!name) return;
-  emit("create-project", name);
-  newProjectName.value = "";
+function handleCreateProject(name: string, workdir: string) {
+  emit("create-project", name, workdir);
   showNewProject.value = false;
-}
-
-function handleKeyCreate(e: KeyboardEvent) {
-  if (e.key === "Enter") handleCreateProject();
-  if (e.key === "Escape") {
-    showNewProject.value = false;
-    newProjectName.value = "";
-  }
 }
 </script>
 
@@ -56,23 +46,11 @@ function handleKeyCreate(e: KeyboardEvent) {
     <div class="sidebar-section">
       <div class="section-header">
         <span class="section-label">{{ t('sidebar.projects') }}</span>
-        <button class="section-action" @click="showNewProject = !showNewProject" :title="t('sidebar.newProject')">
+        <button class="section-action" @click="showNewProject = true" :title="t('sidebar.newProject')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </button>
-      </div>
-
-      <!-- New project input -->
-      <div v-if="showNewProject" class="new-project-input">
-        <NInput
-          v-model:value="newProjectName"
-          size="small"
-          :placeholder="t('sidebar.projectPlaceholder')"
-          :autosize="false"
-          @keydown="handleKeyCreate"
-          autofocus
-        />
       </div>
 
       <div class="section-list">
@@ -94,7 +72,7 @@ function handleKeyCreate(e: KeyboardEvent) {
           </span>
           <span class="item-label truncate">{{ p.name }}</span>
         </div>
-        <div v-if="!projectStore.projects.length && !showNewProject" class="empty-hint">
+        <div v-if="!projectStore.projects.length" class="empty-hint">
           {{ t('sidebar.noProjects') }}
         </div>
       </div>
@@ -133,11 +111,22 @@ function handleKeyCreate(e: KeyboardEvent) {
       </div>
     </div>
 
-    <!-- Spacer -->
-    <div class="sidebar-spacer" />
+    <!-- Files -->
+    <div class="sidebar-section sidebar-files" v-if="selectedProjectId">
+      <div class="section-header">
+        <span class="section-label">{{ t('header.files') }}</span>
+      </div>
+      <div class="files-tree">
+        <FileTree :project-id="selectedProjectId" @select="emit('select-file', $event)" />
+      </div>
+    </div>
 
-    <!-- Footer (minimal) -->
-    <div class="sidebar-footer" />
+    <!-- New Project Dialog -->
+    <NewProjectDialog
+      :show="showNewProject"
+      @close="showNewProject = false"
+      @create="handleCreateProject"
+    />
   </aside>
 </template>
 
@@ -205,8 +194,12 @@ function handleKeyCreate(e: KeyboardEvent) {
 /* ─── Sections ─── */
 
 .sidebar-section {
-  padding: 12px 0 4px;
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  min-height: 0;
   position: relative;
+  padding: 12px 0 4px;
 }
 
 .section-header {
@@ -214,6 +207,7 @@ function handleKeyCreate(e: KeyboardEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 0 14px 6px;
+  flex-shrink: 0;
 }
 
 .section-label {
@@ -251,6 +245,10 @@ function handleKeyCreate(e: KeyboardEvent) {
   flex-direction: column;
   gap: 1px;
   padding: 0 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .list-item {
@@ -330,13 +328,6 @@ function handleKeyCreate(e: KeyboardEvent) {
   background: var(--rose);
 }
 
-/* ─── New Project Input ─── */
-
-.new-project-input {
-  padding: 0 10px 6px;
-  animation: fadeInFast 0.15s var(--ease-out);
-}
-
 /* ─── Empty Hints ─── */
 
 .empty-hint {
@@ -346,16 +337,23 @@ function handleKeyCreate(e: KeyboardEvent) {
   font-style: italic;
 }
 
-/* ─── Spacer ─── */
+/* ─── Files Section ─── */
 
-.sidebar-spacer {
+.sidebar-files {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
+  padding-top: 12px;
 }
 
-/* ─── Footer ─── */
-
-.sidebar-footer {
-  padding: 0;
-  border-top: 1px solid var(--border-subtle);
+.files-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 6px;
 }
 </style>
