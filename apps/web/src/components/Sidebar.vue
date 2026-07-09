@@ -4,7 +4,10 @@ import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
 import FileTree from "./FileTree.vue";
 import NewProjectDialog from "./NewProjectDialog.vue";
+import RenameProjectDialog from "./RenameProjectDialog.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
+import type { ProjectDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -19,15 +22,27 @@ const emit = defineEmits<{
   (e: "select-project", id: string): void;
   (e: "select-session", id: string): void;
   (e: "create-project", name: string, workdir: string): void;
+  (e: "rename-project", id: string, name: string): void;
+  (e: "delete-project", id: string): void;
   (e: "create-session"): void;
   (e: "select-file", path: string): void;
 }>();
 
 const showNewProject = ref(false);
+const renameTarget = ref<ProjectDto | null>(null);
+const deleteTarget = ref<ProjectDto | null>(null);
 
 function handleCreateProject(name: string, workdir: string) {
   emit("create-project", name, workdir);
   showNewProject.value = false;
+}
+
+function startRename(p: ProjectDto) {
+  renameTarget.value = p;
+}
+
+function startDelete(p: ProjectDto) {
+  deleteTarget.value = p;
 }
 </script>
 
@@ -71,6 +86,26 @@ function handleCreateProject(name: string, workdir: string) {
             </svg>
           </span>
           <span class="item-label truncate">{{ p.name }}</span>
+          <span class="item-actions">
+            <button
+              class="item-action"
+              :title="t('rename.title')"
+              @click.stop="startRename(p)"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              class="item-action danger"
+              :title="t('delete.confirmTitle')"
+              @click.stop="startDelete(p)"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </span>
         </div>
         <div v-if="!projectStore.projects.length" class="empty-hint">
           {{ t('sidebar.noProjects') }}
@@ -126,6 +161,24 @@ function handleCreateProject(name: string, workdir: string) {
       :show="showNewProject"
       @close="showNewProject = false"
       @create="handleCreateProject"
+    />
+
+    <RenameProjectDialog
+      :show="renameTarget !== null"
+      :project="renameTarget"
+      @close="renameTarget = null"
+      @rename="(id, name) => emit('rename-project', id, name)"
+    />
+
+    <ConfirmDialog
+      :show="deleteTarget !== null"
+      :title="t('delete.confirmTitle')"
+      :message="t('delete.confirmMessage')"
+      :confirm-label="t('delete.confirm')"
+      :cancel-label="t('delete.cancel')"
+      :danger="true"
+      @close="deleteTarget = null"
+      @confirm="emit('delete-project', deleteTarget!.id)"
     />
   </aside>
 </template>
@@ -302,6 +355,41 @@ function handleCreateProject(name: string, workdir: string) {
 }
 .list-item:hover .item-label {
   color: var(--text-primary);
+}
+
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.list-item:hover .item-actions,
+.list-item:focus-within .item-actions {
+  opacity: 1;
+}
+.item-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.item-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.item-action.danger:hover {
+  background: var(--rose-dim, rgba(244, 63, 94, 0.15));
+  color: var(--rose);
 }
 
 /* ─── Session Status Dot ─── */
