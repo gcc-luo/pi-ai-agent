@@ -86,6 +86,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "newProject.name": "Name",
     "newProject.cancel": "Cancel",
     "newProject.create": "Create",
+
+    // Rename + delete project
+    "rename.title": "Rename Project",
+    "rename.label": "Name",
+    "rename.placeholder": "Project name...",
+    "rename.save": "Save",
+    "rename.cancel": "Cancel",
+    "delete.confirmTitle": "Delete project",
+    "delete.confirmMessage": "Delete this project? All running sessions under it will be stopped.",
+    "delete.confirm": "Delete",
+    "delete.cancel": "Cancel",
   },
   zh: {
     "brand.sub": "Agent 工作台",
@@ -162,5 +173,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "newProject.name": "名称",
     "newProject.cancel": "取消",
     "newProject.create": "创建",
+
+    // Rename + delete project
+    "rename.title": "重命名项目",
+    "rename.label": "名称",
+    "rename.placeholder": "项目名称...",
+    "rename.save": "保存",
+    "rename.cancel": "取消",
+    "delete.confirmTitle": "删除项目",
+    "delete.confirmMessage": "确认删除该项目？该项目下所有运行中的会话将被停止。",
+    "delete.confirm": "删除",
+    "delete.cancel": "取消",
   },
 };
