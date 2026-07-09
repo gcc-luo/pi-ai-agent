@@ -4,6 +4,7 @@ import { ulid } from "../../util/ulid.js";
 
 type ProjectRow = {
   id: string; name: string; workdir: string; description: string | null;
+  deleted_at: number | null;
   created_at: number; updated_at: number;
 };
 
@@ -28,12 +29,12 @@ export class ProjectRepository {
   }
 
   findById(id: string): ProjectDto | null {
-    const r = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
+    const r = this.db.prepare("SELECT * FROM projects WHERE id = ? AND deleted_at IS NULL").get(id) as ProjectRow | undefined;
     return r ? toDto(r) : null;
   }
 
   list(): ProjectDto[] {
-    return (this.db.prepare("SELECT * FROM projects ORDER BY updated_at DESC").all() as ProjectRow[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM projects WHERE deleted_at IS NULL ORDER BY updated_at DESC").all() as ProjectRow[]).map(toDto);
   }
 
   update(id: string, patch: Partial<{ name: string; description: string | null }>): void {
@@ -46,6 +47,7 @@ export class ProjectRepository {
   }
 
   delete(id: string): void {
-    this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    this.db.prepare("UPDATE projects SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL")
+      .run(Date.now(), Date.now(), id);
   }
 }
