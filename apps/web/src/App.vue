@@ -80,6 +80,7 @@ async function deleteProject(id: string) {
   try {
     await projectStore.remove(id);
     if (selectedProjectId.value === id) {
+      sessionStore.$reset();
       selectedProjectId.value = null;
     }
   } catch (e: any) {

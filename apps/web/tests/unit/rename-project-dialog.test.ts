@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import type { ProjectDto } from "@pi-web-ui/shared";
@@ -65,4 +65,3 @@ describe("RenameProjectDialog", () => {
     expect((w.find("[data-test='save']").element as HTMLButtonElement).disabled).toBe(true);
   });
 });
-

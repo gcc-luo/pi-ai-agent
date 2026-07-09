@@ -34,7 +34,7 @@ describe("ConfirmDialog", () => {
     expect(w.emitted().close).toBeDefined();
   });
 
-  it("applies danger class when danger=true", async () => {
+  it("applies danger class when danger=true", () => {
     const w = mountDialog(true);
     expect(w.find("[data-test='confirm']").classes()).toContain("danger");
   });
