@@ -22,4 +22,10 @@ describe("migrations", () => {
     const names = tables.map((t) => t.name);
     expect(names.filter((n) => n.startsWith("projects") || n.startsWith("sessions") || n.startsWith("messages")).length).toBe(3);
   });
+
+  it("adds deleted_at column to projects", () => {
+    runMigrations(db);
+    const cols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("deleted_at");
+  });
 });

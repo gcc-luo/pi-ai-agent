@@ -54,6 +54,13 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    name: "003_project_soft_delete",
+    sql: `
+      ALTER TABLE projects ADD COLUMN deleted_at INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(deleted_at) WHERE deleted_at IS NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
