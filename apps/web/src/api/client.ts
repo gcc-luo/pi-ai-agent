@@ -30,6 +30,8 @@ export const api = {
   createProject: (name: string, workdir: string, description?: string) =>
     request<ProjectDto>("POST", "/projects", { name, workdir, description }),
   getProject: (id: string) => request<ProjectDto>("GET", `/projects/${id}`),
+  updateProject: (id: string, name: string) =>
+    request<ProjectDto>("PUT", `/projects/${id}`, { name }),
   deleteProject: (id: string) => request<void>("DELETE", `/projects/${id}`),
 
   listSessions: (projectId: string) => request<SessionDto[]>("GET", `/projects/${projectId}/sessions`),
