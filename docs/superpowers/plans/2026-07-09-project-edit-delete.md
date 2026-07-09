@@ -727,7 +727,7 @@ describe("RenameProjectDialog", () => {
   function mountDialog(show: boolean, project: { id: string; name: string } | null) {
     return mount(RenameProjectDialog, {
       props: { show, project },
-      global: { stubs: { NModal: { template: '<div v-if="show"><slot/></div>' }, NInput: { template: '<input v-model="model" @input="$emit(\'update\', model)" />', props: ["value"], data: () => ({ model: "" }), mounted() { this.model = this.value; } } },
+      global: { stubs: { NModal: { template: '<div v-if="show"><slot/></div>' }, NInput: { template: '<input :value="value" @input="$emit(\'update:value\', ($event.target as HTMLInputElement).value)" />', props: ["value"] } } },
     });
   }
 
