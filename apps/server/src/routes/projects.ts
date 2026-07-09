@@ -27,6 +27,16 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
     return p;
   });
 
+  app.put<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    const body = req.body as { name?: string };
+    const name = body?.name?.trim();
+    if (!name) return reply.code(400).send({ error: "name required" });
+    const cur = app.projects.findById(req.params.id);
+    if (!cur) return reply.code(404).send({ error: "not found" });
+    app.projects.update(req.params.id, { name });
+    return app.projects.findById(req.params.id);
+  });
+
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const p = app.projects.findById(req.params.id);
     if (!p) return reply.code(404).send({ error: "not found" });
