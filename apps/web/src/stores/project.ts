@@ -22,6 +22,13 @@ export const useProjectStore = defineStore("projects", {
       this.projects.unshift(p);
       return p;
     },
+    async update(id: string, name: string) {
+      const updated = await api.updateProject(id, name);
+      const idx = this.projects.findIndex((p) => p.id === id);
+      if (idx >= 0) this.projects.splice(idx, 1, updated);
+      if (this.current?.id === id) this.current = updated;
+      return updated;
+    },
     async remove(id: string) {
       await api.deleteProject(id);
       this.projects = this.projects.filter((p) => p.id !== id);
