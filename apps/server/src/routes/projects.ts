@@ -38,9 +38,19 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
-    const p = app.projects.findById(req.params.id);
-    if (!p) return reply.code(404).send({ error: "not found" });
-    app.projects.delete(req.params.id);
+    const cur = app.projects.findById(req.params.id);
+    if (!cur) return reply.code(404).send({ error: "not found" });
+    const projectId = req.params.id;
+    for (const state of app.sessionStates.values()) {
+      if (state.process.projectId !== projectId) continue;
+      try {
+        state.process.kill();
+      } catch (e) {
+        req.log.warn({ err: e, sessionId: state.sessionId }, "failed to kill agent process during project delete");
+      }
+      app.sessionStates.delete(state.sessionId);
+    }
+    app.projects.delete(projectId);
     return reply.code(204).send();
   });
 };

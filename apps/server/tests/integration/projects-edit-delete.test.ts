@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -80,6 +80,47 @@ describe("projects edit/delete routes", () => {
       url: "/api/projects/does-not-exist",
       payload: { name: "x" },
     });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("DELETE soft-deletes the project (still 404 on GET)", async () => {
+    const { id } = await createProject();
+    const res = await app.inject({ method: "DELETE", url: `/api/projects/${id}` });
+    expect(res.statusCode).toBe(204);
+    const got = await app.inject({ method: "GET", url: `/api/projects/${id}` });
+    expect(got.statusCode).toBe(404);
+  });
+
+  it("DELETE kills agent processes for the project's sessions and clears sessionStates", async () => {
+    const { id } = await createProject();
+    // Create a session via the sessions route
+    const s1 = await app.inject({ method: "POST", url: `/api/projects/${id}/sessions` });
+    const s2 = await app.inject({ method: "POST", url: `/api/projects/${id}/sessions` });
+    const sessionId1 = s1.json().id;
+    const sessionId2 = s2.json().id;
+
+    // Inject two fake in-memory agent processes belonging to this project
+    const store = (app as any).sessionStates;
+    const kill1 = vi.fn();
+    const kill2 = vi.fn();
+    store.set(sessionId1, { projectId: id, kill: kill1 } as any, {} as any);
+    store.set(sessionId2, { projectId: id, kill: kill2 } as any, {} as any);
+    // A session belonging to a different project should NOT be touched
+    const otherKill = vi.fn();
+    store.set("other-session", { projectId: "other", kill: otherKill } as any, {} as any);
+
+    const res = await app.inject({ method: "DELETE", url: `/api/projects/${id}` });
+    expect(res.statusCode).toBe(204);
+    expect(kill1).toHaveBeenCalledTimes(1);
+    expect(kill2).toHaveBeenCalledTimes(1);
+    expect(otherKill).not.toHaveBeenCalled();
+    expect(store.get(sessionId1)).toBeUndefined();
+    expect(store.get(sessionId2)).toBeUndefined();
+    expect(store.get("other-session")).toBeDefined();
+  });
+
+  it("DELETE returns 404 for unknown id", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/api/projects/nope" });
     expect(res.statusCode).toBe(404);
   });
 });
