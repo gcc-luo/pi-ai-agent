@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from "fastify";
-import { ClientEvent, ServerEvent } from "@pi-web-ui/shared";
+import { ClientEvent, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
 
 export const agentRoutes: FastifyPluginAsync = async (app) => {
+  const persistedToolCalls = new Map<string, { messageId: string; metadata: Record<string, unknown> }>();
   app.get("/ws/agent", { websocket: true }, (connection) => {
     const send = (event: ServerEvent) => {
       try { connection.send(JSON.stringify(event)); } catch {}
@@ -33,16 +34,40 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
         const proc = await app.processManager.start({ sessionId: session.id, projectId: project.id, workdir: project.workdir, modelConfig });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
+        state = app.sessionStates.set(session.id, proc, bridge);
+        state.send = send;
         bridge.onEvent((e) => {
-          send(e);
+          state!.send(e);
           if (e.type === "message_end") {
-            app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata: e.metadata });
+            const metadata = e.metadata ?? {};
+            const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata });
+            const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
+            for (const toolCall of toolCalls) {
+              persistedToolCalls.set(toolCall.toolCallId, { messageId: saved.id, metadata });
+            }
+          } else if (e.type === "tool_result") {
+            const persisted = persistedToolCalls.get(e.toolCallId);
+            if (!persisted) return;
+            const toolCalls = Array.isArray(persisted.metadata.toolCalls) ? persisted.metadata.toolCalls as ToolCall[] : [];
+            persisted.metadata.toolCalls = toolCalls.map((toolCall) =>
+              toolCall.toolCallId === e.toolCallId
+                ? { ...toolCall, status: "complete", result: e.result }
+                : toolCall,
+            );
+            const messageParts = Array.isArray(persisted.metadata.messageParts) ? persisted.metadata.messageParts as Record<string, unknown>[] : [];
+            persisted.metadata.messageParts = messageParts.map((part) =>
+              part.type === "toolCall" && part.id === e.toolCallId
+                ? { ...part, result: e.result, status: "complete" }
+                : part,
+            );
+            app.messages.updateMetadata(persisted.messageId, persisted.metadata);
           }
         });
-        proc.on("exit", (code: number | null) => send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
-        proc.on("stderr", (line: string) => send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
-        state = app.sessionStates.set(session.id, proc, bridge);
+        proc.on("exit", (code: number | null) => state!.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
+        proc.on("stderr", (line: string) => state!.send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
         app.sessions.touch(session.id, "active");
+      } else {
+        state.send = send;
       }
 
       app.sessionStates.touch(event.sessionId);
