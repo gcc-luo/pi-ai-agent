@@ -4,10 +4,15 @@ import { NInput, NButton } from "naive-ui";
 import { useAgentStore } from "../stores/agent.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
+import SkillSelect from "./SkillSelect.vue";
+import ImportSkillDialog from "./ImportSkillDialog.vue";
+import { useSkillStore } from "../stores/skill.js";
 
 const props = defineProps<{ sessionId: string }>();
 const agent = useAgentStore();
 const { t } = useI18n();
+const skillStore = useSkillStore();
+const showImportSkill = ref(false);
 const input = ref("");
 const messagesEl = ref<HTMLElement | null>(null);
 
@@ -39,6 +44,33 @@ function send() {
   agent.send(props.sessionId, input.value);
   input.value = "";
   nextTick(scrollToBottom);
+}
+
+function onSkillSelect(name: string) {
+  const cur = input.value;
+  if (cur.length > 0 && !/\s$/.test(cur)) {
+    input.value = cur + " /skill:" + name + " ";
+  } else {
+    input.value = cur + "/skill:" + name + " ";
+  }
+  nextTick(() => {
+    const el = document.querySelector<HTMLTextAreaElement>(".composer-input textarea");
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  });
+}
+
+async function onSkillCreate(data: { name: string; description: string; body: string }) {
+  try {
+    await skillStore.importSkill(data);
+  } catch (e: any) {
+    console.error("Failed to import skill:", e);
+    alert(`${e.message}`);
+  } finally {
+    showImportSkill.value = false;
+  }
 }
 
 function handleKeySend(e: KeyboardEvent) {
@@ -133,6 +165,10 @@ const sessionErrors = computed(() =>
         @keydown="handleKeySend"
         class="composer-input"
       />
+      <SkillSelect
+        @select="onSkillSelect"
+        @import="showImportSkill = true"
+      />
       <button
         class="send-btn"
         :disabled="!input.trim()"
@@ -147,6 +183,12 @@ const sessionErrors = computed(() =>
         </svg>
       </button>
     </div>
+    <ImportSkillDialog
+      data-test="import-skill-dialog"
+      :show="showImportSkill"
+      @close="showImportSkill = false"
+      @create="onSkillCreate"
+    />
   </div>
 </template>
 

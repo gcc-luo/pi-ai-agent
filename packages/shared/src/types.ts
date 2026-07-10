@@ -77,6 +77,12 @@ export interface ModelDto {
   updatedAt: number;
 }
 
+export interface SkillDto {
+  name: string;
+  description: string;
+  path: string;
+}
+
 export interface Result<T, E = string> {
   ok: boolean;
   data?: T;

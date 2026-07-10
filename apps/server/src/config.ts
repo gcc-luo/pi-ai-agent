@@ -15,6 +15,7 @@ export interface Config {
   noResponseTimeoutMs: number;
   piProvider: string;
   piModel: string;
+  skillsDir: string;
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
@@ -32,6 +33,7 @@ export function loadConfig(): Config {
     piArgs: (process.env.PI_ARGS ?? "-y @earendil-works/pi-coding-agent --mode rpc").split(" "),
     piProvider: process.env.PI_PROVIDER ?? "",
     piModel: process.env.PI_MODEL ?? "",
+    skillsDir: process.env.PI_SKILLS_DIR ?? path.join(os.homedir(), ".pi/agent/skills"),
     idleTimeoutMs: Number(process.env.IDLE_TIMEOUT_MS ?? 5 * 60 * 1000),
     suspendedTimeoutMs: Number(process.env.SUSPENDED_TIMEOUT_MS ?? 30 * 60 * 1000),
     noResponseTimeoutMs: Number(process.env.NO_RESPONSE_TIMEOUT_MS ?? 30 * 1000),
