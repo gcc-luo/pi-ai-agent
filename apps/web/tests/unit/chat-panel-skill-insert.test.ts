@@ -79,6 +79,9 @@ describe("ChatPanel skill insertion", () => {
   });
 
   it("opens ImportSkillDialog when import is emitted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })));
     const w = mountPanel();
     await nextTick();
     await nextTick();

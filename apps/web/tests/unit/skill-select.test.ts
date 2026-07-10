@@ -34,6 +34,9 @@ describe("SkillSelect", () => {
   }
 
   it("shows empty hint when no skills loaded", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })));
     const w = mountSelect();
     await nextTick();
     await nextTick();
@@ -66,6 +69,9 @@ describe("SkillSelect", () => {
   });
 
   it("emits import when the import button is clicked", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    })));
     const w = mountSelect();
     await nextTick();
     await nextTick();
