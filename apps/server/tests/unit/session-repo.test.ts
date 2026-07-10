@@ -41,4 +41,17 @@ describe("SessionRepository", () => {
     sessions.touch(s.id, "idle");
     expect(sessions.findById(s.id)?.status).toBe("idle");
   });
+
+  it("updates title and bumps updated_at", () => {
+    const s = sessions.create({ projectId, title: "old" });
+    const before = sessions.findById(s.id)!;
+    sessions.update(s.id, { title: "new-title" });
+    const after = sessions.findById(s.id)!;
+    expect(after.title).toBe("new-title");
+    expect(after.updatedAt).toBeGreaterThanOrEqual(before.updatedAt);
+  });
+
+  it("update throws on unknown id", () => {
+    expect(() => sessions.update("nope", { title: "x" })).toThrow();
+  });
 });
