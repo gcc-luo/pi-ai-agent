@@ -46,7 +46,7 @@ async function confirmUninstall() {
 
 <template>
   <div class="skill-select">
-    <button class="toggle" data-test="toggle" @click="toggle" :title="t('skill.dropdown')">
+    <button class="toggle" data-test="skill-toggle" @click="toggle" :title="t('skill.dropdown')">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M2 4h10M4 7h6M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
       </svg>
@@ -82,7 +82,7 @@ async function confirmUninstall() {
         </button>
       </div>
       <div class="panel-footer">
-        <button class="import-btn" data-test="import-btn" @click="emit('import'); open = false">
+        <button class="import-btn" data-test="skill-import-btn" @click="emit('import'); open = false">
           + {{ t('skill.import') }}
         </button>
       </div>

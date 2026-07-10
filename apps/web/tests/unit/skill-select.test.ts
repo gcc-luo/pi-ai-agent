@@ -38,7 +38,7 @@ describe("SkillSelect", () => {
     await nextTick();
     await nextTick();
     // open the dropdown
-    await w.find("[data-test='toggle']").trigger("click");
+    await w.find("[data-test='skill-toggle']").trigger("click");
     await nextTick();
     expect(w.text()).toContain("No skills yet");
   });
@@ -58,7 +58,7 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await flushPromises();
     await nextTick();
-    await w.find("[data-test='toggle']").trigger("click");
+    await w.find("[data-test='skill-toggle']").trigger("click");
     await nextTick();
     await w.find("[data-test='skill-item']").trigger("click");
     const events = w.emitted();
@@ -69,9 +69,9 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await nextTick();
     await nextTick();
-    await w.find("[data-test='toggle']").trigger("click");
+    await w.find("[data-test='skill-toggle']").trigger("click");
     await nextTick();
-    await w.find("[data-test='import-btn']").trigger("click");
+    await w.find("[data-test='skill-import-btn']").trigger("click");
     expect(w.emitted().import).toBeDefined();
   });
 
@@ -83,7 +83,7 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await flushPromises();
     await nextTick();
-    await w.find("[data-test='toggle']").trigger("click");
+    await w.find("[data-test='skill-toggle']").trigger("click");
     await nextTick();
     expect(w.find("[data-test='uninstall-btn']").exists()).toBe(true);
   });
