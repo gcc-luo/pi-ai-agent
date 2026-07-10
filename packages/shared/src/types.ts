@@ -10,12 +10,29 @@ export type ClientEvent =
 export type ServerEvent =
   | { type: "message_start"; sessionId: string; messageId: string; role: "user" | "assistant" }
   | { type: "message_delta"; sessionId: string; messageId: string; delta: string }
+  | { type: "thinking_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "message_end"; sessionId: string; messageId: string; content: string; metadata?: Record<string, unknown> }
   | { type: "tool_call"; sessionId: string; messageId: string; name: string; args: unknown; toolCallId: string }
+  | { type: "tool_progress"; sessionId: string; toolCallId: string; partial: unknown }
   | { type: "tool_result"; sessionId: string; toolCallId: string; result: unknown }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "error"; sessionId?: string; code: string; message: string }
+  | { type: "raw"; sessionId: string; data: Record<string, unknown> }
   | { type: "pong" };
+
+export interface ToolCall {
+  toolCallId: string;
+  name: string;
+  args: unknown;
+  result?: unknown;
+  status: "running" | "complete";
+}
+
+export type MessagePart =
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "tool_call"; toolCallId: string; name: string; args: unknown; status: "running" | "complete"; result?: unknown; progress?: unknown[] }
+  | { kind: "raw"; data: Record<string, unknown> };
 
 export type SessionStatus = "active" | "idle" | "suspended" | "crashed";
 

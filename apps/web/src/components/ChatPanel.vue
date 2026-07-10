@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from "vue";
-import { NInput, NButton } from "naive-ui";
-import { useAgentStore } from "../stores/agent.js";
+import { NInput } from "naive-ui";
+import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import SkillSelect from "./SkillSelect.vue";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
+import type { MessagePart } from "@pi-web-ui/shared";
 
 const props = defineProps<{ sessionId: string }>();
 const agent = useAgentStore();
@@ -17,7 +18,7 @@ const input = ref("");
 const messagesEl = ref<HTMLElement | null>(null);
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
-const persistedMessages = ref<{ id: string; role: string; content: string | null }[]>([]);
+const persistedMessages = ref<{ id: string; role: string; content: string | null; metadata: Record<string, unknown> | null }[]>([]);
 
 async function loadMessages() {
   persistedMessages.value = await api.listMessages(props.sessionId);
@@ -32,11 +33,53 @@ watch(
   () => messages.value.length,
   () => nextTick(scrollToBottom),
 );
+watch(
+  () => JSON.stringify(messages.value.map((m) => m.parts.length)),
+  () => nextTick(scrollToBottom),
+);
 
 function scrollToBottom() {
   if (messagesEl.value) {
     messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
   }
+}
+
+function formatJson(v: unknown): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "string") return v;
+  try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+}
+
+function truncate(value: string, limit = 180): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
+}
+
+function toolPreview(name: string, args: unknown): string {
+  if (!args || typeof args !== "object") return truncate(formatJson(args));
+  const value = args as Record<string, unknown>;
+  if (typeof value.command === "string") return `$ ${truncate(value.command)}`;
+  if (typeof value.path === "string") return truncate(value.path);
+  if (typeof value.query === "string") return truncate(value.query);
+  if (typeof value.url === "string") return truncate(value.url);
+  return truncate(formatJson(args));
+}
+
+function toolResultText(result: unknown): string {
+  if (typeof result === "string") return result;
+  if (Array.isArray(result)) return result.map(toolResultText).join("\n");
+  if (result && typeof result === "object") {
+    const value = result as Record<string, unknown>;
+    if (typeof value.content === "string") return value.content;
+    if (Array.isArray(value.content)) {
+      const text = value.content
+        .filter((part): part is { text: string } => !!part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string")
+        .map((part) => part.text)
+        .join("\n");
+      if (text) return text;
+    }
+  }
+  return formatJson(result);
 }
 
 function send() {
@@ -80,26 +123,27 @@ function handleKeySend(e: KeyboardEvent) {
   }
 }
 
-function isStreaming(msgId: string) {
-  return messages.value.find((m) => m.id === msgId)?.status === "streaming";
-}
-
 const allMessages = computed(() => {
   const persisted = persistedMessages.value.map((m) => ({
     id: m.id,
-    role: m.role,
-    content: m.content ?? "",
+    role: m.role as "user" | "assistant",
+    parts: partsFromPersisted(m.content, m.metadata),
     streaming: false,
     persisted: true,
   }));
   const live = messages.value.map((m) => ({
     id: m.id,
     role: m.role,
-    content: m.content,
+    parts: m.parts,
     streaming: m.status === "streaming",
     persisted: false,
   }));
-  return [...persisted, ...live];
+  const all = [...persisted, ...live];
+  // Show the AGENT header only on the first message of a consecutive assistant group.
+  return all.map((m, i) => ({
+    ...m,
+    showHeader: m.role !== "assistant" || all[i - 1]?.role !== "assistant",
+  }));
 });
 
 const sessionErrors = computed(() =>
@@ -142,15 +186,59 @@ const sessionErrors = computed(() =>
         v-for="m in allMessages"
         :key="m.id"
         class="msg"
-        :class="[m.role, { streaming: m.streaming }]"
+        :class="[m.role, { streaming: m.streaming, continued: !m.showHeader }]"
       >
-        <div class="msg-header">
+        <div v-if="m.showHeader" class="msg-header">
           <span class="msg-role">{{ m.role === "user" ? t('chat.roleUser') : t('chat.roleAgent') }}</span>
           <span v-if="m.streaming" class="typing-dots">
             <span /><span /><span />
           </span>
         </div>
-        <div class="msg-content">{{ m.content }}</div>
+        <div class="msg-body">
+          <template v-for="(p, pi) in m.parts" :key="pi">
+            <div v-if="p.kind === 'text'" class="msg-content">{{ p.text }}</div>
+            <details v-else-if="p.kind === 'thinking'" class="thinking-trace">
+              <summary class="thinking-summary">
+                <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
+              </summary>
+              <div class="thinking-text">{{ p.text }}</div>
+            </details>
+            <div v-else-if="p.kind === 'tool_call'" class="tool-trace" :class="{ running: p.status === 'running' }">
+              <details>
+                <summary class="tool-summary">
+                  <span class="trace-gutter">›</span>
+                  <span class="tool-name">{{ p.name }}</span>
+                  <span class="tool-preview">{{ toolPreview(p.name, p.args) }}</span>
+                  <span class="tool-status" :class="p.status === 'running' ? 'running' : 'done'">
+                    {{ p.status === 'running' ? t('chat.toolRunning') : t('chat.toolDone') }}
+                  </span>
+                </summary>
+                <div class="tool-detail">
+                  <div class="tool-section">
+                    <div class="tool-label">{{ t('chat.toolArgs') }}</div>
+                    <pre class="tool-code">{{ formatJson(p.args) }}</pre>
+                  </div>
+                  <div v-if="p.progress && p.progress.length" class="tool-section">
+                    <div class="tool-label">{{ t('chat.toolProgress') }}</div>
+                    <pre class="tool-code">{{ formatJson(p.progress) }}</pre>
+                  </div>
+                  <div v-if="p.result !== undefined" class="tool-section">
+                    <div class="tool-label">{{ t('chat.toolResult') }}</div>
+                    <pre class="tool-code">{{ toolResultText(p.result) }}</pre>
+                  </div>
+                </div>
+              </details>
+              <pre v-if="p.result !== undefined" class="tool-output">{{ truncate(toolResultText(p.result), 280) }}</pre>
+              <div v-else-if="p.status === 'running'" class="tool-running-line"><span />{{ t('chat.toolRunning') }}</div>
+            </div>
+            <details v-else-if="p.kind === 'raw'" class="raw-trace">
+              <summary class="raw-summary">
+                <span class="trace-gutter">·</span><span class="raw-type">{{ String(p.data?.type ?? 'event') }}</span>
+              </summary>
+              <pre class="tool-code">{{ formatJson(p.data) }}</pre>
+            </details>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -299,9 +387,13 @@ const sessionErrors = computed(() =>
 
 .msg.assistant {
   align-self: flex-start;
-  background: var(--chat-assistant-bg);
-  border: 1px solid var(--chat-assistant-border);
-  border-bottom-left-radius: var(--radius-sm);
+  max-width: min(880px, 88%);
+  padding: 6px 2px 10px;
+  border-radius: 0;
+}
+
+.msg.assistant.continued {
+  margin-top: -6px;
 }
 
 .msg.streaming {
@@ -330,7 +422,7 @@ const sessionErrors = computed(() =>
 }
 
 .msg.assistant .msg-role {
-  color: var(--amber);
+  color: var(--text-muted);
 }
 
 /* ─── Typing Indicator ─── */
@@ -367,6 +459,212 @@ const sessionErrors = computed(() =>
 
 .msg.user .msg-content {
   color: var(--text-primary);
+}
+
+/* ─── Message Body (parts) ─── */
+
+.msg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─── Agent trace (Claude Code / Pi CLI-inspired) ─── */
+
+.thinking-trace,
+.raw-trace,
+.tool-trace {
+  margin: 1px 0;
+  font-size: 12px;
+}
+
+.thinking-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-text {
+  margin: 3px 0 8px 14px;
+  padding: 2px 0 2px 12px;
+  border-left: 1px solid var(--border-default);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.raw-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.raw-summary::-webkit-details-marker {
+  display: none;
+}
+
+.raw-type {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint, var(--text-muted));
+}
+
+.trace-gutter {
+  display: inline-flex;
+  width: 12px;
+  justify-content: center;
+  color: var(--text-faint, var(--text-muted));
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 0;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-icon {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.tool-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.tool-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tool-status.running {
+  color: var(--accent);
+}
+
+.tool-status.done {
+  color: var(--text-faint, var(--text-muted));
+}
+
+.tool-detail {
+  margin: 2px 0 7px 14px;
+  padding: 7px 0 7px 12px;
+  border-left: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.tool-code {
+  margin: 0;
+  padding: 7px 9px;
+  background: var(--bg-void, rgba(0, 0, 0, 0.035));
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.tool-output {
+  margin: 0 0 6px 20px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border-default);
+  color: var(--text-muted);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-running-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 6px 20px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-running-line span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: tracePulse 1.1s ease-in-out infinite;
+}
+
+@keyframes tracePulse {
+  50% { opacity: 0.25; transform: scale(0.7); }
 }
 
 /* ─── Composer ─── */

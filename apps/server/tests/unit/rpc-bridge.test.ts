@@ -17,11 +17,19 @@ describe("RpcBridge", () => {
     const onEvent = vi.fn();
     bridge.onEvent(onEvent);
 
-    proc.stdout.write(JSON.stringify({ type: "message_delta", sessionId: "s1", messageId: "m1", delta: "hi" }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 222 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_update",
+      message: { role: "assistant", timestamp: 222 },
+      assistantMessageEvent: { type: "text_delta", delta: "hi" },
+    }) + "\n");
     expect(onEvent).toHaveBeenCalledWith({
       type: "message_delta",
       sessionId: "s1",
-      messageId: "m1",
+      messageId: "assistant-222",
       delta: "hi",
     });
   });
@@ -32,9 +40,8 @@ describe("RpcBridge", () => {
     const onEvent = vi.fn();
     bridge.onEvent(onEvent);
 
-    const line = JSON.stringify({ type: "message_delta", sessionId: "s1", messageId: "m1", delta: "hello" });
-    proc.stdout.write(line.slice(0, 10));
-    proc.stdout.write(line.slice(10) + "\n");
+    proc.stdout.write(JSON.stringify({ type: "agent_start" }).slice(0, 5));
+    proc.stdout.write(JSON.stringify({ type: "agent_start" }).slice(5) + "\n");
     expect(onEvent).toHaveBeenCalledTimes(1);
   });
 
@@ -93,6 +100,76 @@ describe("RpcBridge", () => {
       messageId: "assistant-111",
       content: "你好",
       metadata: expect.any(Object),
+    });
+    expect(onEvent.mock.calls[2][0].metadata.messageParts).toEqual([
+      { type: "text", text: "你好" },
+    ]);
+  });
+
+  it("preserves thinking and tool-call blocks from the completed Pi message", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 444 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        timestamp: 444,
+        content: [
+          { type: "thinking", thinking: "I need a tool." },
+          { type: "toolCall", id: "call-2", name: "read_file", arguments: { path: "README.md" } },
+        ],
+      },
+    }) + "\n");
+
+    expect(onEvent.mock.calls[1][0].metadata.messageParts).toEqual([
+      { type: "thinking", thinking: "I need a tool." },
+      { type: "toolCall", id: "call-2", name: "read_file", arguments: { path: "README.md" } },
+    ]);
+  });
+
+  it("forwards tool calls and their execution result", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 333 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        toolCall: { id: "call-1", name: "read_file", arguments: { path: "README.md" } },
+      },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "tool_execution_end",
+      toolCallId: "call-1",
+      result: { content: "# Pi Web UI" },
+    }) + "\n");
+
+    expect(onEvent).toHaveBeenNthCalledWith(2, {
+      type: "tool_call",
+      sessionId: "s1",
+      messageId: "assistant-333",
+      toolCallId: "call-1",
+      name: "read_file",
+      args: { path: "README.md" },
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(3, {
+      type: "tool_result",
+      sessionId: "s1",
+      toolCallId: "call-1",
+      result: { content: "# Pi Web UI" },
     });
   });
 

@@ -29,6 +29,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.roleAgent": "Agent",
     "chat.placeholder": "Send a message...",
     "chat.send": "Send message",
+    "chat.toolRunning": "running",
+    "chat.toolDone": "done",
+    "chat.toolArgs": "Arguments",
+    "chat.toolResult": "Result",
+    "chat.toolProgress": "Progress",
+    "chat.thinking": "Thinking",
 
     // File viewer
     "viewer.selectFile": "Select a file to view",
@@ -150,6 +156,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.roleAgent": "Agent",
     "chat.placeholder": "发送消息...",
     "chat.send": "发送",
+    "chat.toolRunning": "运行中",
+    "chat.toolDone": "完成",
+    "chat.toolArgs": "参数",
+    "chat.toolResult": "结果",
+    "chat.toolProgress": "过程",
+    "chat.thinking": "思考",
 
     "viewer.selectFile": "选择一个文件查看",
 

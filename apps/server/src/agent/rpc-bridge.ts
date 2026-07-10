@@ -1,6 +1,6 @@
 import { Writable, Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { ServerEvent } from "@pi-web-ui/shared";
+import { ServerEvent, ToolCall } from "@pi-web-ui/shared";
 
 export interface RpcProcess {
   stdin: Writable;
@@ -34,11 +34,13 @@ export class RpcBridge extends EventEmitter {
   }
 
   private toServerEvents(input: any): ServerEvent[] {
+    const sid = this.sessionId;
+
     if (input?.type === "response") {
       if (input.success === false) {
         return [{
           type: "error",
-          sessionId: this.sessionId,
+          sessionId: sid,
           code: `pi_${input.command ?? "command"}_failed`,
           message: input.error ?? "pi command failed",
         }];
@@ -46,33 +48,50 @@ export class RpcBridge extends EventEmitter {
       return [];
     }
 
-    if (input?.sessionId && input?.messageId) {
-      return [input as ServerEvent];
-    }
-
     if (input?.type === "message_start") {
       const message = input.message;
       if (message?.role !== "assistant") return [];
       const messageId = `assistant-${message.timestamp ?? Date.now()}`;
       this.activeAssistantMessageId = messageId;
-      return [{ type: "message_start", sessionId: this.sessionId, messageId, role: "assistant" }];
+      return [{ type: "message_start", sessionId: sid, messageId, role: "assistant" }];
     }
 
     if (input?.type === "message_update") {
       const messageId = this.activeAssistantMessageId;
-      const assistantEvent = input.assistantMessageEvent;
-      if (!messageId || assistantEvent?.type !== "text_delta" || !assistantEvent.delta) return [];
-      return [{ type: "message_delta", sessionId: this.sessionId, messageId, delta: assistantEvent.delta }];
+      if (!messageId) return [];
+      const ae = input.assistantMessageEvent;
+      if (!ae) return [];
+      if (ae.type === "text_delta" && ae.delta) {
+        return [{ type: "message_delta", sessionId: sid, messageId, delta: ae.delta }];
+      }
+      if (ae.type === "thinking_delta" && ae.delta) {
+        return [{ type: "thinking_delta", sessionId: sid, messageId, delta: ae.delta }];
+      }
+      if (ae.type === "toolcall_end" && ae.toolCall) {
+        return [{
+          type: "tool_call",
+          sessionId: sid,
+          messageId,
+          name: ae.toolCall.name,
+          args: ae.toolCall.arguments,
+          toolCallId: ae.toolCall.id,
+        }];
+      }
+      // text_start/end, thinking_start/end, toolcall_start/delta, start, done, error:
+      // forward as raw so the full process is visible.
+      return [{ type: "raw", sessionId: sid, data: input }];
     }
 
     if (input?.type === "message_end") {
       const message = input.message;
       if (message?.role !== "assistant") return [];
       const messageId = this.activeAssistantMessageId ?? `assistant-${message.timestamp ?? Date.now()}`;
-      this.activeAssistantMessageId = null;
+      // Keep activeAssistantMessageId set so tool_execution_start (which fires after
+      // message_end) attaches to the assistant message that triggered the tool.
+      const toolCalls = this.extractToolCalls(message);
       return [{
         type: "message_end",
-        sessionId: this.sessionId,
+        sessionId: sid,
         messageId,
         content: this.messageText(message),
         metadata: {
@@ -80,6 +99,11 @@ export class RpcBridge extends EventEmitter {
           model: message.model,
           usage: message.usage,
           stopReason: message.stopReason,
+          toolCalls,
+          // Keep the ordered Pi content blocks intact. A tool-use turn commonly
+          // has no text at all, so reducing it to messageText() makes it appear
+          // as an empty assistant bubble in the UI.
+          messageParts: this.messageParts(message),
         },
       }];
     }
@@ -87,7 +111,7 @@ export class RpcBridge extends EventEmitter {
     if (input?.type === "tool_execution_start") {
       return [{
         type: "tool_call",
-        sessionId: this.sessionId,
+        sessionId: sid,
         messageId: this.activeAssistantMessageId ?? "unknown",
         name: input.toolName,
         args: input.args,
@@ -95,16 +119,36 @@ export class RpcBridge extends EventEmitter {
       }];
     }
 
-    if (input?.type === "tool_execution_end") {
-      return [{
-        type: "tool_result",
-        sessionId: this.sessionId,
-        toolCallId: input.toolCallId,
-        result: input.result,
-      }];
+    if (input?.type === "tool_execution_update") {
+      return [{ type: "tool_progress", sessionId: sid, toolCallId: input.toolCallId, partial: input.partialResult }];
     }
 
-    return [];
+    if (input?.type === "tool_execution_end") {
+      return [{ type: "tool_result", sessionId: sid, toolCallId: input.toolCallId, result: input.result }];
+    }
+
+    // Catch-all: forward any unhandled event (agent_start, turn_start, compaction_start,
+    // queue_update, extension_ui_request, etc.) as raw so nothing is hidden.
+    return [{ type: "raw", sessionId: sid, data: input as Record<string, unknown> }];
+  }
+
+  private extractToolCalls(message: any): ToolCall[] {
+    if (!Array.isArray(message?.content)) return [];
+    return message.content
+      .filter((p: any) => p?.type === "toolCall" && p.id)
+      .map((p: any) => ({
+        toolCallId: p.id,
+        name: p.name,
+        args: p.arguments,
+        status: "complete" as const,
+      }));
+  }
+
+  private messageParts(message: any): Record<string, unknown>[] {
+    if (!Array.isArray(message?.content)) return [];
+    return message.content
+      .filter((part: any) => part && typeof part === "object")
+      .map((part: any) => ({ ...part }));
   }
 
   private messageText(message: any): string {
