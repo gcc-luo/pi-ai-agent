@@ -5,9 +5,10 @@ import { useSessionStore } from "../stores/session.js";
 import FileTree from "./FileTree.vue";
 import NewProjectDialog from "./NewProjectDialog.vue";
 import RenameProjectDialog from "./RenameProjectDialog.vue";
+import RenameSessionDialog from "./RenameSessionDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
-import type { ProjectDto } from "@pi-web-ui/shared";
+import type { ProjectDto, SessionDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -25,12 +26,16 @@ const emit = defineEmits<{
   (e: "rename-project", id: string, name: string): void;
   (e: "delete-project", id: string): void;
   (e: "create-session"): void;
+  (e: "rename-session", id: string, title: string): void;
+  (e: "delete-session", id: string): void;
   (e: "select-file", path: string): void;
 }>();
 
 const showNewProject = ref(false);
 const renameTarget = ref<ProjectDto | null>(null);
 const deleteTarget = ref<ProjectDto | null>(null);
+const renameSessionTarget = ref<SessionDto | null>(null);
+const deleteSessionTarget = ref<SessionDto | null>(null);
 
 function handleCreateProject(name: string, workdir: string) {
   emit("create-project", name, workdir);
@@ -43,6 +48,14 @@ function startRename(p: ProjectDto) {
 
 function startDelete(p: ProjectDto) {
   deleteTarget.value = p;
+}
+
+function startRenameSession(s: SessionDto) {
+  renameSessionTarget.value = s;
+}
+
+function startDeleteSession(s: SessionDto) {
+  deleteSessionTarget.value = s;
 }
 </script>
 
@@ -139,6 +152,26 @@ function startDelete(p: ProjectDto) {
           </span>
           <span class="item-label truncate">{{ s.title ?? s.id.slice(0, 8) }}</span>
           <span class="session-status-dot" :class="s.status" />
+          <span class="item-actions">
+            <button
+              class="item-action"
+              :title="t('renameSession.title')"
+              @click.stop="startRenameSession(s)"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              class="item-action danger"
+              :title="t('deleteSession.confirmTitle')"
+              @click.stop="startDeleteSession(s)"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </span>
         </div>
         <div v-if="!sessionStore.sessions.length" class="empty-hint">
           {{ t('sidebar.noSessions') }}
@@ -179,6 +212,24 @@ function startDelete(p: ProjectDto) {
       :danger="true"
       @close="deleteTarget = null"
       @confirm="emit('delete-project', deleteTarget!.id)"
+    />
+
+    <RenameSessionDialog
+      :show="renameSessionTarget !== null"
+      :session="renameSessionTarget"
+      @close="renameSessionTarget = null"
+      @rename="(id, title) => emit('rename-session', id, title)"
+    />
+
+    <ConfirmDialog
+      :show="deleteSessionTarget !== null"
+      :title="t('deleteSession.confirmTitle')"
+      :message="t('deleteSession.confirmMessage')"
+      :confirm-label="t('deleteSession.confirm')"
+      :cancel-label="t('deleteSession.cancel')"
+      :danger="true"
+      @close="deleteSessionTarget = null"
+      @confirm="emit('delete-session', deleteSessionTarget!.id)"
     />
   </aside>
 </template>

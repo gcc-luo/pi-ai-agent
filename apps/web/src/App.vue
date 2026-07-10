@@ -89,6 +89,29 @@ async function deleteProject(id: string) {
   }
 }
 
+async function renameSession(id: string, title: string) {
+  try {
+    await sessionStore.update(id, title);
+  } catch (e: any) {
+    console.error("Failed to rename session:", e);
+    alert(`${e.message}`);
+  }
+}
+
+async function deleteSession(id: string) {
+  try {
+    await sessionStore.remove(id);
+    if (selectedSessionId.value === id) {
+      selectedSessionId.value = null;
+      sessionStore.current = null;
+      sessionStore.messages = [];
+    }
+  } catch (e: any) {
+    console.error("Failed to delete session:", e);
+    alert(`${e.message}`);
+  }
+}
+
 const darkOverrides = {
   common: {
     primaryColor: "#00ddb3",
@@ -214,6 +237,8 @@ function closePreview() {
           @rename-project="renameProject"
           @delete-project="deleteProject"
           @create-session="createSession"
+          @rename-session="renameSession"
+          @delete-session="deleteSession"
           @select-file="filePath = $event"
         />
 

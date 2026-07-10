@@ -97,6 +97,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "delete.confirmMessage": "Delete this project? All running sessions under it will be stopped.",
     "delete.confirm": "Delete",
     "delete.cancel": "Cancel",
+
+    // Rename + delete session
+    "renameSession.title": "Rename Session",
+    "renameSession.label": "Title",
+    "renameSession.placeholder": "Session title...",
+    "renameSession.save": "Save",
+    "renameSession.cancel": "Cancel",
+    "deleteSession.confirmTitle": "Delete session",
+    "deleteSession.confirmMessage": "Delete this session? Any running agent process will be stopped.",
+    "deleteSession.confirm": "Delete",
+    "deleteSession.cancel": "Cancel",
   },
   zh: {
     "brand.sub": "Agent 工作台",
@@ -184,5 +195,16 @@ export const messages: Record<Locale, Record<string, string>> = {
     "delete.confirmMessage": "确认删除该项目？该项目下所有运行中的会话将被停止。",
     "delete.confirm": "删除",
     "delete.cancel": "取消",
+
+    // Rename + delete session
+    "renameSession.title": "重命名会话",
+    "renameSession.label": "标题",
+    "renameSession.placeholder": "会话标题...",
+    "renameSession.save": "保存",
+    "renameSession.cancel": "取消",
+    "deleteSession.confirmTitle": "删除会话",
+    "deleteSession.confirmMessage": "确认删除该会话？运行中的 agent 进程将被停止。",
+    "deleteSession.confirm": "删除",
+    "deleteSession.cancel": "取消",
   },
 };
