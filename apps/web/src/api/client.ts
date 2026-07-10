@@ -1,4 +1,4 @@
-import type { ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto } from "@pi-web-ui/shared";
+import type { ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto } from "@pi-web-ui/shared";
 
 export interface ModelOption {
   id: string;
@@ -42,6 +42,10 @@ export const api = {
     request<SessionDto>("PUT", `/sessions/${id}`, { title }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
+  listSkills: () => request<SkillDto[]>("GET", "/skills"),
+  importSkill: (data: { name: string; description: string; body: string }) =>
+    request<SkillDto>("POST", "/skills", data),
+  deleteSkill: (name: string) => request<void>("DELETE", `/skills/${encodeURIComponent(name)}`),
 
   listFiles: (projectId: string, dir = "/") =>
     request<FileNodeDto[]>("GET", `/files/${projectId}/list?path=${encodeURIComponent(dir)}`),
