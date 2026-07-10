@@ -36,4 +36,13 @@ export class MessageRepository {
   listBySession(sessionId: string): MessageDto[] {
     return (this.db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY seq ASC").all(sessionId) as Row[]).map(toDto);
   }
+
+  updateMetadata(id: string, metadata: Record<string, unknown>): void {
+    this.db.prepare("UPDATE messages SET metadata = ? WHERE id = ?").run(JSON.stringify(metadata), id);
+  }
+
+  replaceContentAndMetadata(id: string, content: string, metadata: Record<string, unknown>): void {
+    this.db.prepare("UPDATE messages SET content = ?, metadata = ? WHERE id = ?")
+      .run(content, JSON.stringify(metadata), id);
+  }
 }

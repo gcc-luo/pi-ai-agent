@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import { restorePiHistory } from "../agent/pi-history.js";
 
 export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { projectId: string } }>("/projects/:projectId/sessions", async (req, reply) => {
@@ -36,6 +37,11 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>("/sessions/:id/messages", async (req, reply) => {
     const s = app.sessions.findById(req.params.id);
     if (!s) return reply.code(404).send({ error: "not found" });
+    const messages = app.messages.listBySession(req.params.id);
+    const project = app.projects.findById(s.projectId);
+    if (project) {
+      restorePiHistory({ workdir: project.workdir, createdAt: s.createdAt, messages, repository: app.messages });
+    }
     return app.messages.listBySession(req.params.id);
   });
 
