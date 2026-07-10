@@ -59,6 +59,13 @@ export class SessionRepository {
     this.db.prepare("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?").run(status, Date.now(), id);
   }
 
+  update(id: string, patch: { title: string | null }): void {
+    const cur = this.findById(id);
+    if (!cur) throw new Error("session not found");
+    this.db.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?")
+      .run(patch.title, Date.now(), id);
+  }
+
   markActiveAsCrashed(): void {
     this.db.prepare("UPDATE sessions SET status = 'crashed', updated_at = ? WHERE status = 'active' OR status = 'idle'").run(Date.now());
   }

@@ -38,6 +38,8 @@ export const api = {
   createSession: (projectId: string, parentId?: string) =>
     request<SessionDto>("POST", `/projects/${projectId}/sessions`, { parentId }),
   getSession: (id: string) => request<SessionDto>("GET", `/sessions/${id}`),
+  updateSession: (id: string, title: string) =>
+    request<SessionDto>("PUT", `/sessions/${id}`, { title }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
 

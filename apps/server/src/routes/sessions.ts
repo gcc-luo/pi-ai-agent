@@ -23,6 +23,16 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     return s;
   });
 
+  app.put<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
+    const body = (req.body ?? {}) as { title?: string };
+    const title = body.title?.trim();
+    if (!title) return reply.code(400).send({ error: "title required" });
+    const cur = app.sessions.findById(req.params.id);
+    if (!cur) return reply.code(404).send({ error: "not found" });
+    app.sessions.update(req.params.id, { title });
+    return app.sessions.findById(req.params.id);
+  });
+
   app.get<{ Params: { id: string } }>("/sessions/:id/messages", async (req, reply) => {
     const s = app.sessions.findById(req.params.id);
     if (!s) return reply.code(404).send({ error: "not found" });
