@@ -60,8 +60,8 @@
   --border-active: #2a3650;
   --border-accent: var(--accent);
 
-  --chat-user-bg: #0d2a2a;
-  --chat-user-border: #124040;
+  --chat-user-bg: #1b1812;
+  --chat-user-border: rgba(229, 168, 18, 0.32);
   --chat-assistant-bg: #141a2b;
   --chat-assistant-border: #1e2538;
 
@@ -107,8 +107,8 @@
   --border-active: #c5cdd8;
   --border-accent: var(--accent);
 
-  --chat-user-bg: #e6f7f3;
-  --chat-user-border: #b8e8da;
+  --chat-user-bg: #fbf2df;
+  --chat-user-border: rgba(212, 149, 15, 0.28);
   --chat-assistant-bg: #f0f3f8;
   --chat-assistant-border: #dde2ea;
 

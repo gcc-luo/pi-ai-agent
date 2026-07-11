@@ -8,6 +8,7 @@ interface StreamMessage {
   role: "user" | "assistant";
   parts: MessagePart[];
   status: "streaming" | "complete" | "error";
+  createdAt: number;
 }
 
 function partsFromText(text: string): MessagePart[] {
@@ -121,7 +122,7 @@ export const useAgentStore = defineStore("agent", {
       wsClient.send({ type: "interrupt", sessionId });
     },
     appendUser(sessionId: string, content: string) {
-      const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts: partsFromText(content), status: "complete" };
+      const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts: partsFromText(content), status: "complete", createdAt: Date.now() };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
     },
     handle(e: ServerEvent) {
@@ -133,7 +134,7 @@ export const useAgentStore = defineStore("agent", {
       const sid = e.sessionId;
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
-        this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming" }];
+        this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming", createdAt: Date.now() }];
       } else if (e.type === "message_delta") {
         this.streams[sid] = list.map((m) =>
           m.id === e.messageId ? { ...m, parts: appendDeltaToKind(m.parts, "text", e.delta) } : m,
@@ -201,6 +202,7 @@ export const useAgentStore = defineStore("agent", {
             role: "assistant",
             parts: [{ kind: "raw" as const, data: e.data }],
             status: "complete",
+            createdAt: Date.now(),
           };
           this.streams[sid] = [...list, holder];
           return;
