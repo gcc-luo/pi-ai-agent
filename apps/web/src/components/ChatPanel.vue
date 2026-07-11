@@ -151,17 +151,6 @@ function removeSkill(name: string) {
   selectedSkills.value = selectedSkills.value.filter((n) => n !== name);
 }
 
-async function onSkillCreate(data: { name: string; description: string; body: string }) {
-  try {
-    await skillStore.importSkill(data);
-  } catch (e: any) {
-    console.error("Failed to import skill:", e);
-    alert(`${e.message}`);
-  } finally {
-    showImportSkill.value = false;
-  }
-}
-
 function handleKeySend(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -378,7 +367,6 @@ const sessionErrors = computed(() =>
       data-test="import-skill-dialog"
       :show="showImportSkill"
       @close="showImportSkill = false"
-      @create="onSkillCreate"
     />
   </div>
 </template>

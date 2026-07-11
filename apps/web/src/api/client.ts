@@ -45,6 +45,17 @@ export const api = {
   listSkills: () => request<SkillDto[]>("GET", "/skills"),
   importSkill: (data: { name: string; description: string; body: string }) =>
     request<SkillDto>("POST", "/skills", data),
+  importSkillZip: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch(BASE + "/skills/import-zip", { method: "POST", body: form }).then(async (res) => {
+      const text = await res.text();
+      let data: any = null;
+      if (text) try { data = JSON.parse(text); } catch { data = { error: text }; }
+      if (!res.ok) throw new Error(data?.error ?? `upload failed: ${res.status}`);
+      return data as { imported: SkillDto[]; errors: string[] };
+    });
+  },
   deleteSkill: (name: string) => request<void>("DELETE", `/skills/${encodeURIComponent(name)}`),
 
   listFiles: (projectId: string, dir = "/") =>

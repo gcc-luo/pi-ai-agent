@@ -24,6 +24,28 @@ export const skillsRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  // Upload a .zip skills bundle. Multipart form with a single `file` field.
+  // Validates the archive shape and returns imported skill names + per-skill
+  // errors so the client can surface a friendly message.
+  app.post("/import-zip", async (req, reply) => {
+    const file = await req.file();
+    if (!file) {
+      return reply.code(400).send({ error: "no_file" });
+    }
+    const original = file.filename ?? "skill.zip";
+    if (!original.toLowerCase().endsWith(".zip")) {
+      return reply.code(400).send({ error: "zip_only" });
+    }
+    const buf = await file.toBuffer();
+    try {
+      const result = app.skills.importZip(buf);
+      return reply.code(201).send(result);
+    } catch (e: any) {
+      const code = e.message ?? "invalid_zip";
+      return reply.code(400).send({ error: code });
+    }
+  });
+
   app.delete<{ Params: { name: string } }>("/:name", async (req, reply) => {
     const { name } = req.params;
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {

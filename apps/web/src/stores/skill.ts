@@ -21,6 +21,12 @@ export const useSkillStore = defineStore("skills", {
       this.skills.sort((a, b) => a.name.localeCompare(b.name));
       return dto;
     },
+    async importSkillZip(file: File) {
+      const result = await api.importSkillZip(file);
+      // Refresh from server so names/descriptions match what's on disk.
+      await this.loadAll();
+      return result;
+    },
     async remove(name: string) {
       await api.deleteSkill(name);
       this.skills = this.skills.filter((s) => s.name !== name);
