@@ -209,17 +209,27 @@ const sessionErrors = computed(() =>
         class="msg"
         :class="[m.role, { streaming: m.streaming, continued: !m.showHeader }]"
       >
-        <div v-if="m.showHeader" class="msg-header">
-          <span class="msg-glyph" :class="m.role" aria-hidden="true">
-            <svg v-if="m.role === 'user'" width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M1.5 8.5L8.5 1.5M8.5 1.5H3M8.5 1.5V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        <div v-if="m.role === 'user'" class="msg-avatar-row">
+          <span class="msg-avatar-label">user</span>
+          <div class="msg-avatar" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="4.8" r="2.4" fill="currentColor" />
+              <path d="M2.3 12c0-2.6 2.1-4.6 4.7-4.6s4.7 2 4.7 4.6z" fill="currentColor" />
             </svg>
-            <svg v-else width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M5 1L9 5L5 9L1 5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
-              <circle cx="5" cy="5" r="1.1" fill="currentColor" />
+          </div>
+        </div>
+        <div v-else-if="m.showHeader" class="msg-avatar-row">
+          <div class="msg-avatar assistant" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <circle cx="6" cy="1.1" r="0.9" fill="currentColor" />
+              <line x1="6" y1="2" x2="6" y2="3.1" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
+              <rect x="2.2" y="3.1" width="7.6" height="6.2" rx="1.6" stroke="currentColor" stroke-width="1.1" fill="none" />
+              <circle cx="4.3" cy="6.2" r="0.95" fill="currentColor" />
+              <circle cx="7.7" cy="6.2" r="0.95" fill="currentColor" />
+              <line x1="4.8" y1="8.4" x2="7.2" y2="8.4" stroke="currentColor" stroke-width="0.9" stroke-linecap="round" />
             </svg>
-          </span>
-          <span class="msg-role">{{ m.role === "user" ? t('chat.roleUser') : t('chat.roleAgent') }}</span>
+          </div>
+          <span class="msg-avatar-label">PI Agent</span>
           <span v-if="m.streaming" class="typing-dots">
             <span /><span /><span />
           </span>
@@ -414,43 +424,75 @@ const sessionErrors = computed(() =>
   border-radius: var(--radius-lg);
 }
 
-/* User ─ a warm amber "transmission capsule", right-aligned with a snubbed tail */
+/* User ─ right-aligned column: fixed avatar above, pale-blue bubble below, time under that */
 .msg.user {
   align-self: flex-end;
-  background:
-    linear-gradient(135deg, var(--amber-dim), transparent 60%),
-    var(--chat-user-bg);
-  border: 1px solid var(--chat-user-border);
-  border-bottom-right-radius: 2px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 8px 22px rgba(0, 0, 0, 0.26);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   animation: msgInRight 0.3s var(--ease-out) both;
   /* reserve space for the absolutely-positioned timestamp floating below the bubble */
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-/* a small amber corner mark accenting the tail */
-.msg.user::after {
+/* Fixed user avatar — a soft blue disc with a person glyph, floating above the bubble */
+.msg-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7ba4e8 0%, #4d7fc9 100%);
+  box-shadow: 0 2px 8px rgba(77, 127, 201, 0.35);
+}
+
+/* The bubble itself — very pale blue, snubbed bottom-right tail */
+.msg.user .msg-body {
+  position: relative;
+  background: var(--chat-user-bg);
+  border: 1px solid var(--chat-user-border);
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 2px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+}
+
+/* a small blue corner mark accenting the tail */
+.msg.user .msg-body::after {
   content: "";
   position: absolute;
   right: 8px;
   bottom: 5px;
   width: 5px;
   height: 5px;
-  border-right: 1px solid var(--amber);
-  border-bottom: 1px solid var(--amber);
+  border-right: 1px solid rgba(86, 132, 213, 0.6);
+  border-bottom: 1px solid rgba(86, 132, 213, 0.6);
   border-bottom-right-radius: 1px;
-  opacity: 0.45;
+  opacity: 0.6;
 }
 
-/* Assistant ─ a cool, unbubbled column anchored by a signature teal gradient rail */
+/* Assistant ─ left-aligned column: avatar above the body, teal rail anchoring the spine */
 .msg.assistant {
   align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   max-width: min(880px, 90%);
   padding: 8px 4px 12px 16px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   border-radius: 0;
   animation: msgInLeft 0.3s var(--ease-out) both;
+  margin-bottom: 10px;
 }
 
 .msg.assistant::before {
@@ -501,37 +543,34 @@ const sessionErrors = computed(() =>
 
 /* ─── Message Header ─── */
 
-.msg-header {
+.msg-avatar-row {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 5px;
+  gap: 8px;
+  height: 22px;
 }
 
-.msg-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+/* User row mirrors the agent row but flips order so the disc sits at the bubble's right edge */
+.msg.user .msg-avatar-row {
+  flex-direction: row-reverse;
 }
 
-.msg.user .msg-glyph      { color: var(--amber); }
-.msg.assistant .msg-glyph { color: var(--accent); }
-
-.msg-role {
+.msg-avatar-label {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.msg.user .msg-role      { color: var(--amber); }
-.msg.assistant .msg-role { color: var(--text-secondary); }
+/* Fixed agent avatar — a teal disc with the diamond glyph, floating above the body */
+.msg-avatar.assistant {
+  background: linear-gradient(135deg, #2ee7c0 0%, #00c49e 100%);
+  box-shadow: 0 2px 8px rgba(0, 196, 158, 0.35);
+  color: #04211b;
+}
 
-/* a hairline rule between the role label and the time, like a metadata divider */
 /* ─── Message Time (below the body, role-aligned) ─── */
 
 .msg-time {
@@ -551,9 +590,9 @@ const sessionErrors = computed(() =>
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 4px;
+  margin-top: 7px;
   text-align: right;
-  color: var(--amber);
+  color: var(--text-secondary);
 }
 
 .msg.assistant .msg-time {
@@ -595,7 +634,7 @@ const sessionErrors = computed(() =>
 }
 
 .msg.user .msg-content {
-  color: var(--text-primary);
+  color: var(--chat-user-text);
 }
 
 /* ─── Rendered Markdown ─── */
