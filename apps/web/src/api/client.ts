@@ -51,6 +51,12 @@ export const api = {
     request<FileNodeDto[]>("GET", `/files/${projectId}/list?path=${encodeURIComponent(dir)}`),
   readFile: (projectId: string, path: string) =>
     request<FileContentDto>("GET", `/files/${projectId}/read?path=${encodeURIComponent(path)}`),
+  createFile: (projectId: string, path: string, type: "file" | "directory") =>
+    request<{ path: string }>("POST", `/files/${projectId}/create`, { path, type }),
+  renameFile: (projectId: string, from: string, to: string) =>
+    request<{ from: string; to: string }>("PUT", `/files/${projectId}/rename`, { from, to }),
+  deleteFile: (projectId: string, path: string) =>
+    request<void>("DELETE", `/files/${projectId}/delete?path=${encodeURIComponent(path)}`),
 
   getConfig: () => request<ConfigDto>("GET", "/config"),
   updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),

@@ -14,6 +14,8 @@ const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
 const { t } = useI18n();
 
+const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
+
 const props = defineProps<{
   selectedProjectId: string | null;
   selectedSessionId: string | null;
@@ -183,9 +185,14 @@ function startDeleteSession(s: SessionDto) {
     <div class="sidebar-section sidebar-files" v-if="selectedProjectId">
       <div class="section-header">
         <span class="section-label">{{ t('header.files') }}</span>
+        <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
       <div class="files-tree">
-        <FileTree :project-id="selectedProjectId" @select="emit('select-file', $event)" />
+        <FileTree ref="fileTreeRef" :project-id="selectedProjectId" @select="emit('select-file', $event)" />
       </div>
     </div>
 
@@ -310,8 +317,12 @@ function startDeleteSession(s: SessionDto) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px 6px;
+  padding: 7px 12px;
+  margin: 0 6px 6px;
   flex-shrink: 0;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
 }
 
 .section-label {
@@ -320,7 +331,7 @@ function startDeleteSession(s: SessionDto) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--text-faint);
+  color: var(--text-secondary);
 }
 
 .section-action {
@@ -481,11 +492,9 @@ function startDeleteSession(s: SessionDto) {
 .sidebar-files {
   flex: 1;
   min-height: 0;
+  max-height: none;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 8px;
-  padding-top: 12px;
 }
 
 .files-tree {

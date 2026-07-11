@@ -6,10 +6,13 @@ const locale = ref<Locale>(
 );
 
 export function useI18n() {
-  const t = computed(() => {
+  // `t` is a plain function (not a ComputedRef<Function>) so it can be called
+  // directly from both templates and render functions. Reactivity is preserved
+  // because `locale.value` is read on every call.
+  function t(key: string): string {
     const dict = messages[locale.value];
-    return (key: string): string => dict[key] ?? key;
-  });
+    return dict[key] ?? key;
+  }
 
   function setLocale(l: Locale) {
     locale.value = l;
