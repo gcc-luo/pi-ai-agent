@@ -152,7 +152,7 @@ function startDeleteSession(s: SessionDto) {
               <path d="M4 5h6M4 7.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
             </svg>
           </span>
-          <span class="item-label truncate">{{ s.title ?? s.id.slice(0, 8) }}</span>
+          <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
           <span class="session-status-dot" :class="s.status" />
           <span class="item-actions">
             <button

@@ -254,7 +254,7 @@ function closePreview() {
               <div class="header-left">
                 <h1 class="project-name">{{ projectStore.current?.name }}</h1>
                 <span class="session-tag" v-if="currentSession">
-                  {{ currentSession.title ?? currentSession.id.slice(0, 8) }}
+                  {{ currentSession.title ?? t('sidebar.newSession') }}
                 </span>
                 <span
                   class="status-dot"

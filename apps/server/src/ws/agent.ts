@@ -2,6 +2,16 @@ import { FastifyPluginAsync } from "fastify";
 import { ClientEvent, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
 
+const DEFAULT_TITLE_MAX = 30;
+
+export function deriveDefaultTitle(content: string): string | null {
+  const normalized = content.trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  return normalized.length > DEFAULT_TITLE_MAX
+    ? normalized.slice(0, DEFAULT_TITLE_MAX) + "…"
+    : normalized;
+}
+
 export const agentRoutes: FastifyPluginAsync = async (app) => {
   const persistedToolCalls = new Map<string, { messageId: string; metadata: Record<string, unknown> }>();
   app.get("/ws/agent", { websocket: true }, (connection) => {
@@ -74,6 +84,14 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       if (event.type === "send" || event.type === "steer") {
         state.bridge.send({ type: event.type, sessionId: event.sessionId, content: event.content });
         app.messages.append({ sessionId: event.sessionId, role: "user", content: event.content });
+        if (event.type === "send" && session.title == null) {
+          const derived = deriveDefaultTitle(event.content);
+          if (derived) {
+            app.sessions.touch(session.id, "active", { title: derived });
+            const updated = app.sessions.findById(session.id);
+            if (updated) send({ type: "session_updated", session: updated });
+          }
+        }
       } else if (event.type === "interrupt") {
         state.process.kill();
       } else if (event.type === "switchModel") {

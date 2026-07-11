@@ -1,0 +1,54 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { setActivePinia, createPinia } from "pinia";
+import { useSessionStore } from "../../src/stores/session.js";
+import { useAgentStore } from "../../src/stores/agent.js";
+
+describe("agent store session_updated event", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.restoreAllMocks();
+  });
+
+  const seedSession = (id: string, title: string | null) => ({
+    id, projectId: "p1", title, parentId: null,
+    status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null,
+  });
+
+  it("replaces the matching session in the list and keeps current in sync", async () => {
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+      status, headers: { "Content-Type": "application/json" },
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url).replace(/^.*\/api/, "");
+      if (path === "/projects/p1/sessions") return json([seedSession("s1", null)]);
+      if (path === "/sessions/s1") return json(seedSession("s1", null));
+      if (path === "/sessions/s1/messages") return json([]);
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const sessionStore = useSessionStore();
+    await sessionStore.loadForProject("p1");
+    await sessionStore.open("s1");
+    expect(sessionStore.sessions[0]!.title).toBeNull();
+    expect(sessionStore.current?.id).toBe("s1");
+
+    const agent = useAgentStore();
+    agent.handle({ type: "session_updated", session: seedSession("s1", "first message") });
+
+    expect(sessionStore.sessions[0]!.title).toBe("first message");
+    expect(sessionStore.current?.title).toBe("first message");
+  });
+
+  it("ignores session_updated for sessions not in the list", () => {
+    const sessionStore = useSessionStore();
+    sessionStore.sessions = [];
+    sessionStore.current = null;
+
+    const agent = useAgentStore();
+    agent.handle({ type: "session_updated", session: seedSession("other", "x") });
+
+    expect(sessionStore.sessions).toEqual([]);
+    expect(sessionStore.current).toBeNull();
+  });
+});

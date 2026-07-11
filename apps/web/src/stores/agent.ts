@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { wsClient } from "../api/ws.js";
 import { api, type ModelOption } from "../api/client.js";
+import { useSessionStore } from "./session.js";
 import type { ModelDto, ServerEvent, MessagePart, ToolCall } from "@pi-web-ui/shared";
 
 interface StreamMessage {
@@ -128,6 +129,13 @@ export const useAgentStore = defineStore("agent", {
     handle(e: ServerEvent) {
       if (e.type === "error") {
         this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
+        return;
+      }
+      if (e.type === "session_updated") {
+        const sessionStore = useSessionStore();
+        const idx = sessionStore.sessions.findIndex((s) => s.id === e.session.id);
+        if (idx >= 0) sessionStore.sessions.splice(idx, 1, e.session);
+        if (sessionStore.current?.id === e.session.id) sessionStore.current = e.session;
         return;
       }
       if (!("sessionId" in e) || !e.sessionId) return;
