@@ -40,7 +40,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           state!.send(e);
           if (e.type === "message_end") {
             const metadata = e.metadata ?? {};
-            const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata });
+            const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
             const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
             for (const toolCall of toolCalls) {
               persistedToolCalls.set(toolCall.toolCallId, { messageId: saved.id, metadata });

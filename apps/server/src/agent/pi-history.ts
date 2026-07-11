@@ -11,6 +11,7 @@ type PiMessage = {
   model?: string;
   usage?: unknown;
   stopReason?: unknown;
+  timestamp?: number;
 };
 
 type PiEntry = { type?: string; message?: PiMessage };
@@ -78,6 +79,7 @@ function textFromParts(parts: Record<string, unknown>[]): string {
 /**
  * Early versions of the web UI only persisted assistant text. Rehydrate those
  * records from Pi's canonical JSONL transcript when a historical session opens.
+ * Always sync `created_at` from the JSONL so displayed times match Pi's timestamps.
  */
 export function restorePiHistory(input: {
   workdir: string;
@@ -86,11 +88,17 @@ export function restorePiHistory(input: {
   repository: MessageRepository;
 }): void {
   const missingParts = input.messages.some((message) => message.role === "assistant" && !Array.isArray(message.metadata?.messageParts));
-  if (!missingParts) return;
 
   const sessionFile = findPiSessionFile(input.workdir, input.createdAt);
   if (!sessionFile) return;
   const piMessages = readPiMessages(sessionFile);
+
+  // Always sync created_at from the canonical JSONL so the displayed times
+  // match Pi's `message.timestamp` exactly. Idempotent: only writes on diff.
+  syncTimestamps(input.messages, piMessages, input.repository);
+
+  if (!missingParts) return;
+
   const piAssistants = piMessages.filter((message) => message.role === "assistant");
   const savedAssistants = input.messages.filter((message) => message.role === "assistant");
 
@@ -145,5 +153,28 @@ export function restorePiHistory(input: {
   for (const saved of savedAssistants) {
     const metadata = metadataByMessageId.get(saved.id);
     if (metadata) input.repository.updateMetadata(saved.id, metadata);
+  }
+}
+
+/**
+ * Pair DB messages with JSONL messages by index within each role. When counts
+ * match, overwrite `created_at` with the JSONL `message.timestamp` so displayed
+ * times are exactly Pi's timestamps. A count mismatch means this is likely a
+ * different Pi session — skip rather than guess.
+ */
+function syncTimestamps(dbMessages: MessageDto[], piMessages: PiMessage[], repository: MessageRepository): void {
+  for (const role of ["user", "assistant"] as const) {
+    const pi = piMessages.filter((m) => m.role === role);
+    const db = dbMessages.filter((m) => m.role === role);
+    if (!pi.length || pi.length !== db.length) continue;
+    for (let i = 0; i < db.length; i++) {
+      const piMsg = pi[i];
+      const dbMsg = db[i];
+      if (!piMsg || !dbMsg) continue;
+      const ts = piMsg.timestamp;
+      if (typeof ts === "number" && ts !== dbMsg.createdAt) {
+        repository.updateCreatedAt(dbMsg.id, ts);
+      }
+    }
   }
 }

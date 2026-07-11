@@ -134,7 +134,7 @@ export const useAgentStore = defineStore("agent", {
       const sid = e.sessionId;
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
-        this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming", createdAt: Date.now() }];
+        this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming", createdAt: e.timestamp ?? Date.now() }];
       } else if (e.type === "message_delta") {
         this.streams[sid] = list.map((m) =>
           m.id === e.messageId ? { ...m, parts: appendDeltaToKind(m.parts, "text", e.delta) } : m,

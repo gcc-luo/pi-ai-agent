@@ -8,10 +8,10 @@ export type ClientEvent =
 
 // WebSocket events: server → client
 export type ServerEvent =
-  | { type: "message_start"; sessionId: string; messageId: string; role: "user" | "assistant" }
+  | { type: "message_start"; sessionId: string; messageId: string; role: "user" | "assistant"; timestamp?: number }
   | { type: "message_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "thinking_delta"; sessionId: string; messageId: string; delta: string }
-  | { type: "message_end"; sessionId: string; messageId: string; content: string; metadata?: Record<string, unknown> }
+  | { type: "message_end"; sessionId: string; messageId: string; content: string; metadata?: Record<string, unknown>; timestamp?: number }
   | { type: "tool_call"; sessionId: string; messageId: string; name: string; args: unknown; toolCallId: string }
   | { type: "tool_progress"; sessionId: string; toolCallId: string; partial: unknown }
   | { type: "tool_result"; sessionId: string; toolCallId: string; result: unknown }

@@ -58,9 +58,8 @@ function truncate(value: string, limit = 180): string {
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function formatTimeFull(ts: number): string {
@@ -71,6 +70,7 @@ function formatTimeFull(ts: number): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZoneName: "short",
   });
 }
 
@@ -223,12 +223,6 @@ const sessionErrors = computed(() =>
           <span v-if="m.streaming" class="typing-dots">
             <span /><span /><span />
           </span>
-          <span class="msg-header-rule" aria-hidden="true" />
-          <span
-            v-if="m.createdAt"
-            class="msg-time"
-            :title="formatTimeFull(m.createdAt)"
-          >{{ formatTime(m.createdAt) }}</span>
         </div>
         <div class="msg-body">
           <template v-for="(p, pi) in m.parts" :key="pi">
@@ -275,6 +269,12 @@ const sessionErrors = computed(() =>
             </details>
           </template>
         </div>
+        <div
+          v-if="m.createdAt"
+          class="msg-time"
+          :class="m.role"
+          :title="formatTimeFull(m.createdAt)"
+        >{{ formatTime(m.createdAt) }}</div>
       </div>
     </div>
 
@@ -426,6 +426,8 @@ const sessionErrors = computed(() =>
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 8px 22px rgba(0, 0, 0, 0.26);
   animation: msgInRight 0.3s var(--ease-out) both;
+  /* reserve space for the absolutely-positioned timestamp floating below the bubble */
+  margin-bottom: 8px;
 }
 
 /* a small amber corner mark accenting the tail */
@@ -530,28 +532,34 @@ const sessionErrors = computed(() =>
 .msg.assistant .msg-role { color: var(--text-secondary); }
 
 /* a hairline rule between the role label and the time, like a metadata divider */
-.msg-header-rule {
-  flex: 1;
-  height: 1px;
-  min-width: 12px;
-  margin-left: 6px;
-  background: linear-gradient(to right, var(--border-default), transparent);
-  opacity: 0.7;
-}
+/* ─── Message Time (below the body, role-aligned) ─── */
 
 .msg-time {
-  flex-shrink: 0;
-  margin-left: 6px;
+  margin-top: 5px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
+  line-height: 1.2;
   white-space: nowrap;
+  opacity: 0.7;
 }
 
-.msg.user .msg-time      { color: var(--amber); opacity: 0.75; }
-.msg.assistant .msg-time { color: var(--text-secondary); opacity: 0.7; }
+/* User timestamp floats below the bubble, right-aligned to its right edge —
+   the bubble shrinks to body width instead of expanding to fit the timestamp. */
+.msg.user .msg-time {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  text-align: right;
+  color: var(--amber);
+}
+
+.msg.assistant .msg-time {
+  text-align: left;
+  color: var(--text-secondary);
+}
 
 /* ─── Typing Indicator ─── */
 

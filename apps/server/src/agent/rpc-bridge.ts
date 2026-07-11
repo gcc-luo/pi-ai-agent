@@ -10,6 +10,7 @@ export interface RpcProcess {
 export class RpcBridge extends EventEmitter {
   private buffer = "";
   private activeAssistantMessageId: string | null = null;
+  private activeAssistantTimestamp: number | null = null;
 
   constructor(private proc: RpcProcess, private sessionId: string) {
     super();
@@ -51,9 +52,11 @@ export class RpcBridge extends EventEmitter {
     if (input?.type === "message_start") {
       const message = input.message;
       if (message?.role !== "assistant") return [];
-      const messageId = `assistant-${message.timestamp ?? Date.now()}`;
+      const timestamp = typeof message?.timestamp === "number" ? message.timestamp : Date.now();
+      const messageId = `assistant-${timestamp}`;
       this.activeAssistantMessageId = messageId;
-      return [{ type: "message_start", sessionId: sid, messageId, role: "assistant" }];
+      this.activeAssistantTimestamp = timestamp;
+      return [{ type: "message_start", sessionId: sid, messageId, role: "assistant", timestamp }];
     }
 
     if (input?.type === "message_update") {
@@ -85,7 +88,10 @@ export class RpcBridge extends EventEmitter {
     if (input?.type === "message_end") {
       const message = input.message;
       if (message?.role !== "assistant") return [];
-      const messageId = this.activeAssistantMessageId ?? `assistant-${message.timestamp ?? Date.now()}`;
+      const timestamp = typeof message?.timestamp === "number"
+        ? message.timestamp
+        : (this.activeAssistantTimestamp ?? Date.now());
+      const messageId = this.activeAssistantMessageId ?? `assistant-${timestamp}`;
       // Keep activeAssistantMessageId set so tool_execution_start (which fires after
       // message_end) attaches to the assistant message that triggered the tool.
       const toolCalls = this.extractToolCalls(message);
@@ -105,6 +111,7 @@ export class RpcBridge extends EventEmitter {
           // as an empty assistant bubble in the UI.
           messageParts: this.messageParts(message),
         },
+        timestamp,
       }];
     }
 
