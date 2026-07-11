@@ -16,9 +16,32 @@ const { t } = useI18n();
 const skillStore = useSkillStore();
 const showImportSkill = ref(false);
 const input = ref("");
+const selectedSkills = ref<string[]>([]);
 const messagesEl = ref<HTMLElement | null>(null);
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
+
+const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
+
+/**
+ * Strip `/skill:<name>` tokens the user picked from the dropdown out of the
+ * visible text, returning the cleaned text plus the chip names to render.
+ * Only matches names that actually exist as installed skills so a stray
+ * `/skill:foo` in code or prose is left untouched.
+ */
+function splitSkillsFromText(text: string): { text: string; skills: string[] } {
+  const known = knownSkillNames.value;
+  if (!known.size) return { text, skills: [] };
+  const skills: string[] = [];
+  const cleaned = text.replace(/\/skill:([\w-]+)/g, (full, name: string) => {
+    if (known.has(name)) {
+      skills.push(name);
+      return "";
+    }
+    return full;
+  });
+  return { text: cleaned.replace(/[ \t]{2,}/g, " ").replace(/\s+$/g, "").trim() || "", skills };
+}
 const persistedMessages = ref<{ id: string; role: string; content: string | null; metadata: Record<string, unknown> | null; createdAt: number }[]>([]);
 
 async function loadMessages() {
@@ -102,26 +125,30 @@ function toolResultText(result: unknown): string {
 }
 
 function send() {
-  if (!input.value.trim()) return;
-  agent.send(props.sessionId, input.value);
+  const text = input.value;
+  const skills = selectedSkills.value;
+  if (!text.trim() && !skills.length) return;
+  // Append the `/skill:<name>` tokens Pi expects at the end of the content;
+  // the textarea stays clean — chips above carry the visible affordance.
+  const skillSuffix = skills.map((n) => ` /skill:${n}`).join("");
+  agent.send(props.sessionId, `${text}${skillSuffix}`);
   input.value = "";
+  selectedSkills.value = [];
   nextTick(scrollToBottom);
 }
 
 function onSkillSelect(name: string) {
-  const cur = input.value;
-  if (cur.length > 0 && !/\s$/.test(cur)) {
-    input.value = cur + " /skill:" + name + " ";
-  } else {
-    input.value = cur + "/skill:" + name + " ";
+  if (!selectedSkills.value.includes(name)) {
+    selectedSkills.value = [...selectedSkills.value, name];
   }
   nextTick(() => {
     const el = document.querySelector<HTMLTextAreaElement>(".composer-input textarea");
-    if (el) {
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-    }
+    el?.focus();
   });
+}
+
+function removeSkill(name: string) {
+  selectedSkills.value = selectedSkills.value.filter((n) => n !== name);
 }
 
 async function onSkillCreate(data: { name: string; description: string; body: string }) {
@@ -236,7 +263,21 @@ const sessionErrors = computed(() =>
         </div>
         <div class="msg-body">
           <template v-for="(p, pi) in m.parts" :key="pi">
-            <div v-if="p.kind === 'text'" class="msg-content" v-html="renderMarkdown(p.text)"></div>
+            <template v-if="p.kind === 'text' && m.role === 'user'">
+              <template v-for="split in [splitSkillsFromText(p.text)]" :key="0">
+                <div v-if="split.skills.length" class="msg-skill-chips">
+                  <span v-for="name in split.skills" :key="name" class="skill-chip static">
+                    <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 1.2l4.2 2.4v4.8L6 10.8 1.8 8.4V3.6z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+                      <circle cx="6" cy="6" r="1.4" fill="currentColor" />
+                    </svg>
+                    <span class="chip-name">{{ name }}</span>
+                  </span>
+                </div>
+                <div v-if="split.text" class="msg-content" v-html="renderMarkdown(split.text)"></div>
+              </template>
+            </template>
+            <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderMarkdown(p.text)"></div>
             <details v-else-if="p.kind === 'thinking'" class="thinking-trace">
               <summary class="thinking-summary">
                 <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
@@ -290,32 +331,48 @@ const sessionErrors = computed(() =>
 
     <!-- Composer -->
     <div class="composer">
-      <NInput
-        v-model:value="input"
-        type="textarea"
-        :rows="2"
-        :autosize="{ minRows: 2, maxRows: 5 }"
-        :placeholder="t('chat.placeholder')"
-        @keydown="handleKeySend"
-        class="composer-input"
-      />
-      <SkillSelect
-        @select="onSkillSelect"
-        @import="showImportSkill = true"
-      />
-      <button
-        class="send-btn"
-        :disabled="!input.trim()"
-        @click="send"
-        :title="t('chat.send')"
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path
-            d="M2 9l14-7-7 14V9H2z"
-            fill="currentColor"
-          />
-        </svg>
-      </button>
+      <div v-if="selectedSkills.length" class="skill-chips">
+        <span v-for="name in selectedSkills" :key="name" class="skill-chip">
+          <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M6 1.2l4.2 2.4v4.8L6 10.8 1.8 8.4V3.6z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+            <circle cx="6" cy="6" r="1.4" fill="currentColor" />
+          </svg>
+          <span class="chip-name">{{ name }}</span>
+          <button class="chip-remove" :title="t('skill.uninstall')" @click="removeSkill(name)">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </button>
+        </span>
+      </div>
+      <div class="composer-row">
+        <NInput
+          v-model:value="input"
+          type="textarea"
+          :rows="2"
+          :autosize="{ minRows: 2, maxRows: 5 }"
+          :placeholder="t('chat.placeholder')"
+          @keydown="handleKeySend"
+          class="composer-input"
+        />
+        <SkillSelect
+          @select="onSkillSelect"
+          @import="showImportSkill = true"
+        />
+        <button
+          class="send-btn"
+          :disabled="!input.trim() && !selectedSkills.length"
+          @click="send"
+          :title="t('chat.send')"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M2 9l14-7-7 14V9H2z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
     <ImportSkillDialog
       data-test="import-skill-dialog"
@@ -1004,7 +1061,7 @@ const sessionErrors = computed(() =>
 
 .composer {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: 8px;
   padding: 12px 20px 16px;
   border-top: 1px solid var(--border-default);
@@ -1012,8 +1069,84 @@ const sessionErrors = computed(() =>
   flex-shrink: 0;
 }
 
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .composer-input {
   flex: 1;
+}
+
+/* ─── Skill Chips ─── */
+
+.skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 999px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(229, 168, 18, 0.35);
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.skill-chip.static {
+  padding-right: 10px;
+}
+
+.chip-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.chip-name {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+.chip-remove:hover {
+  opacity: 1;
+  background: rgba(229, 168, 18, 0.2);
+}
+
+/* Chip row above a user message bubble */
+.msg-skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .send-btn {
