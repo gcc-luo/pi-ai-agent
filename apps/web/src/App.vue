@@ -29,8 +29,13 @@ const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
 );
 
-onMounted(() => {
-  projectStore.loadAll();
+onMounted(async () => {
+  await projectStore.loadAll();
+  // On page refresh, auto-open the first project's first session so the user
+  // lands directly in the conversation view instead of the welcome screen.
+  if (!selectedProjectId.value && projectStore.projects.length) {
+    selectedProjectId.value = projectStore.projects[0]!.id;
+  }
   connection.init();
   agent.init();
 });
