@@ -62,6 +62,10 @@ export const api = {
     request<FileNodeDto[]>("GET", `/files/${projectId}/list?path=${encodeURIComponent(dir)}`),
   readFile: (projectId: string, path: string) =>
     request<FileContentDto>("GET", `/files/${projectId}/read?path=${encodeURIComponent(path)}`),
+  // URL (not fetch) for binary previews — <img>/<video>/<iframe> need a
+  // plain URL they can stream from, including Range requests for seeking.
+  rawFileUrl: (projectId: string, path: string) =>
+    `${BASE}/files/${projectId}/raw?path=${encodeURIComponent(path)}`,
   createFile: (projectId: string, path: string, type: "file" | "directory") =>
     request<{ path: string }>("POST", `/files/${projectId}/create`, { path, type }),
   renameFile: (projectId: string, from: string, to: string) =>

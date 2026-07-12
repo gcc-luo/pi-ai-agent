@@ -3,22 +3,56 @@ import { ref, watch, computed } from "vue";
 import { NSpin } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
+import { filePreviewKind } from "../utils/file-kind.js";
+import TextPreview from "./file-preview/TextPreview.vue";
+import MarkdownPreview from "./file-preview/MarkdownPreview.vue";
+import ImagePreview from "./file-preview/ImagePreview.vue";
+import VideoPreview from "./file-preview/VideoPreview.vue";
+import AudioPreview from "./file-preview/AudioPreview.vue";
+import PdfPreview from "./file-preview/PdfPreview.vue";
+import DocxPreview from "./file-preview/DocxPreview.vue";
+import XlsxPreview from "./file-preview/XlsxPreview.vue";
+import UnsupportedPreview from "./file-preview/UnsupportedPreview.vue";
 
 const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
 const { t } = useI18n();
+
+// Text content for the `text` and `markdown` kinds. Other kinds consume
+// either a URL (raw stream) or fetch their own bytes inside the component,
+// so we only load utf8 content when we actually need it.
 const content = ref<string>("");
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+const fileName = computed(() => {
+  if (!props.path) return null;
+  const parts = props.path.split("/");
+  return parts[parts.length - 1];
+});
+
+const kind = computed(() => (props.path ? filePreviewKind(fileName.value ?? "") : "unsupported"));
+
+const rawUrl = computed(() =>
+  props.path ? api.rawFileUrl(props.projectId, props.path) : "",
+);
+
 watch(
   () => [props.projectId, props.path],
   async () => {
+    content.value = "";
+    error.value = null;
+    // Only block on the text/markdown kinds — they need utf8 content. Other
+    // previews manage their own loading state and would otherwise show two
+    // spinners stacked.
+    if (kind.value !== "text" && kind.value !== "markdown") {
+      loading.value = false;
+      return;
+    }
     if (!props.path) {
-      content.value = "";
+      loading.value = false;
       return;
     }
     loading.value = true;
-    error.value = null;
     try {
       const r = await api.readFile(props.projectId, props.path);
       content.value = r.content;
@@ -30,14 +64,6 @@ watch(
   },
   { immediate: true },
 );
-
-const lines = computed(() => content.value.split("\n"));
-
-const fileName = computed(() => {
-  if (!props.path) return null;
-  const parts = props.path.split("/");
-  return parts[parts.length - 1];
-});
 </script>
 
 <template>
@@ -48,7 +74,7 @@ const fileName = computed(() => {
       <span class="file-path">{{ path }}</span>
     </div>
 
-    <!-- Loading -->
+    <!-- Loading (text/markdown only) -->
     <div v-if="loading" class="viewer-state">
       <NSpin size="small" />
     </div>
@@ -75,17 +101,21 @@ const fileName = computed(() => {
       <span>{{ t('viewer.selectFile') }}</span>
     </div>
 
-    <!-- Code content -->
-    <div v-else class="code-block">
-      <table class="code-table">
-        <tbody>
-          <tr v-for="(line, i) in lines" :key="i">
-            <td class="line-num">{{ i + 1 }}</td>
-            <td class="line-content"><pre>{{ line }}</pre></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Dispatch by kind -->
+    <TextPreview v-else-if="kind === 'text'" :content="content" />
+    <MarkdownPreview v-else-if="kind === 'markdown'" :content="content" />
+    <ImagePreview v-else-if="kind === 'image'" :url="rawUrl" />
+    <VideoPreview v-else-if="kind === 'video'" :url="rawUrl" />
+    <AudioPreview v-else-if="kind === 'audio'" :url="rawUrl" />
+    <PdfPreview v-else-if="kind === 'pdf'" :url="rawUrl" />
+    <DocxPreview v-else-if="kind === 'docx'" :project-id="projectId" :path="path" />
+    <XlsxPreview v-else-if="kind === 'xlsx'" :project-id="projectId" :path="path" />
+    <UnsupportedPreview
+      v-else
+      :path="path!"
+      :url="rawUrl"
+      :reason="kind === 'pptx' ? t('viewer.unsupportedHint') : undefined"
+    />
   </div>
 </template>
 
@@ -145,51 +175,5 @@ const fileName = computed(() => {
   flex-direction: column;
   gap: 8px;
   opacity: 0.4;
-}
-
-/* ─── Code Block ─── */
-
-.code-block {
-  flex: 1;
-  overflow: auto;
-  padding: 10px 0;
-}
-
-.code-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.7;
-  tab-size: 2;
-}
-
-.code-table tr {
-  transition: background var(--transition-fast);
-}
-
-.code-table tr:hover {
-  background: var(--row-hover);
-}
-
-.line-num {
-  width: 48px;
-  padding: 0 12px 0 14px;
-  text-align: right;
-  color: var(--text-faint);
-  user-select: none;
-  vertical-align: top;
-  font-variant-numeric: tabular-nums;
-}
-
-.line-content {
-  padding-right: 14px;
-  color: var(--text-primary);
-  vertical-align: top;
-}
-
-.line-content pre {
-  margin: 0;
-  white-space: pre;
 }
 </style>

@@ -9,6 +9,7 @@ import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
 import type { MessagePart } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
+import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 
 const props = defineProps<{ sessionId: string }>();
 const agent = useAgentStore();
@@ -31,21 +32,42 @@ const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.na
 /**
  * Strip `/skill:<name>` tokens the user picked from the dropdown out of the
  * visible text, returning the cleaned text plus the chip names to render.
+ * Also strips any auto-injected skill-tip block (sentinel-wrapped) so the
+ * user's bubble shows only what they typed — the tip is surfaced separately
+ * via `tipLabel` so the user can still see *that* a tip was attached.
  * Only matches names that actually exist as installed skills so a stray
  * `/skill:foo` in code or prose is left untouched.
  */
-function splitSkillsFromText(text: string): { text: string; skills: string[] } {
+function splitSkillsFromText(text: string): { text: string; skills: string[]; tipLabel: string | null } {
   const known = knownSkillNames.value;
-  if (!known.size) return { text, skills: [] };
+  // Pull out the tip block first so it doesn't pollute the cleaned text.
+  const tipMatch = text.match(/<!-- skill-tip:start -->/);
+  let tipLabel: string | null = null;
+  if (tipMatch) {
+    // The body carries a 【...】 first line that names the skill — recover the
+    // label from the first line so the badge reflects what was actually sent.
+    const bodyMatch = text.match(/<!-- skill-tip:start -->\n([\s\S]*?)\n<!-- skill-tip:end -->/);
+    if (bodyMatch) {
+      const firstLine = (bodyMatch[1] ?? "").split("\n")[0] ?? "";
+      const labelMatch = firstLine.match(/【([^】]+)】/);
+      tipLabel = labelMatch && labelMatch[1] ? labelMatch[1] : "已附加技能提示";
+    } else {
+      tipLabel = "已附加技能提示";
+    }
+  }
+  const stripped = text.replace(TIP_BLOCK_RE, "");
+  if (!known.size) {
+    return { text: stripped.trim() || "", skills: [], tipLabel };
+  }
   const skills: string[] = [];
-  const cleaned = text.replace(/\/skill:([\w-]+)/g, (full, name: string) => {
+  const cleaned = stripped.replace(/\/skill:([\w-]+)/g, (full, name: string) => {
     if (known.has(name)) {
       skills.push(name);
       return "";
     }
     return full;
   });
-  return { text: cleaned.replace(/[ \t]{2,}/g, " ").replace(/\s+$/g, "").trim() || "", skills };
+  return { text: cleaned.replace(/[ \t]{2,}/g, " ").replace(/\s+$/g, "").trim() || "", skills, tipLabel };
 }
 const persistedMessages = ref<{ id: string; role: string; content: string | null; metadata: Record<string, unknown> | null; createdAt: number }[]>([]);
 
@@ -136,7 +158,11 @@ function send() {
   // Append the `/skill:<name>` tokens Pi expects at the end of the content;
   // the textarea stays clean — chips above carry the visible affordance.
   const skillSuffix = skills.map((n) => ` /skill:${n}`).join("");
-  agent.send(props.sessionId, `${text}${skillSuffix}`);
+  // Auto-inject any skill-tip body (e.g. the CJK font reminder for pdf) at the
+  // start of the payload so Pi sees the rule right next to the request rather
+  // than having to dig it out of SKILL.md under context pressure.
+  const tipPrefix = activeTipBody(skills) ?? "";
+  agent.send(props.sessionId, `${tipPrefix}${text}${skillSuffix}`);
   input.value = "";
   selectedSkills.value = [];
   nextTick(scrollToBottom);
@@ -195,7 +221,11 @@ const allMessages = computed(() => {
 const sessionErrors = computed(() =>
   agent.errors.filter((e) => e.sessionId === props.sessionId),
 );
-</script>
+
+// Label of the tip that will be auto-injected on send when one of the selected
+// skills has an entry in SKILL_TIPS. Drives the inline composer banner so the
+// user knows the reminder will be attached before they hit send.
+const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</script>
 
 <template>
   <div class="chat-panel">
@@ -263,6 +293,13 @@ const sessionErrors = computed(() =>
           <template v-for="(p, pi) in m.parts" :key="pi">
             <template v-if="p.kind === 'text' && m.role === 'user'">
               <template v-for="split in [splitSkillsFromText(p.text)]" :key="0">
+                <div v-if="split.tipLabel" class="msg-tip-badge">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                    <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" />
+                    <path d="M6 5v3M6 3.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                  </svg>
+                  <span>{{ split.tipLabel }}</span>
+                </div>
                 <div v-if="split.skills.length" class="msg-skill-chips">
                   <span v-for="name in split.skills" :key="name" class="skill-chip static">
                     <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -334,6 +371,14 @@ const sessionErrors = computed(() =>
 
     <!-- Composer -->
     <div class="composer">
+      <div v-if="pendingTipLabel" class="tip-banner">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" />
+          <path d="M6 5v3M6 3.5v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+        </svg>
+        <span class="tip-banner-label">{{ pendingTipLabel }}</span>
+        <span class="tip-banner-hint">{{ t('chat.tipAutoAttached') }}</span>
+      </div>
       <div v-if="selectedSkills.length" class="skill-chips">
         <span v-for="name in selectedSkills" :key="name" class="skill-chip">
           <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -1199,6 +1244,47 @@ const sessionErrors = computed(() =>
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+/* Badge shown in the user bubble when an auto-injected tip was attached to
+   that message. Lets the user see *that* the rule was included without
+   having to wade through the full injected code block. */
+.msg-tip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* Inline banner above the composer — visible while the user is still typing,
+   so they know a tip will be attached to the next send. */
+.tip-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+  font-size: 11px;
+}
+.tip-banner-label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.tip-banner-hint {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .send-btn {

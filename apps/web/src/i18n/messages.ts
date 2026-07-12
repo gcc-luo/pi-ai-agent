@@ -31,6 +31,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.send": "Send message",
     "chat.stop": "Stop",
     "chat.generating": "Generating",
+    "chat.tipAutoAttached": "Will be attached automatically when you send.",
     "chat.toolRunning": "running",
     "chat.toolDone": "done",
     "chat.toolArgs": "Arguments",
@@ -40,6 +41,10 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     // File viewer
     "viewer.selectFile": "Select a file to view",
+    "viewer.unsupportedHint": "Preview not available for this file type.",
+    "viewer.download": "Download",
+    "viewer.tooLarge": "File too large to preview",
+    "viewer.fetchFailed": "Failed to load file",
 
     // Toggle tooltips
     "toggle.light": "Switch to light mode",
@@ -202,6 +207,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.send": "发送",
     "chat.stop": "停止",
     "chat.generating": "生成中",
+    "chat.tipAutoAttached": "发送时将自动附加到消息前。",
     "chat.toolRunning": "运行中",
     "chat.toolDone": "完成",
     "chat.toolArgs": "参数",
@@ -210,6 +216,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.thinking": "思考",
 
     "viewer.selectFile": "选择一个文件查看",
+    "viewer.unsupportedHint": "此文件类型暂不支持预览。",
+    "viewer.download": "下载",
+    "viewer.tooLarge": "文件过大，无法预览",
+    "viewer.fetchFailed": "加载失败",
 
     "toggle.light": "切换到浅色模式",
     "toggle.dark": "切换到暗色模式",

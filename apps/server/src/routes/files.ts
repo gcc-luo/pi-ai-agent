@@ -1,7 +1,48 @@
 import { FastifyPluginAsync } from "fastify";
 import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
-import type { FileNodeDto, FileContentDto } from "@pi-web-ui/shared";
+import type { FileContentDto, FileNodeDto } from "@pi-web-ui/shared";
+
+// MIME types for the raw streaming endpoint. Only common previewable formats
+// are listed — anything else falls back to application/octet-stream, which the
+// browser will offer to download rather than attempt to render.
+const MIME: Record<string, string> = {
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".ts": "text/plain; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".avif": "image/avif",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".mkv": "video/x-matroska",
+  ".ogv": "video/ogg",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".m4a": "audio/mp4",
+  ".pdf": "application/pdf",
+};
+
+function mimeFor(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  return MIME[ext] ?? "application/octet-stream";
+}
 
 async function buildTree(root: string, rel: string, depth: number): Promise<FileNodeDto[]> {
   if (depth > 6) return [];
@@ -111,6 +152,33 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
     try {
       await fs.rm(abs, { recursive: true, force: true });
       return reply.code(204).send();
+    } catch (e: any) {
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // Raw byte streaming for binary previews (image / video / audio / pdf / office).
+  // Honors the Range header so <video> can seek. Intentionally separate from
+  // `/read` (which is utf8-only and capped at 1MB) so the existing text path is
+  // unaffected.
+  app.get<{ Params: { projectId: string }; Querystring: { path: string } }>("/files/:projectId/raw", async (req, reply) => {
+    const project = app.projects.findById(req.params.projectId);
+    if (!project) return reply.code(404).send({ error: "project not found" });
+    const abs = resolveSafe(project.workdir, req.query.path);
+    if (!abs) return reply.code(400).send({ error: "bad path" });
+    try {
+      const s = await fs.stat(abs);
+      const type = mimeFor(req.query.path);
+      // 200MB hard cap — anything bigger isn't a preview, it's a download.
+      if (s.size > 200 * 1024 * 1024) {
+        return reply.code(413).send({ error: "file too large to preview" });
+      }
+      reply.header("Content-Type", type);
+      reply.header("Accept-Ranges", "bytes");
+      reply.header("Cache-Control", "private, no-store");
+      // Fastify handles `Range` automatically when we just return a stream and
+      // let it own the response, so we don't parse the header ourselves.
+      return reply.code(200).send(createReadStream(abs));
     } catch (e: any) {
       return reply.code(500).send({ error: e.message });
     }
