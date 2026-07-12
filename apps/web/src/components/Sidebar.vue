@@ -156,7 +156,6 @@ function startDeleteSession(s: SessionDto) {
           </span>
           <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
           <span v-if="agent.isSessionBusy(s.id)" class="session-spinner" :title="t('chat.toolRunning')" />
-          <span v-else class="session-status-dot" :class="s.status" />
           <span class="item-actions">
             <button
               class="item-action"
@@ -457,32 +456,7 @@ function startDeleteSession(s: SessionDto) {
   color: var(--rose);
 }
 
-/* ─── Session Status Dot ─── */
-
-.session-status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--text-faint);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-.session-status-dot.active {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green-dim);
-}
-.session-status-dot.idle {
-  background: var(--amber);
-}
-.session-status-dot.suspended {
-  background: var(--text-faint);
-}
-.session-status-dot.crashed {
-  background: var(--rose);
-}
-
-/* Animated spinner — replaces the status dot while a session is producing
-   output. Sits at the same position so the row's layout doesn't shift. */
+/* Animated spinner — shown while a session is producing output. */
 .session-spinner {
   width: 11px;
   height: 11px;

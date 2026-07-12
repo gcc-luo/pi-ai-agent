@@ -256,11 +256,6 @@ function closePreview() {
                 <span class="session-tag" v-if="currentSession">
                   {{ currentSession.title ?? t('sidebar.newSession') }}
                 </span>
-                <span
-                  class="status-dot"
-                  :class="currentSession?.status ?? 'idle'"
-                  :title="currentSession?.status"
-                />
               </div>
               <div class="header-right">
                 <NSelect
@@ -380,27 +375,6 @@ function closePreview() {
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-.status-dot.active {
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green-dim);
-}
-.status-dot.idle {
-  background: var(--amber);
-}
-.status-dot.suspended {
-  background: var(--text-muted);
-}
-.status-dot.crashed {
-  background: var(--rose);
-  box-shadow: 0 0 8px var(--rose-dim);
 }
 
 .header-right {
