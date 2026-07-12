@@ -3,6 +3,7 @@ import { ref, watch, h, nextTick } from "vue";
 import { NTree, NModal, NInput, NRadioGroup, NRadio } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
+import { useAgentStore } from "../stores/agent.js";
 import type { TreeOption } from "naive-ui";
 import type { FileNodeDto } from "@pi-web-ui/shared";
 
@@ -10,6 +11,7 @@ const props = defineProps<{ projectId: string }>();
 const emit = defineEmits<{ (e: "select", path: string): void }>();
 
 const { t } = useI18n();
+const agent = useAgentStore();
 
 const treeData = ref<TreeOption[]>([]);
 const selectedKeys = ref<string[]>([]);
@@ -101,6 +103,15 @@ async function load() {
 }
 
 watch(() => props.projectId, load, { immediate: true });
+
+// Push-based refresh: when Pi finishes a file-modifying tool (write/edit/bash),
+// the server emits `file_changed` → the agent store bumps lastFileChange.
+// Debounce so a burst of edits triggers one tree reload, not N.
+let reloadTimer: number | null = null;
+watch(() => agent.lastFileChange, () => {
+  if (reloadTimer) clearTimeout(reloadTimer);
+  reloadTimer = window.setTimeout(() => load(), 250);
+});
 
 function handleSelect(keys: string[]) {
   selectedKeys.value = keys;

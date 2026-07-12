@@ -64,6 +64,10 @@ export const useAgentStore = defineStore("agent", {
     currentProvider: null as string | null,
     models: [] as ModelOption[],
     modelDtos: [] as ModelDto[],
+    // Bumped whenever a file-modifying tool completes; FileTree watches this
+    // to debounce-refresh its tree without coupling to a specific session.
+    fileChangeSeq: 0,
+    lastFileChange: null as { sessionId: string; toolName: string; at: number } | null,
   }),
   getters: {
     messagesFor: (state) => (sessionId: string): StreamMessage[] => state.streams[sessionId] ?? [],
@@ -200,6 +204,9 @@ export const useAgentStore = defineStore("agent", {
           );
           return { ...m, parts };
         });
+      } else if (e.type === "file_changed") {
+        this.fileChangeSeq++;
+        this.lastFileChange = { sessionId: e.sessionId, toolName: e.toolName, at: Date.now() };
       } else if (e.type === "raw") {
         // Attach raw events to the most recent assistant message (any status) so the
         // full event stream is visible. If none exists yet, create a holding message.

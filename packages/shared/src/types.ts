@@ -15,6 +15,7 @@ export type ServerEvent =
   | { type: "tool_call"; sessionId: string; messageId: string; name: string; args: unknown; toolCallId: string }
   | { type: "tool_progress"; sessionId: string; toolCallId: string; partial: unknown }
   | { type: "tool_result"; sessionId: string; toolCallId: string; result: unknown }
+  | { type: "file_changed"; sessionId: string; toolCallId: string; toolName: string }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "session_updated"; session: SessionDto }
   | { type: "error"; sessionId?: string; code: string; message: string }

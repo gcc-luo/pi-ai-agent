@@ -12,8 +12,37 @@ export function deriveDefaultTitle(content: string): string | null {
     : normalized;
 }
 
+// Tools whose execution mutates files inside the project workdir. Used to
+// decide when to emit a `file_changed` ServerEvent so the client can refresh
+// its file tree. `bash` is special-cased because file ops happen inside the
+// shell command — we scan for common file-modifying subcommands.
+const FILE_TOOLS = new Set(["write", "edit", "write_file", "edit_file", "create_file", "delete_file", "mkdir", "mv", "rm", "touch"]);
+
+function bashModifiesFiles(command: string): boolean {
+  // Conservative heuristic: refresh whenever the shell command uses a file
+  // mutating builtin or a redirect. False positives are cheap (one extra
+  // tree fetch); false negatives risk a stale file view.
+  if (/\b(rm|mv|cp|mkdir|touch|rmdir|ln|truncate|chmod|chown|install|rsync|scp)\b/.test(command)) return true;
+  if (/>>?/.test(command)) return true; // output redirect writes a file
+  if (/\|\s*tee\b/.test(command)) return true;
+  return false;
+}
+
+function isFileModifyingTool(name: string, args: unknown): boolean {
+  const lower = name.toLowerCase();
+  if (FILE_TOOLS.has(lower)) return true;
+  if (lower === "bash" || lower === "shell" || lower === "execute_bash") {
+    const cmd = (args as { command?: unknown } | null)?.command;
+    return typeof cmd === "string" && bashModifiesFiles(cmd);
+  }
+  return false;
+}
+
 export const agentRoutes: FastifyPluginAsync = async (app) => {
   const persistedToolCalls = new Map<string, { messageId: string; metadata: Record<string, unknown> }>();
+  // toolCallId -> toolName, populated on `tool_call`, drained on `tool_result`
+  // so we know which executions should trigger a `file_changed` push.
+  const fileModifyingToolCalls = new Map<string, string>();
   app.get("/ws/agent", { websocket: true }, (connection) => {
     const send = (event: ServerEvent) => {
       try { connection.send(JSON.stringify(event)); } catch {}
@@ -48,14 +77,20 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         state.send = send;
         bridge.onEvent((e) => {
           state!.send(e);
-          if (e.type === "message_end") {
-            const metadata = e.metadata ?? {};
-            const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
-            const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
-            for (const toolCall of toolCalls) {
-              persistedToolCalls.set(toolCall.toolCallId, { messageId: saved.id, metadata });
+          if (e.type === "tool_call") {
+            if (isFileModifyingTool(e.name, e.args)) {
+              fileModifyingToolCalls.set(e.toolCallId, e.name);
             }
           } else if (e.type === "tool_result") {
+            // Persisted tool-call metadata may not exist yet (it's attached on
+            // `message_end`), but we still drain the file-modifying flag here so
+            // the client refreshes immediately after the tool finishes.
+            const toolName = fileModifyingToolCalls.get(e.toolCallId);
+            if (toolName) {
+              fileModifyingToolCalls.delete(e.toolCallId);
+              state!.send({ type: "file_changed", sessionId: e.sessionId, toolCallId: e.toolCallId, toolName });
+            }
+
             const persisted = persistedToolCalls.get(e.toolCallId);
             if (!persisted) return;
             const toolCalls = Array.isArray(persisted.metadata.toolCalls) ? persisted.metadata.toolCalls as ToolCall[] : [];
@@ -71,6 +106,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                 : part,
             );
             app.messages.updateMetadata(persisted.messageId, persisted.metadata);
+          } else if (e.type === "message_end") {
+            const metadata = e.metadata ?? {};
+            const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
+            const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
+            for (const toolCall of toolCalls) {
+              persistedToolCalls.set(toolCall.toolCallId, { messageId: saved.id, metadata });
+            }
           }
         });
         proc.on("exit", (code: number | null) => state!.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
