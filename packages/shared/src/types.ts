@@ -16,6 +16,10 @@ export type ServerEvent =
   | { type: "tool_progress"; sessionId: string; toolCallId: string; partial: unknown }
   | { type: "tool_result"; sessionId: string; toolCallId: string; result: unknown }
   | { type: "file_changed"; sessionId: string; toolCallId: string; toolName: string }
+  // A run spans every model turn and tool execution triggered by one prompt.
+  // It deliberately does not mirror `message_start`/`message_end`, because an
+  // agent run can contain several assistant messages.
+  | { type: "agent_status"; sessionId: string; status: "working" | "idle" }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "session_updated"; session: SessionDto }
   | { type: "error"; sessionId?: string; code: string; message: string }

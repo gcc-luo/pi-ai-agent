@@ -51,4 +51,25 @@ describe("agent store session_updated event", () => {
     expect(sessionStore.sessions).toEqual([]);
     expect(sessionStore.current).toBeNull();
   });
+
+  it("keeps each session busy until its own final agent lifecycle event", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({ type: "agent_status", sessionId: "s2", status: "working" });
+    agent.handle({
+      type: "message_start", sessionId: "s1", messageId: "m1", role: "assistant",
+    });
+    agent.handle({
+      type: "message_end", sessionId: "s1", messageId: "m1", content: "I will call a tool.",
+    });
+
+    // message_end completes only this model turn, not the complete agent run.
+    expect(agent.isSessionBusy("s1")).toBe(true);
+    expect(agent.isSessionBusy("s2")).toBe(true);
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.isSessionBusy("s2")).toBe(true);
+  });
 });

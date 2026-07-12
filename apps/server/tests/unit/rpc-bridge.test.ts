@@ -189,6 +189,29 @@ describe("RpcBridge", () => {
     });
   });
 
+  it("drops structural message updates and lifecycle events from the transcript", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({ type: "agent_start" }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_start", message: { role: "assistant", timestamp: 555 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({ type: "turn_end" }) + "\n");
+    proc.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\n");
+
+    expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
+      { type: "agent_status", sessionId: "s1", status: "working" },
+      { type: "message_start", sessionId: "s1", messageId: "assistant-555", role: "assistant", timestamp: 555 },
+      { type: "agent_status", sessionId: "s1", status: "idle" },
+    ]);
+  });
+
   it("maps model switch commands to pi set_model commands", () => {
     const proc = makeProc();
     const bridge = new RpcBridge(proc, "s1");

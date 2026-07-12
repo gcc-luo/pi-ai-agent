@@ -49,6 +49,16 @@ export class RpcBridge extends EventEmitter {
       return [];
     }
 
+    // These events describe the lifecycle of the complete agent run. They are
+    // intentionally separate from assistant message boundaries, which can
+    // occur many times during one prompt while tools are being used.
+    if (input?.type === "agent_start") {
+      return [{ type: "agent_status", sessionId: sid, status: "working" }];
+    }
+    if (input?.type === "agent_settled") {
+      return [{ type: "agent_status", sessionId: sid, status: "idle" }];
+    }
+
     if (input?.type === "message_start") {
       const message = input.message;
       if (message?.role !== "assistant") return [];
@@ -80,9 +90,10 @@ export class RpcBridge extends EventEmitter {
           toolCallId: ae.toolCall.id,
         }];
       }
-      // text_start/end, thinking_start/end, toolcall_start/delta, start, done, error:
-      // forward as raw so the full process is visible.
-      return [{ type: "raw", sessionId: sid, data: input }];
+      // text_start/end, thinking_start/end, and toolcall_start/delta are
+      // transport-level boundaries. They do not represent a user-visible
+      // message, so rendering them produces the noisy MESSAGE_UPDATE rows.
+      return [];
     }
 
     if (input?.type === "message_end") {
@@ -134,9 +145,11 @@ export class RpcBridge extends EventEmitter {
       return [{ type: "tool_result", sessionId: sid, toolCallId: input.toolCallId, result: input.result }];
     }
 
-    // Catch-all: forward any unhandled event (agent_start, turn_start, compaction_start,
-    // queue_update, extension_ui_request, etc.) as raw so nothing is hidden.
-    return [{ type: "raw", sessionId: sid, data: input as Record<string, unknown> }];
+    // `turn_*`, `agent_end`, queue updates and compaction notifications are
+    // state-machine details. The UI already receives their meaningful effects
+    // through text, tool, and agent_status events, so omit them from the chat
+    // transcript instead of exposing an internal event timeline.
+    return [];
   }
 
   private extractToolCalls(message: any): ToolCall[] {

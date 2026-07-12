@@ -115,7 +115,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             }
           }
         });
-        proc.on("exit", (code: number | null) => state!.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" }));
+        proc.on("exit", (code: number | null) => {
+          state!.send({ type: "agent_status", sessionId: session.id, status: "idle" });
+          state!.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" });
+          app.sessionStates.delete(session.id);
+        });
         proc.on("stderr", (line: string) => state!.send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
         app.sessions.touch(session.id, "active");
       } else {
@@ -124,6 +128,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
       app.sessionStates.touch(event.sessionId);
       if (event.type === "send" || event.type === "steer") {
+        if (event.type === "send") {
+          // Mark the session immediately, before Pi emits its first event, so
+          // the send control cannot briefly return to its idle appearance.
+          state.send({ type: "agent_status", sessionId: session.id, status: "working" });
+        }
         state.bridge.send({ type: event.type, sessionId: event.sessionId, content: event.content });
         app.messages.append({ sessionId: event.sessionId, role: "user", content: event.content });
         if (event.type === "send" && session.title == null) {
@@ -135,6 +144,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
       } else if (event.type === "interrupt") {
+        state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {
         const model = app.models.findById(event.model);

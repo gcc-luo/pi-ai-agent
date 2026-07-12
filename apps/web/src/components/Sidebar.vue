@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
+import { useAgentStore } from "../stores/agent.js";
 import FileTree from "./FileTree.vue";
 import NewProjectDialog from "./NewProjectDialog.vue";
 import RenameProjectDialog from "./RenameProjectDialog.vue";
@@ -12,6 +13,7 @@ import type { ProjectDto, SessionDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
+const agent = useAgentStore();
 const { t } = useI18n();
 
 const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
@@ -153,7 +155,8 @@ function startDeleteSession(s: SessionDto) {
             </svg>
           </span>
           <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
-          <span class="session-status-dot" :class="s.status" />
+          <span v-if="agent.isSessionBusy(s.id)" class="session-spinner" :title="t('chat.toolRunning')" />
+          <span v-else class="session-status-dot" :class="s.status" />
           <span class="item-actions">
             <button
               class="item-action"
@@ -476,6 +479,23 @@ function startDeleteSession(s: SessionDto) {
 }
 .session-status-dot.crashed {
   background: var(--rose);
+}
+
+/* Animated spinner — replaces the status dot while a session is producing
+   output. Sits at the same position so the row's layout doesn't shift. */
+.session-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-dim);
+  border-top-color: var(--accent);
+  margin-left: auto;
+  flex-shrink: 0;
+  animation: sessionSpin 0.7s linear infinite;
+}
+
+@keyframes sessionSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* ─── Empty Hints ─── */

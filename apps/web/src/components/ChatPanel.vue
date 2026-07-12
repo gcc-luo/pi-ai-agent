@@ -21,10 +21,10 @@ const messagesEl = ref<HTMLElement | null>(null);
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
 
-// The agent is "busy" while any message in this session is still streaming —
-// that window covers text generation as well as tool runs (tool_call/tool_result
-// events arrive with the same messageId between message_start and message_end).
-const isBusy = computed(() => messages.value.some((m) => m.status === "streaming"));
+// Pi can finish one assistant message to execute a tool and then start another
+// model turn. Use the run lifecycle so the control remains in its stop state
+// throughout that complete sequence.
+const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
 
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
 
@@ -325,6 +325,11 @@ const sessionErrors = computed(() =>
           :title="formatTimeFull(m.createdAt)"
         >{{ formatTime(m.createdAt) }}</div>
       </div>
+      <div v-if="isBusy" class="generating-indicator" role="status" aria-live="polite">
+        <span class="generating-spinner" aria-hidden="true" />
+        <span>{{ t('chat.generating') }}</span>
+        <span class="generating-dots" aria-hidden="true"><i /><i /><i /></span>
+      </div>
     </div>
 
     <!-- Composer -->
@@ -456,6 +461,45 @@ const sessionErrors = computed(() =>
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Always follows the final message. It remains visible between tool turns and
+   disappears only when Pi reports that the complete agent run has settled. */
+.generating-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 2px 0 30px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.generating-spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--accent-dim);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: generatingSpin 0.7s linear infinite;
+}
+.generating-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.generating-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: generatingDot 1.2s ease-in-out infinite;
+}
+.generating-dots i:nth-child(2) { animation-delay: 0.15s; }
+.generating-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes generatingSpin { to { transform: rotate(360deg); } }
+@keyframes generatingDot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
 }
 
 /* ─── Empty State ─── */

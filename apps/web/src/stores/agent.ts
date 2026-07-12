@@ -59,6 +59,9 @@ function appendDeltaToKind(parts: MessagePart[], kind: "text" | "thinking", delt
 export const useAgentStore = defineStore("agent", {
   state: () => ({
     streams: {} as Record<string, StreamMessage[]>,
+    // Kept separately from message streaming: one agent run can produce many
+    // assistant messages while it calls tools and resumes generation.
+    runStates: {} as Record<string, "working" | "idle">,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -74,6 +77,12 @@ export const useAgentStore = defineStore("agent", {
     currentModelLabel: (state) => {
       const m = state.models.find((m) => m.id === state.currentModel);
       return m?.label ?? state.currentModel ?? "";
+    },
+    // True for the entire prompt lifecycle, rather than a single assistant
+    // message. This makes independently running sessions safe to render in
+    // parallel without their controls flickering between model turns.
+    isSessionBusy: (state) => (sessionId: string): boolean => {
+      return state.runStates[sessionId] === "working";
     },
   },
   actions: {
@@ -121,6 +130,7 @@ export const useAgentStore = defineStore("agent", {
     },
     send(sessionId: string, content: string) {
       this.appendUser(sessionId, content);
+      this.runStates[sessionId] = "working";
       wsClient.send({ type: "send", sessionId, content });
     },
     interrupt(sessionId: string) {
@@ -133,6 +143,8 @@ export const useAgentStore = defineStore("agent", {
     handle(e: ServerEvent) {
       if (e.type === "error") {
         this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
+        // A rejected prompt has no `agent_settled` event to close the run.
+        if (e.sessionId && e.code === "pi_prompt_failed") this.runStates[e.sessionId] = "idle";
         return;
       }
       if (e.type === "session_updated") {
@@ -144,6 +156,14 @@ export const useAgentStore = defineStore("agent", {
       }
       if (!("sessionId" in e) || !e.sessionId) return;
       const sid = e.sessionId;
+      if (e.type === "agent_status") {
+        this.runStates[sid] = e.status;
+        return;
+      }
+      if (e.type === "session_status") {
+        if (e.status === "suspended" || e.status === "crashed") this.runStates[sid] = "idle";
+        return;
+      }
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
         this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming", createdAt: e.timestamp ?? Date.now() }];
@@ -208,6 +228,10 @@ export const useAgentStore = defineStore("agent", {
         this.fileChangeSeq++;
         this.lastFileChange = { sessionId: e.sessionId, toolName: e.toolName, at: Date.now() };
       } else if (e.type === "raw") {
+        // Compatibility fallback for servers that have not yet been upgraded
+        // to emit `agent_status`.
+        if (e.data.type === "agent_start") this.runStates[sid] = "working";
+        if (e.data.type === "agent_settled") this.runStates[sid] = "idle";
         // Attach raw events to the most recent assistant message (any status) so the
         // full event stream is visible. If none exists yet, create a holding message.
         const lastAssistant = [...list].reverse().find((m) => m.role === "assistant");
@@ -227,8 +251,6 @@ export const useAgentStore = defineStore("agent", {
             ? { ...m, parts: [...m.parts, { kind: "raw" as const, data: e.data }] }
             : m,
         );
-      } else if (e.type === "session_status") {
-        // session-status updates would be wired into the session store
       }
     },
     dismissError(index: number) {
