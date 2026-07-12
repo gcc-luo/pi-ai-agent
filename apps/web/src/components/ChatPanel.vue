@@ -21,6 +21,11 @@ const messagesEl = ref<HTMLElement | null>(null);
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
 
+// The agent is "busy" while any message in this session is still streaming —
+// that window covers text generation as well as tool runs (tool_call/tool_result
+// events arrive with the same messageId between message_start and message_end).
+const isBusy = computed(() => messages.value.some((m) => m.status === "streaming"));
+
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
 
 /**
@@ -154,6 +159,10 @@ function removeSkill(name: string) {
 function handleKeySend(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
+    if (isBusy.value) {
+      agent.interrupt(props.sessionId);
+      return;
+    }
     send();
   }
 }
@@ -349,6 +358,17 @@ const sessionErrors = computed(() =>
           @import="showImportSkill = true"
         />
         <button
+          v-if="isBusy"
+          class="send-btn stop"
+          @click="agent.interrupt(props.sessionId)"
+          :title="t('chat.stop')"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          v-else
           class="send-btn"
           :disabled="!input.trim() && !selectedSkills.length"
           @click="send"
@@ -1163,5 +1183,25 @@ const sessionErrors = computed(() =>
 .send-btn:disabled {
   opacity: 0.25;
   cursor: not-allowed;
+}
+
+/* Stop state — replaces the send button while the agent is streaming. */
+.send-btn.stop {
+  background: var(--rose);
+  color: #fff;
+  animation: stopPulse 1.6s ease-in-out infinite;
+}
+.send-btn.stop:hover {
+  background: var(--rose-hover, #e11d48);
+  box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.18);
+  transform: translateY(-1px);
+}
+.send-btn.stop:active {
+  transform: translateY(0);
+}
+
+@keyframes stopPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.0); }
+  50%      { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.16); }
 }
 </style>
