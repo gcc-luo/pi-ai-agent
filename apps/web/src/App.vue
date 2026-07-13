@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
 import { NConfigProvider, darkTheme, NSelect } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
-import FileViewer from "./components/FileViewer.vue";
+// Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
+// the 10 preview SFCs) lives in its own chunk and never lands in the main
+// bundle for users who only browse the chat.
+const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
 import { useProjectStore } from "./stores/project.js";

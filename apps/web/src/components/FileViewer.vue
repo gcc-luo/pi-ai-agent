@@ -12,6 +12,7 @@ import AudioPreview from "./file-preview/AudioPreview.vue";
 import PdfPreview from "./file-preview/PdfPreview.vue";
 import DocxPreview from "./file-preview/DocxPreview.vue";
 import XlsxPreview from "./file-preview/XlsxPreview.vue";
+import PptxPreview from "./file-preview/PptxPreview.vue";
 import UnsupportedPreview from "./file-preview/UnsupportedPreview.vue";
 
 const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
@@ -102,7 +103,7 @@ watch(
     </div>
 
     <!-- Dispatch by kind -->
-    <TextPreview v-else-if="kind === 'text'" :content="content" />
+    <TextPreview v-else-if="kind === 'text'" :content="content" :path="path!" />
     <MarkdownPreview v-else-if="kind === 'markdown'" :content="content" />
     <ImagePreview v-else-if="kind === 'image'" :url="rawUrl" />
     <VideoPreview v-else-if="kind === 'video'" :url="rawUrl" />
@@ -110,11 +111,11 @@ watch(
     <PdfPreview v-else-if="kind === 'pdf'" :url="rawUrl" />
     <DocxPreview v-else-if="kind === 'docx'" :project-id="projectId" :path="path" />
     <XlsxPreview v-else-if="kind === 'xlsx'" :project-id="projectId" :path="path" />
+    <PptxPreview v-else-if="kind === 'pptx'" :project-id="projectId" :path="path" />
     <UnsupportedPreview
       v-else
       :path="path!"
       :url="rawUrl"
-      :reason="kind === 'pptx' ? t('viewer.unsupportedHint') : undefined"
     />
   </div>
 </template>
