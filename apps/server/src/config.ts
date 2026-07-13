@@ -16,6 +16,8 @@ export interface Config {
   piProvider: string;
   piModel: string;
   skillsDir: string;
+  skillStoreTimeoutMs: number;
+  skillsMpApiKey: string;
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
@@ -34,6 +36,8 @@ export function loadConfig(): Config {
     piProvider: process.env.PI_PROVIDER ?? "",
     piModel: process.env.PI_MODEL ?? "",
     skillsDir: process.env.PI_SKILLS_DIR ?? path.join(os.homedir(), ".pi/agent/skills"),
+    skillStoreTimeoutMs: Number(process.env.SKILL_STORE_TIMEOUT_MS ?? 10_000),
+    skillsMpApiKey: process.env.SKILLSMP_API_KEY ?? "",
     idleTimeoutMs: Number(process.env.IDLE_TIMEOUT_MS ?? 5 * 60 * 1000),
     suspendedTimeoutMs: Number(process.env.SUSPENDED_TIMEOUT_MS ?? 30 * 60 * 1000),
     noResponseTimeoutMs: Number(process.env.NO_RESPONSE_TIMEOUT_MS ?? 30 * 1000),

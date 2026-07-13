@@ -9,6 +9,7 @@ import ChatPanel from "./components/ChatPanel.vue";
 const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
+const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStoreView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
@@ -26,7 +27,7 @@ const { t } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store">("chat");
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -319,7 +320,8 @@ function closePreview() {
         </main>
       </template>
 
-      <ModelPanel v-else />
+      <ModelPanel v-else-if="activeNav === 'model'" />
+      <SkillStoreView v-else-if="activeNav === 'skill-store'" />
     </div>
   </NConfigProvider>
 </template>

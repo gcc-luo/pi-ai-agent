@@ -1,4 +1,7 @@
-import type { ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto } from "@pi-web-ui/shared";
+import type {
+  ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
+  SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
+} from "@pi-web-ui/shared";
 
 export interface ModelOption {
   id: string;
@@ -57,6 +60,13 @@ export const api = {
     });
   },
   deleteSkill: (name: string) => request<void>("DELETE", `/skills/${encodeURIComponent(name)}`),
+
+  searchSkillStore: (q: string, mode: "keyword" | "ai" = "keyword", limit = 20) =>
+    request<SkillStoreSearchResponse>("GET", `/skill-store/search?q=${encodeURIComponent(q)}&mode=${mode}&limit=${limit}`),
+  previewSkillStore: (skill: SkillSearchResult) =>
+    request<SkillContentPreview>("POST", "/skill-store/preview", skill),
+  installSkillStore: (req: SkillStoreInstallRequest) =>
+    request<SkillStoreInstallResponse>("POST", "/skill-store/install", req),
 
   listFiles: (projectId: string, dir = "/") =>
     request<FileNodeDto[]>("GET", `/files/${projectId}/list?path=${encodeURIComponent(dir)}`),

@@ -106,6 +106,69 @@ export interface SkillDto {
   path: string;
 }
 
+// ─── Skill store (vendored pi-skill-hub provider DTOs) ───
+// These mirror the structures returned by pi-skill-hub's skills.sh and
+// SkillsMP providers. See apps/server/src/skill-store/vendor/ATTRIBUTION.md.
+
+export type SkillProviderId = "skills-sh" | "skillsmp" | "github";
+export type SkillSearchMode = "keyword" | "ai";
+
+export interface SkillSearchResult {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  popularity: number;
+  provider: SkillProviderId;
+  sourceUrl?: string | null;
+  githubUrl?: string | null;
+  sourceOwner?: string | null;
+  sourceRepository?: string | null;
+  sourcePath?: string | null;
+  installHint?: string | null;
+  installReference?: string | null;
+}
+
+export type SkillPreviewAuditStatus = "pass" | "fail" | "warning" | "unknown";
+export type SkillPreviewMetadataStatus = "available" | "partial" | "unavailable";
+
+export interface SkillPreviewAudit {
+  label: string;
+  status: SkillPreviewAuditStatus;
+}
+
+export interface SkillPreviewMetadata {
+  provider: SkillProviderId;
+  weeklyInstalls?: number | null;
+  githubStars?: number | null;
+  securityAudits: SkillPreviewAudit[];
+  status: SkillPreviewMetadataStatus;
+}
+
+export interface SkillContentPreview {
+  title: string;
+  body: string;
+  source: "remote" | "metadata";
+  limitation?: string | null;
+  metadata: SkillPreviewMetadata;
+}
+
+export interface SkillStoreSearchResponse {
+  query: string;
+  results: SkillSearchResult[];
+  errors: { provider: string; message: string }[];
+}
+
+export interface SkillStoreInstallRequest {
+  skill: SkillSearchResult;
+  localName?: string;
+}
+
+export interface SkillStoreInstallResponse {
+  name: string;
+  path: string;
+}
+
 export interface Result<T, E = string> {
   ok: boolean;
   data?: T;

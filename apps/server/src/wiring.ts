@@ -8,6 +8,7 @@ import { ProcessManager } from "./agent/process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
 import { SkillService } from "./agent/skill-service.js";
+import { SkillStoreService } from "./skill-store/skill-store-service.js";
 import { buildApp } from "./app.js";
 import { projectsRoutes } from "./routes/projects.js";
 import { sessionsRoutes } from "./routes/sessions.js";
@@ -17,6 +18,7 @@ import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
 import { fsRoutes } from "./routes/fs.js";
 import { skillsRoutes } from "./routes/skills.js";
+import { skillStoreRoutes } from "./routes/skill-store.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -26,10 +28,15 @@ export async function buildConfiguredApp(config: Config) {
   const messages = new MessageRepository(db);
   const models = new ModelRepository(db);
   const skills = new SkillService(config.skillsDir);
+  const skillStore = new SkillStoreService({
+    skillsDir: config.skillsDir,
+    timeoutMs: config.skillStoreTimeoutMs,
+    skillsMpApiKey: config.skillsMpApiKey || undefined,
+  });
   const sessionStates = new SessionStateStore();
 
   // Build app first so we can pass app.log to ProcessManager
-  const app = await buildApp(config, { db, projects, sessions, messages, models, sessionStates, skills, config });
+  const app = await buildApp(config, { db, projects, sessions, messages, models, sessionStates, skills, skillStore, config });
   const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, logger: app.log });
   (app as any).processManager = processManager;
 
@@ -52,6 +59,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(modelsRoutes, { prefix: "/api/models" });
   await app.register(fsRoutes, { prefix: "/api/fs" });
   await app.register(skillsRoutes, { prefix: "/api/skills" });
+  await app.register(skillStoreRoutes, { prefix: "/api/skill-store" });
   await app.register(agentRoutes);
 
   return app;

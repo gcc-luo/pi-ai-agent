@@ -7,6 +7,7 @@ import type { ModelRepository } from "../db/repositories/model.js";
 import type { ProcessManager } from "../agent/process-manager.js";
 import type { SessionStateStore } from "../agent/session-state.js";
 import type { SkillService } from "../agent/skill-service.js";
+import type { SkillStoreService } from "../skill-store/skill-store-service.js";
 import type { Config } from "../config.js";
 
 declare module "fastify" {
@@ -19,6 +20,7 @@ declare module "fastify" {
     processManager: ProcessManager;
     sessionStates: SessionStateStore;
     skills: SkillService;
+    skillStore: SkillStoreService;
     config: Config;
   }
 }

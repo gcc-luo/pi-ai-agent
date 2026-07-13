@@ -4,11 +4,11 @@ import { useConnectionStore } from "../stores/connection.js";
 import { useI18n } from "../i18n/index.js";
 
 defineProps<{
-  activeNav: "chat" | "model";
+  activeNav: "chat" | "model" | "skill-store";
 }>();
 
 defineEmits<{
-  (e: "navigate", nav: "chat" | "model"): void;
+  (e: "navigate", nav: "chat" | "model" | "skill-store"): void;
 }>();
 
 const themeStore = useThemeStore();
@@ -48,6 +48,16 @@ const { t, toggleLocale, currentLocale } = useI18n();
           <circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.4" />
           <circle cx="9" cy="9" r="1" fill="currentColor" />
           <path d="M6 3V1M12 3V1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
+      </button>
+      <button
+        class="nav-item"
+        :class="{ active: activeNav === 'skill-store' }"
+        @click="$emit('navigate', 'skill-store')"
+        :title="t('nav.skillStore')"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" />
         </svg>
       </button>
     </div>
