@@ -3,6 +3,8 @@
 **日期**: 2026-07-14
 **范围**: `apps/web/src/components/SkillStoreView.vue`（仅前端，单文件）
 
+> **Update 2026-07-14（重定向）**：实现到 Task 1（NGrid 三列）后用户改口："调整为和市场搜索的那种卡片格式一模一样的，每行 4 列"。最终实现放弃 NGrid 方案，直接复用市场页 `.ss-card-list` + `.ss-card`（纯 CSS grid `repeat(auto-fill, minmax(280px, 1fr))`，桌面约 4 列、容器变窄自动降列），内容按 `SkillDto` 字段映射（name→`.ss-card-name`、path→`.ss-card-author` 行、description→`.ss-card-desc`、卸载按钮→`.ss-card-foot` 右对齐，前置空 `.ss-card-pop` 占位以匹配市场页按钮位置）。下方"设计"章节描述的 NGrid 方案仅作历史记录；以本注为准。
+
 ## 背景
 
 技能商店「已安装」标签页（`<NTabPane name="installed">`）当前用垂直列表展示已安装技能：`.ss-installed-list` 为 `flex-direction: column`，每个 `.ss-installed-row` 是横向条目（左侧名称/描述/路径 + 右侧卸载按钮）。
