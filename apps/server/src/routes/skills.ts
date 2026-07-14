@@ -48,9 +48,6 @@ export const skillsRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete<{ Params: { name: string } }>("/:name", async (req, reply) => {
     const { name } = req.params;
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
-      return reply.code(400).send({ error: "invalid skill name" });
-    }
     try {
       app.skills.uninstall(name);
       return reply.code(204).send();
