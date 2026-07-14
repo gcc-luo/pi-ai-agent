@@ -1,4 +1,5 @@
 import path from "node:path";
+import * as fs from "node:fs";
 import {
   SkillSearchResult,
   SkillContentPreview,
@@ -16,8 +17,10 @@ import {
 } from "./vendor/providers/skills-sh-download.js";
 import {
   parseSkillsShReference,
+  isSafeSegment,
   type SkillsShSource,
 } from "./vendor/providers/skills-sh-identifiers.js";
+import { parseGithubSourceUrl } from "./vendor/utils/source-reference.js";
 import { buildRemotePreview } from "./vendor/browser/preview.js";
 
 // Re-export so callers can deep-import the vendored types without reaching
@@ -107,27 +110,60 @@ export class SkillStoreService {
   }
 
   async install(skill: SkillSearchResult, localNameOverride?: string): Promise<{ name: string; path: string; markdown?: string }> {
-    const source = this.resolveSkillsShSource(skill);
+    const source = this.resolveSource(skill);
     if (!source) {
-      throw new Error(`install is only supported for skills.sh-sourced skills; got provider=${skill.provider}`);
+      throw new Error(`Could not resolve a GitHub source for skill "${skill.name}" (${skill.provider}). No installReference, githubUrl, or sourceOwner/sourceRepository/sourcePath provided.`);
     }
     const requestedName = sanitizeLocalName(localNameOverride ?? skill.name ?? source.skill);
     if (!requestedName || !NAME_RE.test(requestedName) || requestedName.length > 64) {
       throw new Error("invalid skill name (lowercase letters, digits, and hyphens only; max 64 chars)");
     }
     const target = path.join(this.skillsDir, requestedName);
-    // installSkillsShSkillDirectory writes files atomically; replace any
-    // existing install of the same name to keep installs idempotent.
+    // Replace any existing install of the same name so reinstalls stay
+    // idempotent. installSkillsShSkillDirectory itself refuses to write over
+    // an existing directory, so we clear the target first.
+    if (fs.existsSync(target)) {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
     await installSkillsShSkillDirectory(source, target, this.timeoutMs);
     const markdown = await fetchSkillsShMarkdown(source, this.timeoutMs);
     return { name: requestedName, path: target, markdown };
   }
 
-  private resolveSkillsShSource(skill: SkillSearchResult): SkillsShSource | undefined {
-    return (
-      parseSkillsShReference(skill.installReference ?? undefined) ??
-      parseSkillsShReference(skill.id) ??
-      parseSkillsShReference(skill.sourceUrl ?? undefined)
-    );
+  /**
+   * Resolve a {@link SkillsShSource} (owner/repo/skill) for any skill that has
+   * a GitHub-backed source. skills.sh's download API can fetch any GitHub
+   * repo's skill by `(owner, repo, skillName)` — it doesn't require the skill
+   * to be registered on skills.sh — so SkillsMP-sourced skills (whose
+   * installReference is a github.com URL) install the same way.
+   */
+  private resolveSource(skill: SkillSearchResult): SkillsShSource | undefined {
+    // 1. Try skills.sh reference (skills.sh/.../owner/repo/skill or owner/repo@skill)
+    const sh = parseSkillsShReference(skill.installReference ?? undefined)
+      ?? parseSkillsShReference(skill.id)
+      ?? parseSkillsShReference(skill.sourceUrl ?? undefined);
+    if (sh) return sh;
+
+    // 2. Try GitHub URL (covers SkillsMP whose installReference is a github.com URL)
+    const gh = parseGithubSourceUrl(skill.githubUrl ?? undefined)
+      ?? parseGithubSourceUrl(skill.sourceUrl ?? undefined)
+      ?? parseGithubSourceUrl(skill.installReference ?? undefined);
+    if (gh && gh.pathSegments.length > 0) {
+      const skillName = gh.pathSegments[gh.pathSegments.length - 1];
+      if (isSafeSegment(skillName)) {
+        return { owner: gh.owner, repo: gh.repo, skill: skillName };
+      }
+    }
+
+    // 3. Fall back to metadata fields (sourceOwner/sourceRepository/sourcePath)
+    if (skill.sourceOwner && skill.sourceRepository && skill.sourcePath) {
+      const segs = skill.sourcePath.split("/").filter(Boolean);
+      const skillName = segs[segs.length - 1];
+      if (isSafeSegment(skillName) && isSafeSegment(skill.sourceOwner) && isSafeSegment(skill.sourceRepository)) {
+        return { owner: skill.sourceOwner, repo: skill.sourceRepository, skill: skillName };
+      }
+    }
+
+    return undefined;
   }
 }
