@@ -21,8 +21,6 @@ function mountView() {
       stubs: {
         Tabs: NTabsStub,
         TabPane: { template: '<div><slot/></div>' },
-        Grid: { template: '<div><slot/></div>' },
-        GridItem: { template: '<div><slot/></div>' },
         Button: { template: '<button><slot/></button>' },
         Input: { template: '<input />', inheritAttrs: false },
         RadioGroup: { template: '<div><slot/></div>' },
