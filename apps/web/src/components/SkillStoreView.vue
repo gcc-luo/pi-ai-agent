@@ -118,6 +118,7 @@ watch(activeTab, (tab) => {
           />
           <NRadioGroup v-model:value="store.mode" name="ss-mode" size="small">
             <NRadio value="keyword">{{ t('skillStore.modeKeyword') }}</NRadio>
+            <NRadio value="ai">{{ t('skillStore.modeAi') }}</NRadio>
           </NRadioGroup>
           <NButton
             type="primary"
