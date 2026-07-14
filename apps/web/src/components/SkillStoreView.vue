@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { NInput, NButton, NRadioGroup, NRadio, NSpin, NTag, NTabs, NTabPane } from "naive-ui";
+import { NInput, NButton, NRadioGroup, NRadio, NSpin, NTag, NTabs, NTabPane, NGrid, NGridItem } from "naive-ui";
 import { useSkillStoreStore } from "../stores/skill-store.js";
 import { useSkillStore } from "../stores/skill.js";
 import { useI18n } from "../i18n/index.js";
@@ -266,23 +266,22 @@ watch(activeTab, (tab) => {
 
       <div v-if="installed.loading && !installed.skills.length" class="ss-state"><NSpin size="small" /></div>
       <div v-else-if="!installed.skills.length" class="ss-state empty">{{ t('skillStore.installedEmpty') }}</div>
-      <ul v-else class="ss-installed-list">
-        <li v-for="s in installed.skills" :key="s.name" class="ss-installed-row">
-          <div class="ss-installed-info">
-            <div class="ss-installed-head">
-              <span class="ss-installed-name">{{ s.name }}</span>
+      <NGrid v-else responsive="self" cols="1 s:2 m:3" :x-gap="10" :y-gap="10" class="ss-installed-grid">
+        <NGridItem v-for="s in installed.skills" :key="s.name">
+          <article class="ss-installed-card" data-test="installed-card">
+            <div class="ss-installed-card-head">
+              <span class="ss-installed-card-name">{{ s.name }}</span>
             </div>
-            <p class="ss-installed-desc">{{ s.description || '—' }}</p>
-            <p class="ss-installed-path">{{ t('skillStore.pathLabel') }}: <code>{{ s.path }}</code></p>
-          </div>
-          <NButton
-            size="tiny"
-            type="error"
-            ghost
-            @click="requestUninstall(s.name)"
-          >{{ t('skillStore.uninstall') }}</NButton>
-        </li>
-      </ul>
+            <p class="ss-installed-card-desc">{{ s.description || '—' }}</p>
+            <p class="ss-installed-card-path">{{ t('skillStore.pathLabel') }}: <code>{{ s.path }}</code></p>
+            <div class="ss-installed-card-foot">
+              <NButton size="tiny" type="error" ghost block @click="requestUninstall(s.name)">
+                {{ t('skillStore.uninstall') }}
+              </NButton>
+            </div>
+          </article>
+        </NGridItem>
+      </NGrid>
     </div>
 
     <CreateSkillDialog :show="showCreateSkill" @close="showCreateSkill = false" />
@@ -584,61 +583,60 @@ watch(activeTab, (tab) => {
   gap: 8px;
   flex-wrap: wrap;
 }
-.ss-installed-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.ss-installed-grid {
+  /* NGrid handles layout; class kept as a hook for future tweaks. */
+}
+.ss-installed-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.ss-installed-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 6px;
   padding: 12px 14px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+  transition: all var(--transition-fast);
+  height: 100%;
 }
-.ss-installed-row:hover {
-  border-color: var(--border-active);
+.ss-installed-card:hover {
+  border-color: var(--accent);
   background: var(--bg-elevated);
 }
-.ss-installed-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ss-installed-head {
+.ss-installed-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.ss-installed-name {
+.ss-installed-card-name {
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
-.ss-installed-desc {
+.ss-installed-card-desc {
   margin: 0;
   font-size: 12px;
-  color: var(--text-secondary);
   line-height: 1.5;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.ss-installed-path {
+.ss-installed-card-path {
   margin: 0;
   font-size: 11px;
   color: var(--text-faint);
   font-family: var(--font-mono);
   word-break: break-all;
 }
-.ss-installed-path code {
-  color: var(--text-muted);
+.ss-installed-card-path code {
+  font-family: inherit;
+}
+.ss-installed-card-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ─── Slide transition ─── */
