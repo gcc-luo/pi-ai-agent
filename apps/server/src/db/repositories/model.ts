@@ -14,7 +14,7 @@ type ModelRow = {
 };
 
 function normalizeModelType(v: string | null | undefined): ModelType {
-  if (v === "multimodal" || v === "vector") return v;
+  if (v === "multimodal" || v === "embedding") return v;
   return "text";
 }
 

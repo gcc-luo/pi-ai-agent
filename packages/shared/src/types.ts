@@ -88,7 +88,7 @@ export interface FileContentDto {
   mtime: number;
 }
 
-export type ModelType = "text" | "multimodal" | "vector";
+export type ModelType = "text" | "multimodal" | "embedding";
 
 export interface ModelDto {
   id: string;

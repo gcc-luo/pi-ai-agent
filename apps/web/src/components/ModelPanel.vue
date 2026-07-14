@@ -17,7 +17,7 @@ const form = ref({
   id: "",
   label: "",
   provider: "openai",
-  modelType: "text" as "text" | "multimodal" | "vector",
+  modelType: "text" as "text" | "multimodal" | "embedding",
   apiBaseUrl: "",
   apiKey: "",
   isDefault: false,
@@ -36,7 +36,7 @@ const providerLabels: Record<string, string> = {
 const modelTypeOptions = [
   { label: "text", value: "text" },
   { label: "multimodal", value: "multimodal" },
-  { label: "vector", value: "vector" },
+  { label: "embedding", value: "embedding" },
 ];
 
 const groupedModels = computed(() => {

@@ -85,7 +85,7 @@ async function testAnthropic(apiBaseUrl: string, apiKey: string, modelId?: strin
   }
 }
 
-async function testVectorOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+async function testEmbeddingOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/embeddings`;
   try {
@@ -253,11 +253,11 @@ export const modelsRoutes: FastifyPluginAsync = async (app) => {
 
     const modelType: ModelType = body.modelType ?? "text";
 
-    if (modelType === "vector") {
+    if (modelType === "embedding") {
       if (body.provider === "anthropic") {
         return { ok: false, error: "Anthropic does not provide an embeddings endpoint" };
       }
-      return await testVectorOpenAI(baseUrl, apiKey, body.modelId);
+      return await testEmbeddingOpenAI(baseUrl, apiKey, body.modelId);
     }
 
     if (modelType === "multimodal") {
