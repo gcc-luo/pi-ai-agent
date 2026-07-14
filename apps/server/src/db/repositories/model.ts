@@ -1,10 +1,11 @@
 import type Database from "better-sqlite3";
-import { ModelDto } from "@pi-web-ui/shared";
+import { ModelDto, ModelType } from "@pi-web-ui/shared";
 
 type ModelRow = {
   id: string;
   label: string;
   provider: string;
+  model_type: string;
   api_base_url: string | null;
   api_key: string | null;
   is_default: number;
@@ -12,11 +13,17 @@ type ModelRow = {
   updated_at: number;
 };
 
+function normalizeModelType(v: string | null | undefined): ModelType {
+  if (v === "multimodal" || v === "vector") return v;
+  return "text";
+}
+
 function toDto(r: ModelRow): ModelDto {
   return {
     id: r.id,
     label: r.label,
     provider: r.provider,
+    modelType: normalizeModelType(r.model_type),
     apiBaseUrl: r.api_base_url,
     apiKey: r.api_key,
     hasApiKey: r.api_key !== null && r.api_key !== "",
@@ -33,21 +40,24 @@ export class ModelRepository {
     id: string;
     label: string;
     provider: string;
+    modelType?: ModelType;
     apiBaseUrl?: string;
     apiKey?: string;
     isDefault?: boolean;
   }): ModelDto {
     const now = Date.now();
     if (input.isDefault) this.clearDefault();
+    const modelType = input.modelType ?? "text";
     this.db
       .prepare(
-        `INSERT INTO models (id, label, provider, api_base_url, api_key, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO models (id, label, provider, model_type, api_base_url, api_key, is_default, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
         input.label,
         input.provider,
+        modelType,
         input.apiBaseUrl ?? null,
         input.apiKey ?? null,
         input.isDefault ? 1 : 0,
@@ -58,6 +68,7 @@ export class ModelRepository {
       id: input.id,
       label: input.label,
       provider: input.provider,
+      modelType,
       apiBaseUrl: input.apiBaseUrl ?? null,
       apiKey: input.apiKey ?? null,
       hasApiKey: !!input.apiKey,
@@ -88,6 +99,7 @@ export class ModelRepository {
     patch: Partial<{
       label: string;
       provider: string;
+      modelType: ModelType;
       apiBaseUrl: string | null;
       apiKey: string | null;
       isDefault: boolean;
@@ -101,6 +113,7 @@ export class ModelRepository {
 
     const label = patch.label ?? cur.label;
     const provider = patch.provider ?? cur.provider;
+    const modelType = patch.modelType ?? cur.modelType;
     const apiBaseUrl = patch.apiBaseUrl === undefined ? cur.apiBaseUrl : patch.apiBaseUrl;
     const isDefault = patch.isDefault !== undefined ? (patch.isDefault ? 1 : 0) : cur.isDefault ? 1 : 0;
 
@@ -113,10 +126,10 @@ export class ModelRepository {
 
     this.db
       .prepare(
-        `UPDATE models SET label = ?, provider = ?, api_base_url = ?, api_key = ?, is_default = ?, updated_at = ?
+        `UPDATE models SET label = ?, provider = ?, model_type = ?, api_base_url = ?, api_key = ?, is_default = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(label, provider, apiBaseUrl, apiKey, isDefault, now, id);
+      .run(label, provider, modelType, apiBaseUrl, apiKey, isDefault, now, id);
   }
 
   delete(id: string): void {

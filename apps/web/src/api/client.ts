@@ -87,12 +87,12 @@ export const api = {
   updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),
 
   listModels: () => request<ModelDto[]>("GET", "/models"),
-  createModel: (data: { id: string; label: string; provider: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) =>
+  createModel: (data: { id: string; label: string; provider: string; modelType?: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) =>
     request<ModelDto>("POST", "/models", data),
-  updateModel: (id: string, data: { label?: string; provider?: string; apiBaseUrl?: string | null; apiKey?: string | null; isDefault?: boolean }) =>
+  updateModel: (id: string, data: { label?: string; provider?: string; modelType?: string; apiBaseUrl?: string | null; apiKey?: string | null; isDefault?: boolean }) =>
     request<ModelDto>("PUT", "/models", { id, ...data }),
   deleteModel: (id: string) => request<void>("DELETE", `/models?id=${encodeURIComponent(id)}`),
-  testModel: (data: { id?: string; provider: string; apiBaseUrl?: string; apiKey?: string; modelId?: string }) =>
+  testModel: (data: { id?: string; provider: string; modelType?: string; apiBaseUrl?: string; apiKey?: string; modelId?: string }) =>
     request<{ ok: boolean; error?: string }>("POST", "/models/test", data),
 
   browseDir: (dirPath?: string) =>

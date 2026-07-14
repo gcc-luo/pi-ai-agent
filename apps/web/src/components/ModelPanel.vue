@@ -17,6 +17,7 @@ const form = ref({
   id: "",
   label: "",
   provider: "openai",
+  modelType: "text" as "text" | "multimodal" | "vector",
   apiBaseUrl: "",
   apiKey: "",
   isDefault: false,
@@ -32,6 +33,12 @@ const providerLabels: Record<string, string> = {
   anthropic: "Anthropic",
 };
 
+const modelTypeOptions = [
+  { label: "text", value: "text" },
+  { label: "multimodal", value: "multimodal" },
+  { label: "vector", value: "vector" },
+];
+
 const groupedModels = computed(() => {
   const groups: Record<string, typeof agent.modelDtos> = {};
   for (const m of agent.modelDtos) {
@@ -42,7 +49,15 @@ const groupedModels = computed(() => {
 
 function openAdd() {
   editingId.value = null;
-  form.value = { id: "", label: "", provider: "openai", apiBaseUrl: "", apiKey: "", isDefault: false };
+  form.value = {
+    id: "",
+    label: "",
+    provider: "openai",
+    modelType: "text",
+    apiBaseUrl: "",
+    apiKey: "",
+    isDefault: false,
+  };
   testResult.value = null;
   showDrawer.value = true;
 }
@@ -53,6 +68,7 @@ function openEdit(m: (typeof agent.modelDtos)[0]) {
     id: m.id,
     label: m.label,
     provider: m.provider,
+    modelType: m.modelType ?? "text",
     apiBaseUrl: m.apiBaseUrl ?? "",
     apiKey: m.apiKey ?? "",
     isDefault: m.isDefault,
@@ -68,6 +84,7 @@ async function testConnection() {
     testResult.value = await api.testModel({
       id: editingId.value || undefined,
       provider: form.value.provider,
+      modelType: form.value.modelType,
       apiBaseUrl: form.value.apiBaseUrl || undefined,
       apiKey: form.value.apiKey || undefined,
       modelId: form.value.id || undefined,
@@ -84,6 +101,7 @@ async function save() {
     id: form.value.id,
     label: form.value.label,
     provider: form.value.provider,
+    modelType: form.value.modelType,
     isDefault: form.value.isDefault,
   };
   if (form.value.apiBaseUrl) data.apiBaseUrl = form.value.apiBaseUrl;
@@ -93,6 +111,7 @@ async function save() {
     const patch: Record<string, unknown> = {
       label: form.value.label,
       provider: form.value.provider,
+      modelType: form.value.modelType,
       isDefault: form.value.isDefault,
     };
     if (form.value.apiBaseUrl) patch.apiBaseUrl = form.value.apiBaseUrl;
@@ -194,6 +213,9 @@ function setDefault(id: string) {
           </NFormItem>
           <NFormItem :label="t('model.provider')">
             <NSelect v-model:value="form.provider" :options="providerOptions" />
+          </NFormItem>
+          <NFormItem :label="t('model.type')">
+            <NSelect v-model:value="form.modelType" :options="modelTypeOptions" />
           </NFormItem>
           <NFormItem :label="t('model.apiBaseUrl')">
             <NInput v-model:value="form.apiBaseUrl" :placeholder="t('model.apiBaseUrlPlaceholder')" />

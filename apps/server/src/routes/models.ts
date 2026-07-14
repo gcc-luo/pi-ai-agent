@@ -1,9 +1,11 @@
 import { FastifyPluginAsync } from "fastify";
+import { ModelType } from "@pi-web-ui/shared";
 
 interface CreateBody {
   id: string;
   label: string;
   provider: string;
+  modelType?: ModelType;
   apiBaseUrl?: string;
   apiKey?: string;
   isDefault?: boolean;
@@ -13,6 +15,7 @@ interface UpdateBody {
   id: string;
   label?: string;
   provider?: string;
+  modelType?: ModelType;
   apiBaseUrl?: string | null;
   apiKey?: string | null;
   isDefault?: boolean;
@@ -21,10 +24,15 @@ interface UpdateBody {
 interface TestBody {
   id?: string;
   provider: string;
+  modelType?: ModelType;
   apiBaseUrl?: string;
   apiKey?: string;
   modelId?: string;
 }
+
+// 1x1 transparent PNG (base64) — small valid image payload for multimodal probe.
+const TINY_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
@@ -66,6 +74,107 @@ async function testAnthropic(apiBaseUrl: string, apiKey: string, modelId?: strin
         model: modelId ?? "claude-sonnet-4-20250514",
         max_tokens: 1,
         messages: [{ role: "user", content: "hi" }],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok || res.status === 400) return { ok: true };
+    const body = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
+  } catch (e: any) {
+    return { ok: false, error: e.message ?? String(e) };
+  }
+}
+
+async function testVectorOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = apiBaseUrl.replace(/\/+$/, "");
+  const url = `${baseUrl}/embeddings`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId ?? "text-embedding-3-small",
+        input: "hi",
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok || res.status === 400) return { ok: true };
+    const body = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
+  } catch (e: any) {
+    return { ok: false, error: e.message ?? String(e) };
+  }
+}
+
+async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = apiBaseUrl.replace(/\/+$/, "");
+  const url = `${baseUrl}/chat/completions`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId ?? "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "hi" },
+              {
+                type: "image_url",
+                image_url: { url: `data:image/png;base64,${TINY_PNG_B64}` },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok || res.status === 400) return { ok: true };
+    const body = await res.text().catch(() => "");
+    return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
+  } catch (e: any) {
+    return { ok: false, error: e.message ?? String(e) };
+  }
+}
+
+async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+  const baseUrl = apiBaseUrl.replace(/\/+$/, "");
+  const url = `${baseUrl}/messages`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: modelId ?? "claude-sonnet-4-20250514",
+        max_tokens: 1,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "hi" },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: TINY_PNG_B64,
+                },
+              },
+            ],
+          },
+        ],
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -142,6 +251,23 @@ export const modelsRoutes: FastifyPluginAsync = async (app) => {
       : "https://api.openai.com/v1";
     baseUrl = baseUrl || defaultBase;
 
+    const modelType: ModelType = body.modelType ?? "text";
+
+    if (modelType === "vector") {
+      if (body.provider === "anthropic") {
+        return { ok: false, error: "Anthropic does not provide an embeddings endpoint" };
+      }
+      return await testVectorOpenAI(baseUrl, apiKey, body.modelId);
+    }
+
+    if (modelType === "multimodal") {
+      if (body.provider === "anthropic") {
+        return await testMultimodalAnthropic(baseUrl, apiKey, body.modelId);
+      }
+      return await testMultimodalOpenAI(baseUrl, apiKey, body.modelId);
+    }
+
+    // text
     if (body.provider === "anthropic") {
       return await testAnthropic(baseUrl, apiKey, body.modelId);
     }

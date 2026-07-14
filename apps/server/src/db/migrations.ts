@@ -61,6 +61,12 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(deleted_at) WHERE deleted_at IS NULL;
     `,
   },
+  {
+    name: "004_model_type",
+    sql: `
+      ALTER TABLE models ADD COLUMN model_type TEXT NOT NULL DEFAULT 'text';
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

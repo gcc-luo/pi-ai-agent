@@ -88,10 +88,13 @@ export interface FileContentDto {
   mtime: number;
 }
 
+export type ModelType = "text" | "multimodal" | "vector";
+
 export interface ModelDto {
   id: string;
   label: string;
   provider: string;
+  modelType: ModelType;
   apiBaseUrl: string | null;
   apiKey: string | null;
   hasApiKey: boolean;

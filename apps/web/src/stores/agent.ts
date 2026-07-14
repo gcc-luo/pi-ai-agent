@@ -110,13 +110,13 @@ export const useAgentStore = defineStore("agent", {
         this.modelDtos = await api.listModels();
       } catch {}
     },
-    async createModel(data: { id: string; label: string; provider: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) {
+    async createModel(data: { id: string; label: string; provider: string; modelType?: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) {
       const m = await api.createModel(data);
       this.modelDtos = [...this.modelDtos, m];
       await this.loadConfig();
       return m;
     },
-    async updateModel(id: string, data: { label?: string; provider?: string; apiBaseUrl?: string | null; apiKey?: string | null; isDefault?: boolean }) {
+    async updateModel(id: string, data: { label?: string; provider?: string; modelType?: string; apiBaseUrl?: string | null; apiKey?: string | null; isDefault?: boolean }) {
       const m = await api.updateModel(id, data);
       const idx = this.modelDtos.findIndex((x) => x.id === id);
       if (idx >= 0) this.modelDtos[idx] = m;
