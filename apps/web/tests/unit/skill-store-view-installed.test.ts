@@ -3,7 +3,6 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { setActivePinia, createPinia } from "pinia";
 import { nextTick, defineComponent } from "vue";
 import SkillStoreView from "../../src/components/SkillStoreView.vue";
-import { useSkillStore } from "../../src/stores/skill.js";
 
 const NTabsStub = defineComponent({
   props: ["value"],
