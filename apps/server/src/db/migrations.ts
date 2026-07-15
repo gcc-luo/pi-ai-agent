@@ -67,6 +67,76 @@ const MIGRATIONS = [
       ALTER TABLE models ADD COLUMN model_type TEXT NOT NULL DEFAULT 'text';
     `,
   },
+  {
+    name: "005_knowledge_base",
+    sql: `
+      CREATE TABLE knowledge_bases (
+        id TEXT PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE kb_files (
+        id TEXT PRIMARY KEY,
+        kb_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        ext TEXT NOT NULL,
+        source TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        storage_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        parse_generation INTEGER NOT NULL DEFAULT 0,
+        fail_reason TEXT,
+        char_count INTEGER,
+        page_count INTEGER,
+        chunk_count INTEGER,
+        last_parsed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(kb_id, name)
+      );
+      CREATE INDEX idx_kb_files_kb ON kb_files(kb_id);
+      CREATE INDEX idx_kb_files_status ON kb_files(status);
+
+      CREATE TABLE kb_chunks (
+        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+        kb_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+        file_id TEXT NOT NULL REFERENCES kb_files(id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        seq INTEGER NOT NULL,
+        title_path TEXT,
+        page_start INTEGER,
+        page_end INTEGER,
+        content TEXT NOT NULL,
+        char_count INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE(file_id, generation, seq)
+      );
+      CREATE INDEX idx_kb_chunks_file_gen ON kb_chunks(file_id, generation);
+      CREATE INDEX idx_kb_chunks_kb ON kb_chunks(kb_id);
+
+      CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(
+        content,
+        content='kb_chunks',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      CREATE TABLE session_kb_bindings (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        kb_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        file_filter TEXT,
+        bound_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, kb_id)
+      );
+      CREATE INDEX idx_session_kb_bindings_session ON session_kb_bindings(session_id);
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

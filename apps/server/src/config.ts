@@ -18,6 +18,7 @@ export interface Config {
   skillsDir: string;
   skillStoreTimeoutMs: number;
   skillsMpApiKey: string;
+  kbFilesDir: string;
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
@@ -41,5 +42,6 @@ export function loadConfig(): Config {
     idleTimeoutMs: Number(process.env.IDLE_TIMEOUT_MS ?? 5 * 60 * 1000),
     suspendedTimeoutMs: Number(process.env.SUSPENDED_TIMEOUT_MS ?? 30 * 60 * 1000),
     noResponseTimeoutMs: Number(process.env.NO_RESPONSE_TIMEOUT_MS ?? 30 * 1000),
+    kbFilesDir: process.env.PI_KB_FILES_DIR ?? path.join(root, "kb-files"),
   };
 }

@@ -44,6 +44,12 @@ importers:
       fastify:
         specifier: 5.10.0
         version: 5.10.0
+      mammoth:
+        specifier: 1.12.0
+        version: 1.12.0
+      marked:
+        specifier: 18.0.6
+        version: 18.0.6
       pino:
         specifier: 9.3.2
         version: 9.3.2
@@ -53,6 +59,9 @@ importers:
       ulid:
         specifier: 2.3.0
         version: 2.3.0
+      unpdf:
+        specifier: 1.6.2
+        version: 1.6.2
     devDependencies:
       '@types/adm-zip':
         specifier: 0.5.8
@@ -1731,6 +1740,14 @@ packages:
   universalify@0.2.0:
     resolution: {integrity: sha512-CJ1QgKmNg3CwvAv/kOFmtnEN05f0D/cn9QntgNOQlQF9dgvVTHj3t+8JPdjqawCHk7V/KA+fbUqzZ9XWhcqPUg==}
     engines: {node: '>= 4.0.0'}
+
+  unpdf@1.6.2:
+    resolution: {integrity: sha512-zQ80ySoPuPHOsvIoRp/nJyQt8TOUoTh1+WBCGcBvlddQNgKDLRwm0AY3x8Q35I7+kIiRSgqMx+Ma2pl9McIp7A==}
+    peerDependencies:
+      '@napi-rs/canvas': ^0.1.69
+    peerDependenciesMeta:
+      '@napi-rs/canvas':
+        optional: true
 
   url-parse@1.5.10:
     resolution: {integrity: sha512-WypcfiRhfeUP9vvF0j6rw0J3hrWrw6iZv3+22h6iRMJ/8z1Tj6XfLP4DsUix5MhMPnXpiHDoKyoZ/bdCkwBCiQ==}
@@ -3508,6 +3525,8 @@ snapshots:
   undici-types@5.26.5: {}
 
   universalify@0.2.0: {}
+
+  unpdf@1.6.2: {}
 
   url-parse@1.5.10:
     dependencies:

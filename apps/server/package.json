@@ -20,9 +20,12 @@
     "better-sqlite3": "12.4.1",
     "dotenv": "17.4.2",
     "fastify": "5.10.0",
+    "mammoth": "1.12.0",
+    "marked": "18.0.6",
     "pino": "9.3.2",
     "pino-pretty": "11.2.2",
-    "ulid": "2.3.0"
+    "ulid": "2.3.0",
+    "unpdf": "1.6.2"
   },
   "devDependencies": {
     "@types/adm-zip": "0.5.8",
