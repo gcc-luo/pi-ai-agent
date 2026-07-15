@@ -18,6 +18,10 @@ const { t } = useI18n();
 
 const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
 
+const projectsCollapsed = ref(false);
+const sessionsCollapsed = ref(false);
+const filesCollapsed = ref(false);
+
 const props = defineProps<{
   selectedProjectId: string | null;
   selectedSessionId: string | null;
@@ -65,27 +69,24 @@ function startDeleteSession(s: SessionDto) {
 
 <template>
   <aside class="sidebar">
-    <!-- Brand -->
-    <div class="sidebar-brand">
-      <span class="brand-symbol">π</span>
-      <div class="brand-text">
-        <span class="brand-name">PI</span>
-        <span class="brand-sub">{{ t('brand.sub') }}</span>
-      </div>
-    </div>
-
-    <!-- Projects -->
-    <div class="sidebar-section">
+    <!-- Projects Section -->
+    <div class="sidebar-section" :class="{ collapsed: projectsCollapsed }">
       <div class="section-header">
-        <span class="section-label">{{ t('sidebar.projects') }}</span>
+        <button type="button" class="section-toggle" :aria-expanded="!projectsCollapsed" @click="projectsCollapsed = !projectsCollapsed">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: projectsCollapsed }">
+            <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-label">项目</span>
+          <span class="section-count">{{ projectStore.projects.length }}</span>
+        </button>
         <button class="section-action" @click="showNewProject = true" :title="t('sidebar.newProject')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
       </div>
 
-      <div class="section-list">
+      <div class="section-list" v-show="!projectsCollapsed">
         <div
           v-for="p in projectStore.projects"
           :key="p.id"
@@ -95,31 +96,22 @@ function startDeleteSession(s: SessionDto) {
         >
           <span class="item-icon">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M1.5 3a1 1 0 011-1h3.586a1 1 0 01.707.293l1.414 1.414a1 1 0 00.707.293h3.586a1 1 0 011 1V11a1 1 0 01-1 1h-9a1 1 0 01-1-1V3z"
-                stroke="currentColor"
-                stroke-width="1.2"
-              />
+              <path d="M1.5 3a1 1 0 011-1h3.586a1 1 0 01.707.293l1.414 1.414a1 1 0 00.707.293h3.586a1 1 0 011 1V11a1 1 0 01-1 1h-9a1 1 0 01-1-1V3z" stroke="currentColor" stroke-width="1.2"/>
             </svg>
           </span>
-          <span class="item-label truncate">{{ p.name }}</span>
+          <div class="item-content">
+            <span class="item-label truncate">{{ p.name }}</span>
+            <span class="item-path truncate">{{ p.workdir }}</span>
+          </div>
           <span class="item-actions">
-            <button
-              class="item-action"
-              :title="t('rename.title')"
-              @click.stop="startRename(p)"
-            >
+            <button class="item-action" :title="t('rename.title')" @click.stop="startRename(p)">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
               </svg>
             </button>
-            <button
-              class="item-action danger"
-              :title="t('delete.confirmTitle')"
-              @click.stop="startDelete(p)"
-            >
+            <button class="item-action danger" :title="t('delete.confirmTitle')" @click.stop="startDelete(p)">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
           </span>
@@ -130,17 +122,24 @@ function startDeleteSession(s: SessionDto) {
       </div>
     </div>
 
-    <!-- Sessions -->
-    <div class="sidebar-section" v-if="selectedProjectId">
+    <!-- Sessions Section -->
+    <div class="sidebar-section" :class="{ collapsed: sessionsCollapsed }" v-if="selectedProjectId">
       <div class="section-header">
-        <span class="section-label">{{ t('sidebar.sessions') }}</span>
+        <button type="button" class="section-toggle" :aria-expanded="!sessionsCollapsed" @click="sessionsCollapsed = !sessionsCollapsed">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: sessionsCollapsed }">
+            <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-label">会话</span>
+          <span class="section-count">{{ sessionStore.sessions.length }}</span>
+        </button>
         <button class="section-action" @click="emit('create-session')" :title="t('sidebar.newSession')">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </button>
       </div>
-      <div class="section-list">
+
+      <div class="section-list" v-show="!sessionsCollapsed">
         <div
           v-for="s in sessionStore.sessions"
           :key="s.id"
@@ -150,55 +149,58 @@ function startDeleteSession(s: SessionDto) {
         >
           <span class="item-icon">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2" />
-              <path d="M4 5h6M4 7.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+              <rect x="1.5" y="2" width="11" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M4 5h6M4 7.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
             </svg>
           </span>
-          <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
-          <span v-if="agent.isSessionBusy(s.id)" class="session-spinner" :title="t('chat.toolRunning')" />
+          <div class="item-content">
+            <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
+          </div>
+          <span v-if="agent.isSessionBusy(s.id)" class="status-dot running" />
           <span class="item-actions">
-            <button
-              class="item-action"
-              :title="t('renameSession.title')"
-              @click.stop="startRenameSession(s)"
-            >
+            <button class="item-action" :title="t('renameSession.title')" @click.stop="startRenameSession(s)">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
               </svg>
             </button>
-            <button
-              class="item-action danger"
-              :title="t('deleteSession.confirmTitle')"
-              @click.stop="startDeleteSession(s)"
-            >
+            <button class="item-action danger" :title="t('deleteSession.confirmTitle')" @click.stop="startDeleteSession(s)">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
           </span>
         </div>
-        <div v-if="!sessionStore.sessions.length" class="empty-hint">
-          {{ t('sidebar.noSessions') }}
+        <div v-if="!sessionStore.sessions.length" class="empty-state">
+          <span class="empty-text">当前项目暂无会话</span>
+          <button class="empty-action" @click="emit('create-session')">新建会话</button>
         </div>
       </div>
     </div>
 
-    <!-- Files -->
-    <div class="sidebar-section sidebar-files" v-if="selectedProjectId">
+    <!-- Files Section -->
+    <div class="sidebar-section sidebar-files" :class="{ collapsed: filesCollapsed }" v-if="selectedProjectId">
       <div class="section-header">
-        <span class="section-label">{{ t('header.files') }}</span>
-        <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <button type="button" class="section-toggle" :aria-expanded="!filesCollapsed" @click="filesCollapsed = !filesCollapsed">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: filesCollapsed }">
+            <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
+          <span class="section-label">文件</span>
         </button>
+        <div class="section-actions">
+          <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
-      <div class="files-tree">
+
+      <div class="files-tree" v-show="!filesCollapsed">
         <FileTree ref="fileTreeRef" :project-id="selectedProjectId" @select="emit('select-file', $event)" />
       </div>
     </div>
 
-    <!-- New Project Dialog -->
+    <!-- Dialogs -->
     <NewProjectDialog
       :show="showNewProject"
       @close="showNewProject = false"
@@ -249,59 +251,10 @@ function startDeleteSession(s: SessionDto) {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-deep);
+  background: var(--background-panel);
+  border-right: 1px solid var(--border-color);
   overflow: hidden;
-  position: relative;
   flex-shrink: 0;
-}
-
-.sidebar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.015) 1px, transparent 0);
-  background-size: 24px 24px;
-  pointer-events: none;
-}
-
-/* ─── Brand ─── */
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 16px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  position: relative;
-}
-
-.brand-symbol {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent);
-  line-height: 1;
-  opacity: 0.8;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-name {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.08em;
-}
-
-.brand-sub {
-  font-size: 10px;
-  color: var(--text-faint);
-  letter-spacing: 0.02em;
 }
 
 /* ─── Sections ─── */
@@ -311,48 +264,86 @@ function startDeleteSession(s: SessionDto) {
   flex-direction: column;
   max-height: 200px;
   min-height: 0;
-  position: relative;
-  padding: 12px 0 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+.sidebar-section.collapsed {
+  max-height: none;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 12px;
-  margin: 0 6px 6px;
+  padding: 10px 12px;
   flex-shrink: 0;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle:hover .section-label {
+  color: var(--text-primary);
+}
+
+.section-toggle svg {
+  transition: transform var(--transition-fast);
+  color: var(--text-secondary);
+}
+.section-toggle svg.rotated {
+  transform: rotate(-90deg);
 }
 
 .section-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  color: var(--text-primary);
+}
+
+.section-count {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  min-width: 18px;
+  padding: 0 6px;
+  text-align: center;
   color: var(--text-secondary);
+  background: var(--background-page);
+  border-radius: 999px;
 }
 
 .section-action {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 1px dashed var(--border-active);
+  width: 24px;
+  height: 24px;
+  border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 .section-action:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--background-hover);
+  color: var(--primary-color);
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ─── List Items ─── */
@@ -360,8 +351,8 @@ function startDeleteSession(s: SessionDto) {
 .section-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 0 6px;
+  gap: 2px;
+  padding: 0 8px 8px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -372,60 +363,66 @@ function startDeleteSession(s: SessionDto) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all var(--transition-fast);
   position: relative;
+  transition: background var(--transition-fast);
 }
 .list-item:hover {
-  background: var(--bg-hover);
+  background: var(--background-hover);
 }
 .list-item.active {
-  background: var(--accent-dim);
+  background: var(--background-selected);
 }
 .list-item.active::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-}
-
-.list-item.active .item-label {
-  color: var(--text-primary);
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--primary-color);
 }
 
 .item-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .list-item.active .item-icon {
-  color: var(--accent);
+  color: var(--primary-color);
 }
-.list-item:hover .item-icon {
-  color: var(--text-secondary);
+
+.item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .item-label {
   font-size: 13px;
-  color: var(--text-secondary);
-  transition: color var(--transition-fast);
-}
-.list-item:hover .item-label {
+  font-weight: 500;
   color: var(--text-primary);
+}
+.list-item.active .item-label {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.item-path {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .item-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
   flex-shrink: 0;
   opacity: 0;
   transition: opacity var(--transition-fast);
@@ -434,6 +431,7 @@ function startDeleteSession(s: SessionDto) {
 .list-item:focus-within .item-actions {
   opacity: 1;
 }
+
 .item-action {
   display: flex;
   align-items: center;
@@ -443,42 +441,73 @@ function startDeleteSession(s: SessionDto) {
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 .item-action:hover {
-  background: var(--bg-hover);
+  background: var(--background-hover);
   color: var(--text-primary);
 }
 .item-action.danger:hover {
-  background: var(--rose-dim, rgba(244, 63, 94, 0.15));
-  color: var(--rose);
+  background: rgba(239, 68, 68, 0.10);
+  color: var(--danger-color);
 }
 
-/* Animated spinner — shown while a session is producing output. */
-.session-spinner {
-  width: 11px;
-  height: 11px;
+/* ─── Status Dot ─── */
+
+.status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  border: 1.5px solid var(--accent-dim);
-  border-top-color: var(--accent);
-  margin-left: auto;
   flex-shrink: 0;
-  animation: sessionSpin 0.7s linear infinite;
+}
+.status-dot.running {
+  background: var(--primary-color);
+  animation: pulse 1.5s ease infinite;
 }
 
-@keyframes sessionSpin {
-  to { transform: rotate(360deg); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
-/* ─── Empty Hints ─── */
+/* ─── Empty State ─── */
 
 .empty-hint {
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--text-faint);
-  font-style: italic;
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 10px;
+}
+
+.empty-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.empty-action {
+  padding: 6px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--background-panel);
+  color: var(--primary-color);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.empty-action:hover {
+  border-color: var(--primary-color);
+  background: var(--primary-light);
 }
 
 /* ─── Files Section ─── */
@@ -490,12 +519,15 @@ function startDeleteSession(s: SessionDto) {
   display: flex;
   flex-direction: column;
 }
+.sidebar-files.collapsed {
+  flex: 0 0 auto;
+}
 
 .files-tree {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 6px;
+  padding: 0 8px 8px;
 }
 </style>

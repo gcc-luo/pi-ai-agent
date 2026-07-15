@@ -3,126 +3,97 @@
 :root {
   /* Typography */
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Code", "Fira Code", monospace;
-  --font-sans: "Sora", system-ui, -apple-system, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* Sizing */
-  --nav-rail-width: 48px;
-  --sidebar-width: 264px;
-  --header-height: 52px;
-  --composer-height: auto;
+  --nav-rail-width: 80px;
+  --sidebar-width: 320px;
+  --header-height: 48px;
 
   /* Radius */
   --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 
   /* Transitions */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --transition-fast: 120ms var(--ease-out);
   --transition-normal: 200ms var(--ease-out);
-  --transition-slow: 350ms var(--ease-out);
 }
 
-/* ─── Dark Palette (default) ─── */
+/* ─── Color Palette ─── */
 
-:root,
-[data-theme="dark"] {
-  --bg-void: #06090f;
-  --bg-deep: #0b1017;
-  --bg-surface: #0f1623;
-  --bg-elevated: #151d2e;
-  --bg-hover: #1c2640;
-  --bg-active: #223050;
+:root {
+  /* Brand - Light Green */
+  --primary-color: #18b89a;
+  --primary-hover: #13a98d;
+  --primary-light: #e9f8f4;
 
-  --accent: #00ddb3;
-  --accent-hover: #20f0c8;
-  --accent-pressed: #00c49e;
-  --accent-dim: rgba(0, 221, 179, 0.12);
-  --accent-glow: rgba(0, 221, 179, 0.25);
+  /* Background */
+  --background-page: #f5f7f9;
+  --background-panel: #ffffff;
+  --background-hover: #f3f7f6;
+  --background-selected: #e8f7f3;
 
-  --amber: #e5a812;
-  --amber-dim: rgba(229, 168, 18, 0.12);
-  --rose: #ef4444;
-  --rose-dim: rgba(239, 68, 68, 0.12);
-  --green: #22c55e;
-  --green-dim: rgba(34, 197, 94, 0.12);
+  /* Borders */
+  --border-color: #e4e9ef;
+  --border-color-light: #edf0f4;
 
-  --text-primary: #e4e8ef;
-  --text-secondary: #8b95a8;
-  --text-muted: #5a6478;
-  --text-faint: #3d4655;
-  --text-accent: var(--accent);
+  /* Text */
+  --text-primary: #1f2937;
+  --text-secondary: #667085;
+  --text-disabled: #98a2b3;
 
-  --border-default: #1c2438;
-  --border-subtle: #151d2e;
-  --border-active: #2a3650;
-  --border-accent: var(--accent);
+  /* Status Colors */
+  --danger-color: #ef4444;
+  --warning-color: #f59e0b;
+  --success-color: #18b89a;
 
-  --chat-user-bg: #e8f0fc;
-  --chat-user-border: rgba(86, 132, 213, 0.22);
-  --chat-user-text: #1a2533;
-  --chat-assistant-bg: #141a2b;
-  --chat-assistant-border: #1e2538;
+  /* Semantic Aliases (for backward compatibility) */
+  --bg-void: var(--background-page);
+  --bg-deep: var(--background-page);
+  --bg-surface: var(--background-panel);
+  --bg-elevated: #f9fafb;
+  --bg-hover: var(--background-hover);
+  --bg-active: var(--background-selected);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 24px var(--accent-glow);
+  --accent: var(--primary-color);
+  --accent-hover: var(--primary-hover);
+  --accent-pressed: #0f9a82;
+  --accent-dim: var(--primary-light);
+  --accent-glow: rgba(24, 184, 154, 0.15);
 
-  --row-hover: rgba(255, 255, 255, 0.02);
-}
+  --amber: var(--warning-color);
+  --amber-dim: rgba(245, 158, 11, 0.10);
+  --rose: var(--danger-color);
+  --rose-dim: rgba(239, 68, 68, 0.10);
+  --green: var(--success-color);
+  --green-dim: rgba(24, 184, 154, 0.10);
 
-/* ─── Light Palette ─── */
+  --text-muted: var(--text-disabled);
+  --text-faint: #c5ccd6;
+  --text-accent: var(--primary-color);
 
-[data-theme="light"] {
-  --bg-void: #f5f7fa;
-  --bg-deep: #eef1f6;
-  --bg-surface: #ffffff;
-  --bg-elevated: #f0f3f8;
-  --bg-hover: #e4e8f0;
-  --bg-active: #d8dde8;
+  --border-default: var(--border-color);
+  --border-subtle: var(--border-color-light);
+  --border-active: #d1d8e0;
+  --border-accent: var(--primary-color);
 
-  --accent: #00b894;
-  --accent-hover: #00d4a8;
-  --accent-pressed: #009d7e;
-  --accent-dim: rgba(0, 184, 148, 0.10);
-  --accent-glow: rgba(0, 184, 148, 0.18);
+  --chat-user-bg: #f3f4f6;
+  --chat-user-border: #e5e7eb;
+  --chat-user-text: #1f2937;
+  --chat-assistant-bg: #ffffff;
+  --chat-assistant-border: var(--border-color);
 
-  --amber: #d4950f;
-  --amber-dim: rgba(212, 149, 15, 0.10);
-  --rose: #dc2626;
-  --rose-dim: rgba(220, 38, 38, 0.10);
-  --green: #16a34a;
-  --green-dim: rgba(22, 163, 74, 0.10);
-
-  --text-primary: #1a202c;
-  --text-secondary: #5a6577;
-  --text-muted: #8b95a8;
-  --text-faint: #c1c8d4;
-  --text-accent: var(--accent);
-
-  --border-default: #dde2ea;
-  --border-subtle: #e8ecf2;
-  --border-active: #c5cdd8;
-  --border-accent: var(--accent);
-
-  --chat-user-bg: #e8f0fc;
-  --chat-user-border: rgba(86, 132, 213, 0.22);
-  --chat-user-text: #1a2533;
-  --chat-assistant-bg: #f0f3f8;
-  --chat-assistant-border: #dde2ea;
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.10);
-  --shadow-glow: 0 0 24px var(--accent-glow);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-glow: none;
 
   --row-hover: rgba(0, 0, 0, 0.02);
 }
 
-/* ─── Reset & Base ─── */
+/* ── Reset & Base ─── */
 
 *,
 *::before,
@@ -136,14 +107,13 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background: var(--bg-void);
+  background: var(--background-page);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background-color 0.25s var(--ease-out), color 0.25s var(--ease-out);
 }
 
 #app {
@@ -162,90 +132,29 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-active);
+  background: #d1d8e0;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: #a0aab5;
 }
 
 /* ─── Selection ─── */
 
 ::selection {
-  background: var(--accent-dim);
-  color: var(--accent);
+  background: var(--primary-light);
+  color: var(--primary-color);
 }
 
 /* ─── Focus ─── */
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary-color);
   outline-offset: 2px;
 }
 
-/* ─── Animations ─── */
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeInFast {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-@keyframes dotBounce {
-  0%, 80%, 100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-5px);
-  }
-}
-
-@keyframes glowPulse {
-  0%, 100% {
-    box-shadow: 0 0 8px var(--accent-dim);
-  }
-  50% {
-    box-shadow: 0 0 20px var(--accent-glow);
-  }
-}
-
-@keyframes gridScroll {
-  0% { background-position: 0 0; }
-  100% { background-position: 24px 24px; }
-}
-
 /* ─── Utility ─── */
-
-.animate-in {
-  animation: fadeIn 0.3s var(--ease-out) both;
-}
 
 .truncate {
   overflow: hidden;
