@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
-import { NConfigProvider, darkTheme, NSelect } from "naive-ui";
+import { NConfigProvider, NSelect } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
@@ -14,14 +14,12 @@ import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
-import { useThemeStore } from "./stores/theme.js";
 import { useI18n } from "./i18n/index.js";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
 const connection = useConnectionStore();
 const agent = useAgentStore();
-const themeStore = useThemeStore();
 const { t } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
@@ -121,66 +119,20 @@ async function deleteSession(id: string) {
   }
 }
 
-const darkOverrides = {
-  common: {
-    primaryColor: "#00ddb3",
-    primaryColorHover: "#20f0c8",
-    primaryColorPressed: "#00c49e",
-    primaryColorSuppl: "#00ddb3",
-    bodyColor: "#0b1017",
-    cardColor: "#0f1623",
-    modalColor: "#151d2e",
-    popoverColor: "#151d2e",
-    inputColor: "#151d2e",
-    actionColor: "#1c2640",
-    borderColor: "#1c2438",
-    dividerColor: "#1c2438",
-    textColor1: "#e4e8ef",
-    textColor2: "#8b95a8",
-    textColor3: "#5a6478",
-    borderRadius: "8px",
-    borderRadiusSmall: "4px",
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
-    fontFamilyMono: '"IBM Plex Mono", ui-monospace, monospace',
-  },
-  Button: {
-    colorPrimary: "#00ddb3",
-    colorHoverPrimary: "#20f0c8",
-    colorPressedPrimary: "#00c49e",
-    textColorPrimary: "#06090f",
-    textColorHoverPrimary: "#06090f",
-    textColorPressedPrimary: "#06090f",
-    borderRadiusMedium: "8px",
-  },
-  Input: {
-    color: "#151d2e",
-    colorFocus: "#151d2e",
-    border: "1px solid #1c2438",
-    borderHover: "1px solid #2a3650",
-    borderFocus: "1px solid #00ddb3",
-    borderRadius: "8px",
-    caretColor: "#00ddb3",
-  },
-  Tree: {
-    nodeColorHover: "#1c2640",
-    nodeColorActive: "#223050",
-  },
-};
-
 const lightOverrides = {
   common: {
     primaryColor: "#00b894",
     primaryColorHover: "#00d4a8",
     primaryColorPressed: "#009d7e",
     primaryColorSuppl: "#00b894",
-    bodyColor: "#eef1f6",
+    bodyColor: "#f5f7f9",
     cardColor: "#ffffff",
-    modalColor: "#f0f3f8",
-    popoverColor: "#f0f3f8",
-    inputColor: "#f0f3f8",
-    actionColor: "#e4e8f0",
-    borderColor: "#dde2ea",
-    dividerColor: "#dde2ea",
+    modalColor: "#ffffff",
+    popoverColor: "#ffffff",
+    inputColor: "#ffffff",
+    actionColor: "#f8fafc",
+    borderColor: "#cfd9e3",
+    dividerColor: "#dbe3eb",
     textColor1: "#1a202c",
     textColor2: "#5a6577",
     textColor3: "#8b95a8",
@@ -199,10 +151,10 @@ const lightOverrides = {
     borderRadiusMedium: "8px",
   },
   Input: {
-    color: "#f0f3f8",
-    colorFocus: "#f0f3f8",
-    border: "1px solid #dde2ea",
-    borderHover: "1px solid #c5cdd8",
+    color: "#ffffff",
+    colorFocus: "#ffffff",
+    border: "1px solid #cfd9e3",
+    borderHover: "1px solid #aebdcb",
     borderFocus: "1px solid #00b894",
     borderRadius: "8px",
     caretColor: "#00b894",
@@ -213,8 +165,10 @@ const lightOverrides = {
   },
 };
 
-const naiveTheme = computed(() => themeStore.isDark ? darkTheme : null);
-const themeOverrides = computed(() => themeStore.isDark ? darkOverrides : lightOverrides);
+// The application shell is intentionally light. Keeping Naive UI on the same
+// palette prevents teleported menus, drawers and modal inputs from falling
+// back to a stale dark preference stored in localStorage or the OS setting.
+const naiveTheme = null;
 
 const hasWorkspace = computed(
   () => selectedProjectId.value && selectedSessionId.value,
@@ -232,7 +186,7 @@ function closePreview() {
 </script>
 
 <template>
-  <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
+  <NConfigProvider :theme="naiveTheme" :theme-overrides="lightOverrides">
     <div class="app-shell">
       <NavRail :active-nav="activeNav" @navigate="activeNav = $event" />
 
@@ -390,6 +344,15 @@ function closePreview() {
 
 .model-select {
   width: 180px;
+}
+.model-select :deep(.n-base-selection) {
+  background: var(--bg-surface);
+}
+.model-select :deep(.n-base-selection .n-base-selection-label) {
+  background: var(--bg-surface);
+}
+.model-select :deep(.n-base-selection-input) {
+  background: transparent;
 }
 
 .connection-status {

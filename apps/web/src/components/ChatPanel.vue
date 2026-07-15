@@ -1175,6 +1175,12 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 .composer-input {
   flex: 1;
 }
+.composer-input :deep(.n-input) {
+  background: var(--bg-surface);
+}
+.composer-input :deep(.n-input__textarea-el) {
+  background: transparent;
+}
 
 /* ─── Skill Chips ─── */
 
