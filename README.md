@@ -66,9 +66,9 @@ pnpm dev
 
 启动后：
 
-- 前端开发服务器监听 `http://localhost:5173`（Vite）
-- 后端监听 `http://127.0.0.1:5174`（Fastify）
-- 前端已配置代理，`/api` 与 `/ws` 自动转发到后端，浏览器打开 `http://localhost:5173` 即可
+- 前端开发服务器监听 `http://localhost:3000`（Vite）
+- 后端监听 `http://127.0.0.1:8080`（Fastify）
+- 前端已配置代理，`/api` 与 `/ws` 自动转发到后端，浏览器打开 `http://localhost:3000` 即可
 
 ### 配置
 
@@ -76,7 +76,7 @@ pnpm dev
 
 ```bash
 # 服务监听
-PORT=5174
+PORT=8080
 HOST=127.0.0.1
 LOG_LEVEL=info
 

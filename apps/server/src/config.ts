@@ -26,7 +26,7 @@ export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
   fs.mkdirSync(root, { recursive: true });
   return {
-    port: Number(process.env.PORT ?? 5174),
+    port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "127.0.0.1",
     dbPath: path.join(root, "pi-web-ui.sqlite"),
     logLevel: process.env.LOG_LEVEL ?? "info",
