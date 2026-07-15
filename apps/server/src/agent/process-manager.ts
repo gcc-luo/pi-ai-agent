@@ -163,6 +163,9 @@ export class ProcessManager extends EventEmitter {
       cwd: input.workdir,
       stdio: ["pipe", "pipe", "pipe"],
       env,
+      // Windows resolves `npx`/`pnpm` as .cmd shims that spawn() cannot open
+      // without a shell; enabling it here avoids `spawn npx ENOENT`.
+      shell: process.platform === "win32",
     });
 
     const proc: AgentProcess = new EventEmitter() as unknown as AgentProcess;
@@ -191,9 +194,22 @@ export class ProcessManager extends EventEmitter {
         .filter((l) => !isIgnorableStderr(l))
         .forEach((l) => (proc as unknown as EventEmitter).emit("stderr", l));
     });
-    child.on("exit", (code: number | null) => {
+    // Spawn failures (e.g. command not found) emit 'error' instead of
+    // 'exit'. Fold them into the normal exit path so the session is marked
+    // crashed and the client gets a message, rather than an unhandled 'error'
+    // event taking down the whole backend.
+    let exited = false;
+    const reportExit = (code: number | null) => {
+      if (exited) return;
+      exited = true;
       proc.status = code === 0 ? "suspended" : "crashed";
       (proc as unknown as EventEmitter).emit("exit", code);
+    };
+    child.on("exit", reportExit);
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      this.log.error({ err: err.message, code: err.code, syscall: err.syscall }, "agent process spawn failed");
+      (proc as unknown as EventEmitter).emit("stderr", `failed to spawn agent process (${this.command}): ${err.message}`);
+      reportExit(1);
     });
 
     this.procs.set(input.sessionId, proc);
