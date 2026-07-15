@@ -140,7 +140,7 @@ const darkOverrides = {
     textColor3: "#5a6478",
     borderRadius: "8px",
     borderRadiusSmall: "4px",
-    fontFamily: '"Sora", system-ui, -apple-system, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
     fontFamilyMono: '"IBM Plex Mono", ui-monospace, monospace',
   },
   Button: {
@@ -186,7 +186,7 @@ const lightOverrides = {
     textColor3: "#8b95a8",
     borderRadius: "8px",
     borderRadiusSmall: "4px",
-    fontFamily: '"Sora", system-ui, -apple-system, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
     fontFamilyMono: '"IBM Plex Mono", ui-monospace, monospace',
   },
   Button: {
