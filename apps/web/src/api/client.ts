@@ -1,6 +1,7 @@
 import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
+  KbDto, KbFileDto, KbChunkDto, KbBindingDto, KbSearchHitDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -97,4 +98,43 @@ export const api = {
 
   browseDir: (dirPath?: string) =>
     request<{ currentPath: string; parentPath: string; directories: { name: string; path: string }[] }>("GET", `/fs/browse${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),
+
+  // ─── Knowledge Base ───
+  listKnowledgeBases: () => request<KbDto[]>("GET", "/knowledge-bases"),
+  createKnowledgeBase: (name: string, description?: string) =>
+    request<KbDto>("POST", "/knowledge-bases", { name, description }),
+  getKnowledgeBase: (id: string) => request<KbDto>("GET", `/knowledge-bases/${id}`),
+  updateKnowledgeBase: (id: string, patch: { name?: string; description?: string | null; enabled?: boolean }) =>
+    request<KbDto>("PUT", `/knowledge-bases/${id}`, patch),
+  deleteKnowledgeBase: (id: string) => request<void>("DELETE", `/knowledge-bases/${id}`),
+
+  listKbFiles: (kbId: string) => request<KbFileDto[]>("GET", `/knowledge-bases/${kbId}/files`),
+  createKbFile: (kbId: string, name: string, ext: string, content: string) =>
+    request<KbFileDto>("POST", `/knowledge-bases/${kbId}/files`, { name, ext, content }),
+  importKbFiles: (kbId: string, files: File[]) => {
+    const form = new FormData();
+    for (const f of files) form.append("file", f);
+    return fetch(BASE + `/knowledge-bases/${kbId}/files/import`, { method: "POST", body: form }).then(async (res) => {
+      const data = await res.json().catch(() => ({ error: "parse_failed" }));
+      if (!res.ok) throw new Error((data as any)?.error ?? `import failed: ${res.status}`);
+      return data as { imported: KbFileDto[]; errors: { name: string; error: string }[] };
+    });
+  },
+  getKbFile: (id: string) => request<KbFileDto>("GET", `/kb-files/${id}`),
+  getKbFileContent: (id: string) =>
+    request<{ name: string; content: string; size: number }>("GET", `/kb-files/${id}/content`),
+  getKbFileChunks: (id: string) => request<KbChunkDto[]>("GET", `/kb-files/${id}/chunks`),
+  updateKbFile: (id: string, patch: { name?: string; content?: string }) =>
+    request<KbFileDto>("PUT", `/kb-files/${id}`, patch),
+  setKbFileEnabled: (id: string, enabled: boolean) =>
+    request<KbFileDto>("PUT", `/kb-files/${id}/enabled`, { enabled }),
+  reparseKbFile: (id: string) => request<{ message: string }>("POST", `/kb-files/${id}/reparse`),
+  deleteKbFile: (id: string) => request<void>("DELETE", `/kb-files/${id}`),
+
+  searchKb: (query: string, kbIds: string[], fileIds?: string[], limit?: number) =>
+    request<{ hits: KbSearchHitDto[]; durationMs: number }>("POST", "/kb-search", { query, kbIds, fileIds, limit }),
+
+  getKbBindings: (sessionId: string) => request<KbBindingDto[]>("GET", `/sessions/${sessionId}/kb-bindings`),
+  setKbBindings: (sessionId: string, bindings: { kbId: string; fileFilter?: string[] | null }[]) =>
+    request<KbBindingDto[]>("PUT", `/sessions/${sessionId}/kb-bindings`, bindings),
 };

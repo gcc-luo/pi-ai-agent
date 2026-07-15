@@ -3,11 +3,11 @@ import { useConnectionStore } from "../stores/connection.js";
 import { useI18n } from "../i18n/index.js";
 
 defineProps<{
-  activeNav: "chat" | "model" | "skill-store";
+  activeNav: "chat" | "model" | "skill-store" | "knowledge-base";
 }>();
 
 defineEmits<{
-  (e: "navigate", nav: "chat" | "model" | "skill-store"): void;
+  (e: "navigate", nav: "chat" | "model" | "skill-store" | "knowledge-base"): void;
 }>();
 
 const connection = useConnectionStore();
@@ -58,6 +58,18 @@ const { currentLocale, toggleLocale } = useI18n();
           <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
         <span class="nav-label">技能</span>
+      </button>
+
+      <button
+        class="nav-item"
+        :class="{ active: activeNav === 'knowledge-base' }"
+        @click="$emit('navigate', 'knowledge-base')"
+      >
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M3 3h4a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H3V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+        </svg>
+        <span class="nav-label">知识库</span>
       </button>
     </div>
 

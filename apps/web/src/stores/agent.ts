@@ -71,6 +71,10 @@ export const useAgentStore = defineStore("agent", {
     // to debounce-refresh its tree without coupling to a specific session.
     fileChangeSeq: 0,
     lastFileChange: null as { sessionId: string; toolName: string; at: number } | null,
+    // KB search states keyed by sessionId — each entry tracks the latest
+    // kb_search event for that session so the chat panel can render the
+    // call card under the user message that triggered the search.
+    kbSearches: {} as Record<string, { phase: string; query: string; hits?: any[]; durationMs?: number; error?: string; at: number }>,
   }),
   getters: {
     messagesFor: (state) => (sessionId: string): StreamMessage[] => state.streams[sessionId] ?? [],
@@ -227,6 +231,15 @@ export const useAgentStore = defineStore("agent", {
       } else if (e.type === "file_changed") {
         this.fileChangeSeq++;
         this.lastFileChange = { sessionId: e.sessionId, toolName: e.toolName, at: Date.now() };
+      } else if (e.type === "kb_search") {
+        this.kbSearches[sid] = {
+          phase: e.phase,
+          query: e.query,
+          hits: e.hits,
+          durationMs: e.durationMs,
+          error: e.error,
+          at: Date.now(),
+        };
       } else if (e.type === "raw") {
         // Compatibility fallback for servers that have not yet been upgraded
         // to emit `agent_status`.

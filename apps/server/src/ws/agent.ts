@@ -1,6 +1,8 @@
 import { FastifyPluginAsync } from "fastify";
 import { ClientEvent, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
+import { buildKbContext } from "../kb/inject-context.js";
+import { ulid } from "../util/ulid.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
@@ -129,12 +131,65 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       app.sessionStates.touch(event.sessionId);
       if (event.type === "send" || event.type === "steer") {
         if (event.type === "send") {
-          // Mark the session immediately, before Pi emits its first event, so
-          // the send control cannot briefly return to its idle appearance.
           state.send({ type: "agent_status", sessionId: session.id, status: "working" });
         }
-        state.bridge.send({ type: event.type, sessionId: event.sessionId, content: event.content });
-        app.messages.append({ sessionId: event.sessionId, role: "user", content: event.content });
+
+        // KB search interception: inject context before forwarding to Pi
+        let content = event.content;
+        let kbSearchMeta: Record<string, unknown> | undefined;
+
+        if (event.type === "send") {
+          const bindings = app.kbBindings.listBySession(event.sessionId);
+          const enabledBindings = bindings.filter((b) => b.enabled);
+          if (enabledBindings.length > 0) {
+            const messageId = ulid();
+            const kbIds = enabledBindings.map((b) => b.kbId);
+            const allFileIds = enabledBindings.flatMap((b) => b.fileFilter ?? []);
+            const fileIds = allFileIds.length > 0 ? allFileIds : undefined;
+
+            send({
+              type: "kb_search", sessionId: session.id, messageId,
+              phase: "searching", query: event.content, kbIds, fileIds,
+            });
+
+            try {
+              const result = await app.kbSearch.search({ query: event.content, kbIds, fileIds, limit: 5 });
+              if (result.hits.length > 0) {
+                const { contextBlock, chunkMap } = buildKbContext(result.hits);
+                send({
+                  type: "kb_search", sessionId: session.id, messageId,
+                  phase: "done", query: event.content, kbIds, fileIds,
+                  hits: result.hits, chunkMap, durationMs: result.durationMs,
+                });
+                content = `${contextBlock}\n\n${content}`;
+                kbSearchMeta = {
+                  phase: "done", query: event.content, kbIds, fileIds,
+                  hits: result.hits.map((h, i) => ({
+                    localId: i + 1, chunkId: h.chunkId, kbName: h.kbName,
+                    fileName: h.fileName, titlePath: h.titlePath,
+                    pageStart: h.pageStart, pageEnd: h.pageEnd,
+                  })),
+                  durationMs: result.durationMs, timestamp: Date.now(),
+                };
+              } else {
+                send({
+                  type: "kb_search", sessionId: session.id, messageId,
+                  phase: "empty", query: event.content, kbIds, fileIds,
+                });
+              }
+            } catch (err: any) {
+              send({
+                type: "kb_search", sessionId: session.id, messageId,
+                phase: "failed", query: event.content, kbIds, fileIds,
+                error: err.message,
+              });
+            }
+          }
+        }
+
+        state.bridge.send({ type: event.type, sessionId: event.sessionId, content });
+        const msgMeta = kbSearchMeta ? { kbSearch: kbSearchMeta } : undefined;
+        app.messages.append({ sessionId: event.sessionId, role: "user", content, metadata: msgMeta as any });
         if (event.type === "send" && session.title == null) {
           const derived = deriveDefaultTitle(event.content);
           if (derived) {

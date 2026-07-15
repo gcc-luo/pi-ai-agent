@@ -10,6 +10,7 @@ const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vu
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
 const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStoreView.vue"));
+const KnowledgeBaseView = defineAsyncComponent(() => import("./components/KnowledgeBaseView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
@@ -25,7 +26,7 @@ const { t } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model" | "skill-store">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base">("chat");
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -276,6 +277,7 @@ function closePreview() {
 
       <ModelPanel v-else-if="activeNav === 'model'" />
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
+      <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
     </div>
   </NConfigProvider>
 </template>

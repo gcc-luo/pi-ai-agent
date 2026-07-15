@@ -7,18 +7,55 @@ import { useI18n } from "../i18n/index.js";
 import SkillSelect from "./SkillSelect.vue";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
+import { useKbBindingStore } from "../stores/kb-binding.js";
+import { useKbStore } from "../stores/kb.js";
+import ChatKbPicker from "./ChatKbPicker.vue";
+import ChatKbBanner from "./ChatKbBanner.vue";
+import ChatKbCallCard from "./ChatKbCallCard.vue";
+import type { KbCallState } from "./ChatKbCallCard.vue";
 import type { MessagePart } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
+import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 
 const props = defineProps<{ sessionId: string }>();
 const agent = useAgentStore();
 const { t } = useI18n();
 const skillStore = useSkillStore();
+const kbBindingStore = useKbBindingStore();
+const kbStore = useKbStore();
 const showImportSkill = ref(false);
 const input = ref("");
 const selectedSkills = ref<string[]>([]);
 const messagesEl = ref<HTMLElement | null>(null);
+
+// Track kb_search states per user message — keyed by user message id
+const kbSearchByMessage = ref<Record<string, KbCallState>>({});
+
+// Watch agent store's kbSearches to assign to user messages
+watch(
+  () => agent.kbSearches[props.sessionId],
+  (search) => {
+    if (!search) return;
+    // Find the last user message in the current messages
+    const lastPersisted = [...persistedMessages.value].reverse().find((m) => m.role === "user");
+    const lastLive = [...messages.value].reverse().find((m) => m.role === "user");
+    const lastUser = lastLive ?? lastPersisted;
+    if (lastUser) {
+      const msgId = lastUser.id;
+      kbSearchByMessage.value = {
+        ...kbSearchByMessage.value,
+        [msgId]: {
+          phase: search.phase as KbCallState["phase"],
+          query: search.query,
+          hits: search.hits,
+          durationMs: search.durationMs,
+          error: search.error,
+        },
+      };
+    }
+  },
+);
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
 
@@ -55,7 +92,7 @@ function splitSkillsFromText(text: string): { text: string; skills: string[]; ti
       tipLabel = "已附加技能提示";
     }
   }
-  const stripped = text.replace(TIP_BLOCK_RE, "");
+  const stripped = text.replace(TIP_BLOCK_RE, "").replace(/<!-- kb-context:start -->[\s\S]*?<!-- kb-context:end -->\n*/g, "");
   if (!known.size) {
     return { text: stripped.trim() || "", skills: [], tipLabel };
   }
@@ -73,12 +110,36 @@ const persistedMessages = ref<{ id: string; role: string; content: string | null
 
 async function loadMessages() {
   persistedMessages.value = await api.listMessages(props.sessionId);
+  // Restore kb_search metadata from persisted messages
+  const restored: Record<string, KbCallState> = {};
+  for (const m of persistedMessages.value) {
+    if (m.role !== "user") continue;
+    const meta = getKbSearchMeta(m.metadata);
+    if (meta) {
+      restored[m.id] = {
+        phase: meta.phase as KbCallState["phase"],
+        query: meta.query,
+        hits: meta.hits,
+        durationMs: meta.durationMs,
+      };
+    }
+  }
+  kbSearchByMessage.value = { ...kbSearchByMessage.value, ...restored };
   await nextTick();
   scrollToBottom();
 }
 
-onMounted(loadMessages);
-watch(() => props.sessionId, loadMessages);
+onMounted(async () => {
+  await loadMessages();
+  await kbBindingStore.load(props.sessionId);
+  await kbStore.loadAll();
+});
+
+watch(() => props.sessionId, async () => {
+  await loadMessages();
+  await kbBindingStore.load(props.sessionId);
+  kbSearchByMessage.value = {};
+});
 
 watch(
   () => messages.value.length,
@@ -201,6 +262,7 @@ const allMessages = computed(() => {
     streaming: false,
     persisted: true,
     createdAt: m.createdAt,
+    metadata: m.metadata,
   }));
   const live = messages.value.map((m) => ({
     id: m.id,
@@ -209,13 +271,81 @@ const allMessages = computed(() => {
     streaming: m.status === "streaming",
     persisted: false,
     createdAt: m.createdAt,
+    metadata: null as Record<string, unknown> | null,
   }));
   const all = [...persisted, ...live];
   // Show the AGENT header only on the first message of a consecutive assistant group.
   return all.map((m, i) => ({
     ...m,
     showHeader: m.role !== "assistant" || all[i - 1]?.role !== "assistant",
+    kbSearch: kbSearchByMessage.value[m.id] ?? null,
+    // Build chunkMap from persisted metadata or live search state for citation rendering
+    chunkMap: buildChunkMap(m.id, m.metadata),
   }));
+});
+
+function buildChunkMap(
+  msgId: string,
+  metadata: Record<string, unknown> | null,
+): Record<number, { kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }> {
+  // From live kb_search state
+  const liveSearch = kbSearchByMessage.value[msgId];
+  if (liveSearch?.hits) {
+    const map: Record<number, any> = {};
+    for (const hit of liveSearch.hits) {
+      map[hit.localId] = {
+        kbName: hit.kbName,
+        fileName: hit.fileName,
+        titlePath: hit.titlePath,
+        pageStart: hit.pageStart,
+        pageEnd: hit.pageEnd,
+      };
+    }
+    return map;
+  }
+  // From persisted metadata — the user message's metadata contains kbSearch,
+  // but the *assistant* message's citations reference the same chunkMap.
+  // The assistant doesn't have kbSearch in its metadata; we need to find the
+  // preceding user message's kbSearch metadata to build the chunkMap.
+  // For simplicity, we'll handle this at the template level.
+  return {};
+}
+
+// Build a session-wide chunkMap from the most recent user message's kbSearch metadata.
+// This allows assistant messages that reference [N] to resolve citations.
+const sessionChunkMap = computed(() => {
+  const map: Record<number, { kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }> = {};
+  // Check persisted messages for kbSearch metadata on user messages
+  for (const m of persistedMessages.value) {
+    if (m.role !== "user") continue;
+    const meta = getKbSearchMeta(m.metadata);
+    if (meta?.hits) {
+      for (const hit of meta.hits) {
+        map[hit.localId] = {
+          kbName: hit.kbName,
+          fileName: hit.fileName,
+          titlePath: hit.titlePath,
+          pageStart: hit.pageStart,
+          pageEnd: hit.pageEnd,
+        };
+      }
+    }
+  }
+  // Check live kb_search states
+  for (const state of Object.values(kbSearchByMessage.value)) {
+    if (state.hits) {
+      for (const hit of state.hits) {
+        map[hit.localId] = {
+          kbName: hit.kbName,
+          fileName: hit.fileName,
+          titlePath: hit.titlePath,
+          pageStart: hit.pageStart,
+          pageEnd: hit.pageEnd,
+        };
+      }
+    }
+  }
+  return map;
 });
 
 const sessionErrors = computed(() =>
@@ -312,7 +442,7 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
                 <div v-if="split.text" class="msg-content" v-html="renderMarkdown(split.text)"></div>
               </template>
             </template>
-            <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderMarkdown(p.text)"></div>
+            <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
             <details v-else-if="p.kind === 'thinking'" class="thinking-trace">
               <summary class="thinking-summary">
                 <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
@@ -355,6 +485,8 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
             </details>
           </template>
         </div>
+        <!-- KB search call card (shown under user messages) -->
+        <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
         <div
           v-if="m.createdAt"
           class="msg-time"
@@ -371,6 +503,7 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 
     <!-- Composer -->
     <div class="composer">
+      <ChatKbBanner :session-id="sessionId" />
       <div v-if="pendingTipLabel" class="tip-banner">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2" />
@@ -407,6 +540,7 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
           @select="onSkillSelect"
           @import="showImportSkill = true"
         />
+        <ChatKbPicker :session-id="sessionId" />
         <button
           v-if="isBusy"
           class="send-btn stop"
@@ -1339,5 +1473,32 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 @keyframes stopPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.0); }
   50%      { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.16); }
+}
+
+/* ─── KB Citation Chips ─── */
+
+.msg-content :deep(.kb-citation-chip) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(0, 184, 148, 0.3);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+  white-space: nowrap;
+  vertical-align: baseline;
+  line-height: 1.4;
+  transition: all var(--transition-fast);
+}
+.msg-content :deep(.kb-citation-chip:hover) {
+  background: var(--accent);
+  color: var(--bg-void);
+  border-color: var(--accent);
 }
 </style>

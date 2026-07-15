@@ -1,0 +1,425 @@
+<script setup lang="ts">
+import { ref, computed } from "vue";
+import { NButton, NSwitch, NInput, NSelect, NEmpty, NSpin } from "naive-ui";
+import { useKbFileStore } from "../stores/kb-file.js";
+import { useI18n } from "../i18n/index.js";
+import type { KbFileDto } from "@pi-web-ui/shared";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import ImportFilesDialog from "./ImportFilesDialog.vue";
+import KbFileDetailDrawer from "./KbFileDetailDrawer.vue";
+import KbFileEditorDrawer from "./KbFileEditorDrawer.vue";
+
+const props = defineProps<{ kbId: string }>();
+
+const kbFileStore = useKbFileStore();
+const { t } = useI18n();
+
+const searchQuery = ref("");
+const statusFilter = ref<string | null>(null);
+const extFilter = ref<string | null>(null);
+const showImport = ref(false);
+const showCreateEditor = ref(false);
+const detailFileId = ref<string | null>(null);
+const editFileId = ref<string | null>(null);
+const deleteTarget = ref<KbFileDto | null>(null);
+
+const files = computed(() => kbFileStore.files[props.kbId] ?? []);
+
+const filteredFiles = computed(() => {
+  let list = files.value;
+  const q = searchQuery.value.trim().toLowerCase();
+  if (q) list = list.filter((f) => f.name.toLowerCase().includes(q));
+  if (statusFilter.value) list = list.filter((f) => f.status === statusFilter.value);
+  if (extFilter.value) list = list.filter((f) => f.ext === extFilter.value);
+  return list;
+});
+
+const statusOptions = computed(() => [
+  { label: t("kb.file.status.pending"), value: "pending" },
+  { label: t("kb.file.status.parsing"), value: "parsing" },
+  { label: t("kb.file.status.ready"), value: "ready" },
+  { label: t("kb.file.status.failed"), value: "failed" },
+]);
+
+const extOptions = computed(() => [
+  { label: ".txt", value: "txt" },
+  { label: ".md", value: "md" },
+  { label: ".pdf", value: "pdf" },
+  { label: ".docx", value: "docx" },
+]);
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function statusColor(status: string): string {
+  switch (status) {
+    case "ready": return "var(--green)";
+    case "parsing": return "var(--amber)";
+    case "failed": return "var(--rose)";
+    default: return "var(--text-muted)";
+  }
+}
+
+async function handleToggleEnabled(file: KbFileDto, enabled: boolean) {
+  try {
+    await kbFileStore.toggleEnabled(file.id, enabled);
+  } catch (e: any) {
+    console.error("Failed to toggle file:", e);
+  }
+}
+
+async function handleReparse(file: KbFileDto) {
+  try {
+    await kbFileStore.reparse(file.id);
+    // Reload to get updated status
+    await kbFileStore.loadForKb(props.kbId);
+  } catch (e: any) {
+    console.error("Failed to reparse:", e);
+  }
+}
+
+function requestDelete(file: KbFileDto) {
+  deleteTarget.value = file;
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return;
+  try {
+    await kbFileStore.remove(deleteTarget.value.id, props.kbId);
+  } catch (e: any) {
+    console.error("Failed to delete file:", e);
+  } finally {
+    deleteTarget.value = null;
+  }
+}
+
+function openDetail(fileId: string) {
+  detailFileId.value = fileId;
+}
+
+function openEditor(fileId: string) {
+  editFileId.value = fileId;
+}
+
+function openCreateEditor() {
+  editFileId.value = "__new__";
+  showCreateEditor.value = true;
+}
+
+function closeCreateEditor() {
+  showCreateEditor.value = false;
+  editFileId.value = null;
+}
+
+async function handleImportDone() {
+  showImport.value = false;
+  await kbFileStore.loadForKb(props.kbId);
+}
+</script>
+
+<template>
+  <div class="kb-file-tab">
+    <!-- Toolbar -->
+    <div class="file-toolbar">
+      <NInput
+        v-model:value="searchQuery"
+        size="small"
+        :placeholder="t('kb.search.placeholder')"
+        clearable
+        class="file-search"
+      />
+      <NSelect
+        v-model:value="statusFilter"
+        :options="statusOptions"
+        size="small"
+        clearable
+        :placeholder="t('kb.file.status.ready')"
+        class="file-filter"
+      />
+      <NSelect
+        v-model:value="extFilter"
+        :options="extOptions"
+        size="small"
+        clearable
+        :placeholder="t('kb.search.fileType')"
+        class="file-filter"
+      />
+      <div class="file-toolbar-spacer" />
+      <NButton size="small" @click="openCreateEditor">
+        {{ t('kb.file.new') }}
+      </NButton>
+      <NButton size="small" type="primary" @click="showImport = true">
+        {{ t('kb.file.import') }}
+      </NButton>
+    </div>
+
+    <!-- File list -->
+    <div class="file-body">
+      <div v-if="kbFileStore.loading && !files.length" class="file-state">
+        <NSpin size="small" />
+      </div>
+      <div v-else-if="!files.length" class="file-state">
+        <NEmpty :description="t('kb.empty')" />
+      </div>
+      <div v-else-if="!filteredFiles.length" class="file-state">
+        <NEmpty :description="t('kb.search.noResults')" />
+      </div>
+      <table v-else class="file-table">
+        <thead>
+          <tr>
+            <th class="col-name">{{ t('kb.name') }}</th>
+            <th class="col-ext">{{ t('kb.search.fileType') }}</th>
+            <th class="col-size">Size</th>
+            <th class="col-status">Status</th>
+            <th class="col-chunks">{{ t('kb.chunkCount', { count: '' }) }}</th>
+            <th class="col-enabled">{{ t('kb.enabled') }}</th>
+            <th class="col-actions" />
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="file in filteredFiles" :key="file.id">
+            <td class="col-name">
+              <button class="file-name-btn" @click="openDetail(file.id)">
+                {{ file.name }}
+              </button>
+            </td>
+            <td class="col-ext">
+              <span class="ext-badge">.{{ file.ext }}</span>
+            </td>
+            <td class="col-size">{{ formatSize(file.size) }}</td>
+            <td class="col-status">
+              <span class="status-dot" :style="{ background: statusColor(file.status) }" />
+              {{ t(`kb.file.status.${file.status}`) }}
+              <span v-if="file.status === 'failed' && file.failReason" class="fail-hint" :title="file.failReason">
+                ({{ t(`kb.file.fail.${file.failReason}`) !== `kb.file.fail.${file.failReason}` ? t(`kb.file.fail.${file.failReason}`) : file.failReason }})
+              </span>
+            </td>
+            <td class="col-chunks">{{ file.chunkCount ?? '—' }}</td>
+            <td class="col-enabled">
+              <NSwitch
+                :value="file.enabled"
+                size="small"
+                @update:value="(v: boolean) => handleToggleEnabled(file, v)"
+              />
+            </td>
+            <td class="col-actions">
+              <button
+                v-if="['txt', 'md'].includes(file.ext)"
+                class="action-btn"
+                :title="t('kb.file.edit')"
+                @click="openEditor(file.id)"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button
+                class="action-btn"
+                :title="t('kb.file.reparse')"
+                @click="handleReparse(file)"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                  <path d="M11.3 1.5v3h-3M2.7 12.5v-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button
+                class="action-btn action-danger"
+                :title="t('kb.file.delete')"
+                @click="requestDelete(file)"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Drawers & Dialogs -->
+    <KbFileDetailDrawer
+      :show="detailFileId !== null"
+      :file-id="detailFileId"
+      @close="detailFileId = null"
+    />
+    <KbFileEditorDrawer
+      :show="editFileId !== null"
+      :file-id="editFileId === '__new__' ? null : editFileId"
+      :kb-id="kbId"
+      :is-new="editFileId === '__new__'"
+      @close="editFileId = null"
+      @saved="editFileId = null; kbFileStore.loadForKb(kbId)"
+    />
+    <ImportFilesDialog
+      :show="showImport"
+      :kb-id="kbId"
+      @close="showImport = false"
+      @done="handleImportDone"
+    />
+    <ConfirmDialog
+      :show="deleteTarget !== null"
+      :title="t('file.deleteTitle')"
+      :message="t('file.deleteMessage')"
+      :confirm-label="t('file.deleteConfirm')"
+      :cancel-label="t('file.deleteCancel')"
+      :danger="true"
+      @close="deleteTarget = null"
+      @confirm="confirmDelete"
+    />
+  </div>
+</template>
+
+<style scoped>
+.kb-file-tab {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.file-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 28px 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.file-search {
+  width: 200px;
+}
+.file-filter {
+  width: 120px;
+}
+.file-toolbar-spacer {
+  flex: 1;
+}
+
+.file-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 28px 24px;
+}
+.file-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.file-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+.file-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+.file-table tr:hover td {
+  background: var(--bg-hover);
+}
+.col-name {
+  min-width: 140px;
+}
+.col-ext {
+  width: 60px;
+}
+.col-size {
+  width: 80px;
+}
+.col-status {
+  width: 160px;
+}
+.col-chunks {
+  width: 60px;
+}
+.col-enabled {
+  width: 60px;
+}
+.col-actions {
+  width: 100px;
+}
+
+.file-name-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: color var(--transition-fast);
+}
+.file-name-btn:hover {
+  color: var(--accent);
+}
+
+.ext-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.fail-hint {
+  font-size: 11px;
+  color: var(--rose);
+  margin-left: 4px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.action-danger:hover {
+  color: var(--rose);
+}
+</style>
