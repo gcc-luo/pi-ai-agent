@@ -24,6 +24,19 @@ export type ServerEvent =
   | { type: "session_updated"; session: SessionDto }
   | { type: "error"; sessionId?: string; code: string; message: string }
   | { type: "raw"; sessionId: string; data: Record<string, unknown> }
+  | {
+      type: "kb_search";
+      sessionId: string;
+      messageId: string;
+      phase: "searching" | "done" | "empty" | "failed";
+      query: string;
+      kbIds: string[];
+      fileIds?: string[];
+      hits?: KbSearchHitDto[];
+      chunkMap?: Record<number, ChunkMeta>;
+      durationMs?: number;
+      error?: string;
+    }
   | { type: "pong" };
 
 export interface ToolCall {
@@ -170,6 +183,84 @@ export interface SkillStoreInstallRequest {
 export interface SkillStoreInstallResponse {
   name: string;
   path: string;
+}
+
+// ─── Knowledge Base ───
+
+export interface KbDto {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  fileCount: number;
+  searchableFileCount: number;
+  failedFileCount: number;
+  chunkCount: number;
+}
+
+export interface KbFileDto {
+  id: string;
+  kbId: string;
+  name: string;
+  ext: string;
+  source: string;
+  size: number;
+  status: "pending" | "parsing" | "ready" | "failed";
+  enabled: boolean;
+  parseGeneration: number;
+  failReason: string | null;
+  charCount: number | null;
+  pageCount: number | null;
+  chunkCount: number | null;
+  lastParsedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KbChunkDto {
+  id: number;
+  kbId: string;
+  fileId: string;
+  seq: number;
+  titlePath: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  content: string;
+  charCount: number;
+  createdAt: number;
+}
+
+export interface KbBindingDto {
+  kbId: string;
+  enabled: boolean;
+  fileFilter: string[] | null;
+  boundAt: number;
+}
+
+export interface KbSearchHitDto {
+  chunkId: number;
+  kbId: string;
+  kbName: string;
+  fileId: string;
+  fileName: string;
+  seq: number;
+  titlePath: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  content: string;
+  snippet: string;
+  score: number;
+}
+
+export interface ChunkMeta {
+  chunkId: number;
+  kbName: string;
+  fileName: string;
+  titlePath: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
 }
 
 export interface Result<T, E = string> {
