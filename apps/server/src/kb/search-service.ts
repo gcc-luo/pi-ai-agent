@@ -191,8 +191,34 @@ function buildFtsQuery(input: string): string {
   // Split by whitespace, wrap each token as a phrase
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return "";
+
   return tokens.map((t) => {
     const escaped = t.replace(/"/g, '""');
+
+    // For tokens containing CJK characters, don't wrap in quotes.
+    // The unicode61 tokenizer treats each CJK character as a separate token,
+    // so phrase matching with quotes fails. Instead, list each character
+    // individually — FTS5 implicit AND requires all to match.
+    if (/[一-鿿㐀-䶿]/.test(t)) {
+      // Mix of CJK and non-CJK: split CJK chars individually, keep non-CJK as phrase
+      const parts: string[] = [];
+      let currentNonCjk = "";
+      for (const ch of escaped) {
+        if (/[一-鿿㐀-䶿]/.test(ch)) {
+          if (currentNonCjk) {
+            parts.push(`"${currentNonCjk}"`);
+            currentNonCjk = "";
+          }
+          parts.push(ch);
+        } else {
+          currentNonCjk += ch;
+        }
+      }
+      if (currentNonCjk) parts.push(`"${currentNonCjk}"`);
+      return parts.join(" ");
+    }
+
+    // Pure non-CJK token: phrase match
     return `"${escaped}"`;
   }).join(" ");
 }
