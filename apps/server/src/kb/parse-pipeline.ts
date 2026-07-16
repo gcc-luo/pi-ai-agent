@@ -54,7 +54,7 @@ export class ParsePipeline {
       return { success: false, fileId, chunkCount: 0, charCount: 0, pageCount: null, failReason: msg };
     }
 
-    const fullPath = path.resolve(this.kbFilesDir, "..", storagePath);
+    const fullPath = path.join(this.kbFilesDir, storagePath);
     console.log(`[KB Parse] reading: fullPath=${fullPath}`);
 
     try {
