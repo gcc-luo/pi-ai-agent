@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
-import { NInput, NSwitch } from "naive-ui";
+import { NInput, NSwitch, NSelect } from "naive-ui";
 import { useKbStore } from "../stores/kb.js";
+import { useAgentStore } from "../stores/agent.js";
 import { useI18n } from "../i18n/index.js";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
@@ -11,16 +12,24 @@ const emit = defineEmits<{
 }>();
 
 const kbStore = useKbStore();
+const agentStore = useAgentStore();
 const { t } = useI18n();
 
 const name = ref("");
 const description = ref("");
 const enabled = ref(true);
+const embeddingModelId = ref<string | null>(null);
 const saving = ref(false);
 const error = ref("");
 const showDeleteConfirm = ref(false);
 
 const kb = computed(() => kbStore.current);
+
+const embeddingModelOptions = computed(() =>
+  agentStore.modelDtos
+    .filter((m) => m.modelType === "embedding")
+    .map((m) => ({ label: m.label, value: m.id })),
+);
 
 watch(
   () => kb.value,
@@ -29,6 +38,7 @@ watch(
       name.value = k.name;
       description.value = k.description ?? "";
       enabled.value = k.enabled;
+      embeddingModelId.value = k.embeddingModelId ?? null;
     }
   },
   { immediate: true },
@@ -39,7 +49,8 @@ const hasChanges = computed(() => {
   return (
     name.value.trim() !== kb.value.name ||
     description.value.trim() !== (kb.value.description ?? "") ||
-    enabled.value !== kb.value.enabled
+    enabled.value !== kb.value.enabled ||
+    embeddingModelId.value !== (kb.value.embeddingModelId ?? null)
   );
 });
 
@@ -53,12 +64,15 @@ async function handleSave() {
   error.value = "";
 
   try {
-    const patch: { name?: string; description?: string | null; enabled?: boolean } = {};
+    const patch: { name?: string; description?: string | null; enabled?: boolean; embeddingModelId?: string | null } = {};
     if (name.value.trim() !== kb.value?.name) patch.name = name.value.trim();
     if (description.value.trim() !== (kb.value?.description ?? "")) {
       patch.description = description.value.trim() || null;
     }
     if (enabled.value !== kb.value?.enabled) patch.enabled = enabled.value;
+    if (embeddingModelId.value !== (kb.value?.embeddingModelId ?? null)) {
+      patch.embeddingModelId = embeddingModelId.value;
+    }
 
     await kbStore.update(props.kbId, patch);
   } catch (e: any) {
@@ -118,6 +132,20 @@ async function handleDelete() {
         </div>
         <NSwitch v-model:value="enabled" :disabled="saving" />
       </div>
+
+      <!-- Embedding Model -->
+      <label class="field">
+        <span class="label">{{ t('kb.embeddingModel') }}</span>
+        <NSelect
+          v-model:value="embeddingModelId"
+          size="small"
+          :options="embeddingModelOptions"
+          :placeholder="embeddingModelOptions.length ? t('kb.embeddingModelPlaceholder') : t('kb.noEmbeddingModel')"
+          clearable
+          :disabled="saving || !embeddingModelOptions.length"
+        />
+        <span class="field-hint">{{ t('kb.embeddingModelHint') }}</span>
+      </label>
 
       <!-- Error -->
       <div v-if="error" class="error-block">{{ error }}</div>

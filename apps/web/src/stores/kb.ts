@@ -22,7 +22,7 @@ export const useKbStore = defineStore("kb", {
       this.knowledgeBases.unshift(kb);
       return kb;
     },
-    async update(id: string, patch: { name?: string; description?: string | null; enabled?: boolean }) {
+    async update(id: string, patch: { name?: string; description?: string | null; enabled?: boolean; embeddingModelId?: string | null }) {
       const kb = await api.updateKnowledgeBase(id, patch);
       const idx = this.knowledgeBases.findIndex((k) => k.id === id);
       if (idx >= 0) this.knowledgeBases[idx] = kb;

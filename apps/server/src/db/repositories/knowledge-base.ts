@@ -4,7 +4,8 @@ import { ulid } from "../../util/ulid.js";
 
 type Row = {
   id: string; name: string; description: string | null;
-  enabled: number; created_at: number; updated_at: number;
+  enabled: number; embedding_model_id: string | null;
+  created_at: number; updated_at: number;
 };
 
 type StatsRow = {
@@ -16,6 +17,7 @@ function toDto(r: Row, stats: StatsRow): KbDto {
   return {
     id: r.id, name: r.name, description: r.description,
     enabled: r.enabled === 1,
+    embeddingModelId: r.embedding_model_id,
     createdAt: r.created_at, updatedAt: r.updated_at,
     fileCount: stats.fileCount, searchableFileCount: stats.searchableFileCount,
     failedFileCount: stats.failedFileCount, chunkCount: stats.chunkCount,
@@ -25,15 +27,16 @@ function toDto(r: Row, stats: StatsRow): KbDto {
 export class KnowledgeBaseRepository {
   constructor(private db: Database.Database) {}
 
-  create(input: { name: string; description?: string }): KbDto {
+  create(input: { name: string; description?: string; embeddingModelId?: string | null }): KbDto {
     const id = ulid();
     const now = Date.now();
     this.db.prepare(
-      "INSERT INTO knowledge_bases (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
-    ).run(id, input.name, input.description ?? null, now, now);
+      "INSERT INTO knowledge_bases (id, name, description, embedding_model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(id, input.name, input.description ?? null, input.embeddingModelId ?? null, now, now);
     return {
       id, name: input.name, description: input.description ?? null,
-      enabled: true, createdAt: now, updatedAt: now,
+      enabled: true, embeddingModelId: input.embeddingModelId ?? null,
+      createdAt: now, updatedAt: now,
       fileCount: 0, searchableFileCount: 0, failedFileCount: 0, chunkCount: 0,
     };
   }
@@ -69,15 +72,16 @@ export class KnowledgeBaseRepository {
     return toDto(r, this.getStats(r.id));
   }
 
-  update(id: string, patch: Partial<{ name: string; description: string | null; enabled: boolean }>): void {
+  update(id: string, patch: Partial<{ name: string; description: string | null; enabled: boolean; embeddingModelId: string | null }>): void {
     const cur = this.findById(id);
     if (!cur) throw new Error("knowledge base not found");
     const name = patch.name ?? cur.name;
     const description = patch.description === undefined ? cur.description : patch.description;
     const enabled = patch.enabled === undefined ? (cur.enabled ? 1 : 0) : (patch.enabled ? 1 : 0);
+    const embeddingModelId = patch.embeddingModelId === undefined ? cur.embeddingModelId : patch.embeddingModelId;
     this.db.prepare(
-      "UPDATE knowledge_bases SET name = ?, description = ?, enabled = ?, updated_at = ? WHERE id = ?"
-    ).run(name, description, enabled, Date.now(), id);
+      "UPDATE knowledge_bases SET name = ?, description = ?, enabled = ?, embedding_model_id = ?, updated_at = ? WHERE id = ?"
+    ).run(name, description, enabled, embeddingModelId, Date.now(), id);
   }
 
   delete(id: string): void {

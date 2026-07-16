@@ -192,6 +192,7 @@ export interface KbDto {
   name: string;
   description: string | null;
   enabled: boolean;
+  embeddingModelId: string | null;
   createdAt: number;
   updatedAt: number;
   fileCount: number;

@@ -104,7 +104,7 @@ export const api = {
   createKnowledgeBase: (name: string, description?: string) =>
     request<KbDto>("POST", "/knowledge-bases", { name, description }),
   getKnowledgeBase: (id: string) => request<KbDto>("GET", `/knowledge-bases/${id}`),
-  updateKnowledgeBase: (id: string, patch: { name?: string; description?: string | null; enabled?: boolean }) =>
+  updateKnowledgeBase: (id: string, patch: { name?: string; description?: string | null; enabled?: boolean; embeddingModelId?: string | null }) =>
     request<KbDto>("PUT", `/knowledge-bases/${id}`, patch),
   deleteKnowledgeBase: (id: string) => request<void>("DELETE", `/knowledge-bases/${id}`),
 

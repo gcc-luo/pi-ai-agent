@@ -137,6 +137,12 @@ const MIGRATIONS = [
       CREATE INDEX idx_session_kb_bindings_session ON session_kb_bindings(session_id);
     `,
   },
+  {
+    name: "006_kb_embedding_model",
+    sql: `
+      ALTER TABLE knowledge_bases ADD COLUMN embedding_model_id TEXT REFERENCES models(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
