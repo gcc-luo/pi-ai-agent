@@ -189,7 +189,14 @@ export class RpcBridge extends EventEmitter {
   }
 
   send(command: object): void {
-    this.proc.stdin.write(JSON.stringify(this.toPiCommand(command as any)) + "\n");
+    const piCommand = this.toPiCommand(command as any);
+    console.log(`[RpcBridge] send: type=${(piCommand as any)?.type} sessionId=${this.sessionId} msgLen=${String((piCommand as any)?.message ?? "").length}`);
+    try {
+      this.proc.stdin.write(JSON.stringify(piCommand) + "\n");
+      console.log(`[RpcBridge] write completed`);
+    } catch (err: any) {
+      console.error(`[RpcBridge] write failed: ${err.message}`);
+    }
   }
 
   private toPiCommand(command: any): object {

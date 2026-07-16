@@ -20,14 +20,20 @@ export class KbSearchService {
     const start = performance.now();
     const { query, kbIds, fileIds, limit = 8 } = input;
 
+    console.log(`[KB Search] start: query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"} limit=${limit}`);
+
     if (!query.trim() || !kbIds.length) {
+      console.log(`[KB Search] skipped: empty query or no kbIds`);
       return { hits: [], durationMs: 0 };
     }
 
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) {
+      console.log(`[KB Search] skipped: empty ftsQuery after tokenization`);
       return { hits: [], durationMs: 0 };
     }
+
+    console.log(`[KB Search] ftsQuery: "${ftsQuery}"`);
 
     // Build parameterized query
     const kbPlaceholders = kbIds.map((_, i) => `?`).join(",");
@@ -69,10 +75,14 @@ export class KbSearchService {
     sql += ` ORDER BY bm25(kb_chunks_fts), f.updated_at DESC LIMIT ?`;
     params.push(limit);
 
+    console.log(`[KB Search] executing SQL, params=${params.length}`);
+
     const rows = this.db.prepare(sql).all(...params) as any[];
+    console.log(`[KB Search] raw rows=${rows.length}`);
 
     // Deduplicate: same content appears only once
     const hits = deduplicateHits(rows);
+    console.log(`[KB Search] after dedup: hits=${hits.length}`);
 
     return { hits, durationMs: Math.round(performance.now() - start) };
   }

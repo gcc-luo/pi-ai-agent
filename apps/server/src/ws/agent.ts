@@ -134,6 +134,8 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           state.send({ type: "agent_status", sessionId: session.id, status: "working" });
         }
 
+        console.log(`[WS Agent] received: type=${event.type} sessionId=${event.sessionId} contentLen=${event.content?.length ?? 0}`);
+
         // KB search interception: inject context before forwarding to Pi
         let content = event.content;
         let kbSearchMeta: Record<string, unknown> | undefined;
@@ -141,11 +143,15 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         if (event.type === "send") {
           const bindings = app.kbBindings.listBySession(event.sessionId);
           const enabledBindings = bindings.filter((b) => b.enabled);
+          console.log(`[WS Agent] KB bindings: total=${bindings.length} enabled=${enabledBindings.length}`);
+
           if (enabledBindings.length > 0) {
             const messageId = ulid();
             const kbIds = enabledBindings.map((b) => b.kbId);
             const allFileIds = enabledBindings.flatMap((b) => b.fileFilter ?? []);
             const fileIds = allFileIds.length > 0 ? allFileIds : undefined;
+
+            console.log(`[WS Agent] KB search start: messageId=${messageId} kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"}`);
 
             send({
               type: "kb_search", sessionId: session.id, messageId,
@@ -153,9 +159,14 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             });
 
             try {
+              const searchStart = Date.now();
               const result = await app.kbSearch.search({ query: event.content, kbIds, fileIds, limit: 5 });
+              const searchMs = Date.now() - searchStart;
+              console.log(`[WS Agent] KB search done: hits=${result.hits.length} time=${searchMs}ms`);
+
               if (result.hits.length > 0) {
                 const { contextBlock, chunkMap } = buildKbContext(result.hits);
+                console.log(`[WS Agent] KB context built: blockLen=${contextBlock.length} chunks=${Object.keys(chunkMap).length}`);
                 send({
                   type: "kb_search", sessionId: session.id, messageId,
                   phase: "done", query: event.content, kbIds, fileIds,
@@ -172,12 +183,15 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                   durationMs: result.durationMs, timestamp: Date.now(),
                 };
               } else {
+                console.log(`[WS Agent] KB search empty: no hits for query`);
                 send({
                   type: "kb_search", sessionId: session.id, messageId,
                   phase: "empty", query: event.content, kbIds, fileIds,
                 });
               }
             } catch (err: any) {
+              console.error(`[WS Agent] KB search failed: ${err.message}`);
+              if (err.stack) console.error(err.stack);
               send({
                 type: "kb_search", sessionId: session.id, messageId,
                 phase: "failed", query: event.content, kbIds, fileIds,
@@ -187,9 +201,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
+        console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0}`);
         state.bridge.send({ type: event.type, sessionId: event.sessionId, content });
+        console.log(`[WS Agent] bridge.send completed, appending message`);
+
         const msgMeta = kbSearchMeta ? { kbSearch: kbSearchMeta } : undefined;
         app.messages.append({ sessionId: event.sessionId, role: "user", content, metadata: msgMeta as any });
+        console.log(`[WS Agent] message persisted`);
         if (event.type === "send" && session.title == null) {
           const derived = deriveDefaultTitle(event.content);
           if (derived) {
