@@ -143,6 +143,12 @@ const MIGRATIONS = [
       ALTER TABLE knowledge_bases ADD COLUMN embedding_model_id TEXT REFERENCES models(id) ON DELETE SET NULL;
     `,
   },
+  {
+    name: "007_kb_chunk_embedding",
+    sql: `
+      ALTER TABLE kb_chunks ADD COLUMN embedding BLOB;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

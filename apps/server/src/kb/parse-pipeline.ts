@@ -1,12 +1,15 @@
 import type Database from "better-sqlite3";
 import { KbFileRepository } from "../db/repositories/kb-file.js";
 import { KbChunkRepository } from "../db/repositories/kb-chunk.js";
+import { KnowledgeBaseRepository } from "../db/repositories/knowledge-base.js";
+import { ModelRepository } from "../db/repositories/model.js";
 import { ParsedDocument } from "./parsers/types.js";
 import { parseTxt } from "./parsers/txt.js";
 import { parseMd } from "./parsers/md.js";
 import { parsePdf } from "./parsers/pdf.js";
 import { parseDocx } from "./parsers/docx.js";
 import { chunkDocument } from "./chunker.js";
+import { getEmbeddings, encodeEmbedding, EmbeddingModelConfig } from "./embedding-client.js";
 import path from "node:path";
 
 const PARSE_TIMEOUT_MS = 60_000;
@@ -26,6 +29,8 @@ export class ParsePipeline {
     private kbFiles: KbFileRepository,
     private kbChunks: KbChunkRepository,
     private kbFilesDir: string,
+    private knowledgeBases: KnowledgeBaseRepository,
+    private models: ModelRepository,
   ) {}
 
   async parseFile(fileId: string): Promise<ParseResult> {
@@ -86,6 +91,21 @@ export class ParsePipeline {
         return { success: true, fileId, chunkCount: 0, charCount: doc.charCount, pageCount: doc.pageCount };
       }
 
+      // Get embedding model config for this KB
+      const kb = this.knowledgeBases.findById(file.kbId);
+      let embeddingConfig: EmbeddingModelConfig | null = null;
+      if (kb?.embeddingModelId) {
+        const model = this.models.findById(kb.embeddingModelId);
+        if (model && model.modelType === "embedding" && model.apiBaseUrl && model.apiKey) {
+          embeddingConfig = {
+            apiBaseUrl: model.apiBaseUrl,
+            apiKey: model.apiKey,
+            modelId: model.id,
+          };
+          console.log(`[KB Parse] embedding model: ${model.id} for kb=${file.kbId}`);
+        }
+      }
+
       // Insert chunks with new generation inside a transaction
       const insertChunks = this.db.transaction(() => {
         for (const chunk of chunks) {
@@ -103,6 +123,30 @@ export class ParsePipeline {
         }
       });
       insertChunks();
+
+      // Generate embeddings if model is configured
+      if (embeddingConfig && chunks.length > 0) {
+        try {
+          const texts = chunks.map((c) => c.content);
+          console.log(`[KB Parse] generating embeddings: ${texts.length} chunks`);
+          const { embeddings, dimension } = await getEmbeddings(embeddingConfig, texts);
+
+          // Update chunks with embeddings
+          const chunksWithRowid = this.kbChunks.listByFileWithEmbedding(fileId, newGeneration);
+          for (let i = 0; i < chunksWithRowid.length && i < embeddings.length; i++) {
+            const emb = embeddings[i];
+            const chunk = chunksWithRowid[i];
+            if (emb && chunk) {
+              const embeddingBuffer = encodeEmbedding(emb);
+              this.kbChunks.updateEmbedding(chunk.rowid, embeddingBuffer);
+            }
+          }
+          console.log(`[KB Parse] embeddings saved: ${embeddings.length} chunks, dimension=${dimension}`);
+        } catch (err: any) {
+          console.error(`[KB Parse] embedding failed: ${err.message}`);
+          // Embedding failure is non-fatal - chunks are still usable for keyword search
+        }
+      }
 
       // Delete stale generation chunks
       this.kbChunks.deleteStaleGenerations(fileId, newGeneration);

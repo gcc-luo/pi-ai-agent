@@ -55,7 +55,7 @@ export async function buildConfiguredApp(config: Config) {
   fs.mkdirSync(config.kbFilesDir, { recursive: true });
 
   // Parse pipeline
-  const parsePipeline = new ParsePipeline(db, kbFiles, kbChunks, config.kbFilesDir);
+  const parsePipeline = new ParsePipeline(db, kbFiles, kbChunks, config.kbFilesDir, knowledgeBases, models);
 
   // Build app first so we can pass app.log to ProcessManager
   const app = await buildApp(config, {

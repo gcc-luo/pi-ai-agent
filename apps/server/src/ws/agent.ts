@@ -160,9 +160,30 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
             try {
               const searchStart = Date.now();
-              const result = await app.kbSearch.search({ query: event.content, kbIds, fileIds, limit: 5 });
+
+              // Find embedding model from KBs
+              let embeddingModel: { apiBaseUrl: string; apiKey: string; modelId: string } | undefined;
+              for (const kbId of kbIds) {
+                const kb = app.knowledgeBases.findById(kbId);
+                if (kb?.embeddingModelId) {
+                  const model = app.models.findById(kb.embeddingModelId);
+                  if (model && model.modelType === "embedding" && model.apiBaseUrl && model.apiKey) {
+                    embeddingModel = {
+                      apiBaseUrl: model.apiBaseUrl,
+                      apiKey: model.apiKey,
+                      modelId: model.id,
+                    };
+                    break;
+                  }
+                }
+              }
+
+              const result = await app.kbSearch.search({
+                query: event.content, kbIds, fileIds, limit: 5,
+                embeddingModel,
+              });
               const searchMs = Date.now() - searchStart;
-              console.log(`[WS Agent] KB search done: hits=${result.hits.length} time=${searchMs}ms`);
+              console.log(`[WS Agent] KB search done: hits=${result.hits.length} time=${searchMs}ms embedding=${!!embeddingModel}`);
 
               if (result.hits.length > 0) {
                 const { contextBlock, chunkMap } = buildKbContext(result.hits);
