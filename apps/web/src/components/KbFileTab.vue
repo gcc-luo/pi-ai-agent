@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { NButton, NSwitch, NInput, NSelect, NEmpty, NSpin } from "naive-ui";
+import { ref, computed, onUnmounted } from "vue";
+import { NButton, NSwitch, NInput, NSelect, NEmpty, NSpin, NTooltip } from "naive-ui";
 import { useKbFileStore } from "../stores/kb-file.js";
 import { useI18n } from "../i18n/index.js";
 import type { KbFileDto } from "@pi-web-ui/shared";
@@ -48,6 +48,9 @@ const extOptions = computed(() => [
   { label: ".docx", value: "docx" },
 ]);
 
+// 组件卸载时停止轮询
+onUnmounted(() => kbFileStore.stopPolling(props.kbId));
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -73,9 +76,7 @@ async function handleToggleEnabled(file: KbFileDto, enabled: boolean) {
 
 async function handleReparse(file: KbFileDto) {
   try {
-    await kbFileStore.reparse(file.id);
-    // Reload to get updated status
-    await kbFileStore.loadForKb(props.kbId);
+    await kbFileStore.reparse(file.id, props.kbId);
   } catch (e: any) {
     console.error("Failed to reparse:", e);
   }
@@ -108,6 +109,15 @@ function openCreateEditor() {
   editFileId.value = "__new__";
   showCreateEditor.value = true;
 }
+
+const tooltipOverrides = {
+  fontSize: "12px",
+  padding: "4px 8px",
+  borderRadius: "4px",
+  color: "var(--primary-color)",
+  textColor: "#ffffff",
+  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+};
 
 function closeCreateEditor() {
   showCreateEditor.value = false;
@@ -172,11 +182,11 @@ async function handleImportDone() {
           <tr>
             <th class="col-name">{{ t('kb.name') }}</th>
             <th class="col-ext">{{ t('kb.search.fileType') }}</th>
-            <th class="col-size">Size</th>
-            <th class="col-status">Status</th>
+            <th class="col-size">{{ t('kb.size') }}</th>
+            <th class="col-status">{{ t('kb.status') }}</th>
             <th class="col-chunks">{{ t('kb.chunkCount', { count: '' }) }}</th>
             <th class="col-enabled">{{ t('kb.enabled') }}</th>
-            <th class="col-actions" />
+            <th class="col-actions">{{ t('kb.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -206,35 +216,46 @@ async function handleImportDone() {
               />
             </td>
             <td class="col-actions">
-              <button
-                v-if="['txt', 'md'].includes(file.ext)"
-                class="action-btn"
-                :title="t('kb.file.edit')"
-                @click="openEditor(file.id)"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
-              <button
-                class="action-btn"
-                :title="t('kb.file.reparse')"
-                @click="handleReparse(file)"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                  <path d="M11.3 1.5v3h-3M2.7 12.5v-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
-              <button
-                class="action-btn action-danger"
-                :title="t('kb.file.delete')"
-                @click="requestDelete(file)"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </button>
+              <NTooltip v-if="['txt', 'md'].includes(file.ext)" :delay="200" placement="top" :theme-overrides="tooltipOverrides">
+                <template #trigger>
+                  <button
+                    class="action-btn"
+                    @click="openEditor(file.id)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </template>
+                {{ t('kb.file.edit') }}
+              </NTooltip>
+              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
+                <template #trigger>
+                  <button
+                    class="action-btn"
+                    @click="handleReparse(file)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                      <path d="M11.3 1.5v3h-3M2.7 12.5v-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </template>
+                {{ t('kb.file.reparse') }}
+              </NTooltip>
+              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
+                <template #trigger>
+                  <button
+                    class="action-btn action-danger"
+                    @click="requestDelete(file)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                </template>
+                {{ t('kb.file.delete') }}
+              </NTooltip>
             </td>
           </tr>
         </tbody>
@@ -316,6 +337,7 @@ async function handleImportDone() {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 .file-table th {
   text-align: left;
@@ -339,25 +361,33 @@ async function handleImportDone() {
   background: var(--bg-hover);
 }
 .col-name {
-  min-width: 140px;
+  width: auto;
+  min-width: 200px;
 }
 .col-ext {
-  width: 60px;
+  width: 1%;
+  white-space: nowrap;
 }
 .col-size {
-  width: 80px;
+  width: 1%;
+  white-space: nowrap;
 }
 .col-status {
-  width: 160px;
+  width: 1%;
+  white-space: nowrap;
 }
 .col-chunks {
-  width: 60px;
+  width: 1%;
+  white-space: nowrap;
 }
 .col-enabled {
-  width: 60px;
+  width: 1%;
+  white-space: nowrap;
 }
 .col-actions {
-  width: 100px;
+  width: 1%;
+  white-space: nowrap;
+  min-width: 132px;
 }
 
 .file-name-btn {
@@ -413,7 +443,7 @@ async function handleImportDone() {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color 60ms ease, color 60ms ease;
 }
 .action-btn:hover {
   background: var(--bg-hover);
