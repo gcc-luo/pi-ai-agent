@@ -31,12 +31,16 @@ export class ParsePipeline {
   async parseFile(fileId: string): Promise<ParseResult> {
     const file = this.kbFiles.findById(fileId);
     if (!file) {
+      console.error(`[KB Parse] file not found: fileId=${fileId}`);
       return { success: false, fileId, chunkCount: 0, charCount: 0, pageCount: null, failReason: "not_found" };
     }
 
     if (file.status === "parsing") {
+      console.warn(`[KB Parse] already parsing: fileId=${fileId} name=${file.name}`);
       return { success: false, fileId, chunkCount: 0, charCount: 0, pageCount: null, failReason: "already_parsing" };
     }
+
+    console.log(`[KB Parse] start: fileId=${fileId} name=${file.name} ext=${file.ext} size=${file.size}`);
 
     // Increment generation BEFORE parsing starts
     const newGeneration = this.kbFiles.incrementParseGeneration(fileId);
@@ -44,21 +48,30 @@ export class ParsePipeline {
 
     const storagePath = this.kbFiles.getStoragePath(fileId);
     if (!storagePath) {
-      this.kbFiles.updateStatus(fileId, { status: "failed", failReason: "read_failed" });
-      return { success: false, fileId, chunkCount: 0, charCount: 0, pageCount: null, failReason: "read_failed" };
+      const msg = "storage_path_missing";
+      console.error(`[KB Parse] failed: fileId=${fileId} reason=${msg}`);
+      this.kbFiles.updateStatus(fileId, { status: "failed", failReason: msg });
+      return { success: false, fileId, chunkCount: 0, charCount: 0, pageCount: null, failReason: msg };
     }
 
     const fullPath = path.resolve(this.kbFilesDir, "..", storagePath);
+    console.log(`[KB Parse] reading: fullPath=${fullPath}`);
 
     try {
       const signal = AbortSignal.timeout(PARSE_TIMEOUT_MS);
+      const startTime = Date.now();
       const doc = await this.parseByExtension(file.ext, fullPath, signal);
+      const parseMs = Date.now() - startTime;
+
+      console.log(`[KB Parse] parsed: fileId=${fileId} ext=${file.ext} chars=${doc.charCount} pages=${doc.pageCount ?? 0} sections=${doc.sections.length} time=${parseMs}ms`);
 
       // Chunk the document
       const chunks = chunkDocument(doc);
+      console.log(`[KB Parse] chunked: fileId=${fileId} chunks=${chunks.length}`);
 
       if (chunks.length === 0) {
         // Empty document — still mark as ready but with 0 chunks
+        console.warn(`[KB Parse] empty document: fileId=${fileId} chars=${doc.charCount}`);
         this.kbFiles.updateStatus(fileId, {
           status: "ready",
           parseGeneration: newGeneration,
@@ -105,15 +118,24 @@ export class ParsePipeline {
         failReason: null,
       });
 
+      console.log(`[KB Parse] done: fileId=${fileId} chunks=${chunks.length} chars=${doc.charCount}`);
       return { success: true, fileId, chunkCount: chunks.length, charCount: doc.charCount, pageCount: doc.pageCount };
     } catch (err: any) {
       // Clean up any chunks inserted with the new generation (partial failure)
       this.kbChunks.deleteByFileAndGeneration(fileId, newGeneration);
 
       const failReason = classifyError(err);
+      const errorMessage = err?.message ?? String(err);
+      const errorStack = err?.stack ?? "";
+
+      console.error(`[KB Parse] failed: fileId=${fileId} name=${file.name} ext=${file.ext} reason=${failReason} error="${errorMessage}"`);
+      if (errorStack) {
+        console.error(errorStack);
+      }
+
       this.kbFiles.updateStatus(fileId, {
         status: "failed",
-        failReason,
+        failReason: `${failReason}: ${errorMessage}`,
         // parse_generation stays at old value — old chunks remain searchable
       });
 
@@ -133,7 +155,7 @@ export class ParsePipeline {
       case "docx":
         return parseDocx(filePath, opts);
       default:
-        throw new Error("unsupported_type");
+        throw new Error(`unsupported_type: .${ext}`);
     }
   }
 }

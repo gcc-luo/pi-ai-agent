@@ -54,9 +54,11 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       // Async parse
       setImmediate(() => {
         parsePipeline.parseFile(file.id).catch((err) => {
-          app.log.error({ err, fileId: file.id }, "KB file parse failed");
+          app.log.error({ err, fileId: file.id, name: file.name }, "KB file parse failed (create)");
         });
       });
+
+      console.log(`[KB Import] created file: fileId=${file.id} name=${file.name} ext=${file.ext} size=${size} kbId=${req.params.kbId}`);
 
       return reply.code(201).send(file);
     });
@@ -78,11 +80,13 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
           const name = part.filename;
           const ext = path.extname(name).slice(1).toLowerCase();
           if (!ALLOWED_EXT.has(ext)) {
+            console.warn(`[KB Import] skipped unsupported type: name=${name} ext=${ext}`);
             await part.toBuffer(); // drain
             continue;
           }
           const buffer = await part.toBuffer();
           if (buffer.length > MAX_FILE_SIZE) {
+            console.warn(`[KB Import] skipped too large: name=${name} size=${buffer.length}`);
             return reply.code(400).send({ error: "too_large", name, limit: MAX_FILE_SIZE });
           }
           files.push({ name, ext, buffer });
@@ -91,12 +95,15 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
 
       if (!files.length) return reply.code(400).send({ error: "no_valid_files" });
 
+      console.log(`[KB Import] kbId=${req.params.kbId} received ${files.length} file(s): ${files.map(f => `${f.name}(${f.ext},${f.buffer.length}B)`).join(", ")}`);
+
       const created: any[] = [];
       const errors: { name: string; error: string }[] = [];
 
       for (const f of files) {
         // Check duplicate name
         if (app.kbFiles.findByNameInKb(req.params.kbId, f.name)) {
+          console.warn(`[KB Import] duplicate name: ${f.name} in kbId=${req.params.kbId}`);
           errors.push({ name: f.name, error: "name_exists" });
           continue;
         }
@@ -117,9 +124,11 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
           storagePath: relativePath,
         });
 
+        console.log(`[KB Import] saved file: fileId=${file.id} name=${f.name} ext=${f.ext} size=${f.buffer.length}B path=${relativePath}`);
+
         setImmediate(() => {
           parsePipeline.parseFile(file.id).catch((err) => {
-            app.log.error({ err, fileId: file.id }, "KB file parse failed");
+            app.log.error({ err, fileId: file.id, name: f.name }, "KB file parse failed (import)");
           });
         });
 
@@ -185,9 +194,10 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
           app.kbFiles.updateStoragePath(req.params.id, buf.length, storagePath);
 
           // Trigger reparse
+          console.log(`[KB Reparse] content updated: fileId=${req.params.id} name=${file.name}`);
           setImmediate(() => {
             parsePipeline.parseFile(req.params.id).catch((err) => {
-              app.log.error({ err, fileId: req.params.id }, "KB file reparse failed");
+              app.log.error({ err, fileId: req.params.id, name: file.name }, "KB file reparse failed (update)");
             });
           });
         }
@@ -211,9 +221,10 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       if (!file) return reply.code(404).send({ error: "not_found" });
       if (file.status === "parsing") return reply.code(409).send({ error: "already_parsing" });
 
+      console.log(`[KB Reparse] triggered: fileId=${req.params.id} name=${file.name} ext=${file.ext} status=${file.status}`);
       setImmediate(() => {
         parsePipeline.parseFile(req.params.id).catch((err) => {
-          app.log.error({ err, fileId: req.params.id }, "KB file reparse failed");
+          app.log.error({ err, fileId: req.params.id, name: file.name }, "KB file reparse failed (explicit)");
         });
       });
 
