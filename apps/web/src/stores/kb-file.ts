@@ -46,6 +46,8 @@ export const useKbFileStore = defineStore("kb-file", {
     },
     async reparse(fileId: string, kbId: string) {
       await api.reparseKbFile(fileId);
+      // 乐观更新：立即将状态设为 parsing，避免轮询空窗期
+      this.patchInCache(fileId, kbId, { status: "parsing", failReason: null });
       this.startPolling(kbId);
     },
     async remove(fileId: string, kbId: string) {
@@ -56,6 +58,11 @@ export const useKbFileStore = defineStore("kb-file", {
     },
     async updateContent(fileId: string, patch: { name?: string; content?: string }) {
       const file = await api.updateKbFile(fileId, patch);
+      // 内容更新会触发异步重解析，乐观覆盖状态为 parsing
+      if (patch.content !== undefined) {
+        file.status = "parsing";
+        file.failReason = null;
+      }
       this.updateInCache(file);
       this.startPolling(file.kbId);
       return file;
@@ -66,6 +73,13 @@ export const useKbFileStore = defineStore("kb-file", {
         const idx = list.findIndex((f) => f.id === file.id);
         if (idx >= 0) list[idx] = file;
       }
+    },
+    /** 局部更新缓存中某个文件的字段（用于乐观更新） */
+    patchInCache(fileId: string, kbId: string, patch: Partial<KbFileDto>) {
+      const list = this.files[kbId];
+      if (!list) return;
+      const file = list.find((f) => f.id === fileId);
+      if (file) Object.assign(file, patch);
     },
 
     // ─── 智能轮询：解析中自动刷新 ───
