@@ -53,9 +53,11 @@ export class RpcBridge extends EventEmitter {
     // intentionally separate from assistant message boundaries, which can
     // occur many times during one prompt while tools are being used.
     if (input?.type === "agent_start") {
+      console.log(`[RpcBridge] agent_start: sessionId=${sid}`);
       return [{ type: "agent_status", sessionId: sid, status: "working" }];
     }
-    if (input?.type === "agent_settled") {
+    if (input?.type === "agent_settled" || input?.type === "agent_end") {
+      console.log(`[RpcBridge] ${input.type}: sessionId=${sid}`);
       return [{ type: "agent_status", sessionId: sid, status: "idle" }];
     }
 
@@ -145,7 +147,18 @@ export class RpcBridge extends EventEmitter {
       return [{ type: "tool_result", sessionId: sid, toolCallId: input.toolCallId, result: input.result }];
     }
 
-    // `turn_*`, `agent_end`, queue updates and compaction notifications are
+    // Forward knowledge_base_context custom messages so the frontend can
+    // display KB retrieval results alongside the conversation.
+    if (input?.type === "message_end" && input.message?.role === "custom" && input.message?.customType === "knowledge_base_context") {
+      console.log(`[RpcBridge] knowledge_base_context: sessionId=${sid} display=${input.message.display}`);
+      return [{ type: "raw", sessionId: sid, data: input }];
+    }
+    if (input?.role === "custom" && input?.customType === "knowledge_base_context") {
+      console.log(`[RpcBridge] knowledge_base_context (standalone): sessionId=${sid}`);
+      return [{ type: "raw", sessionId: sid, data: input }];
+    }
+
+    // `turn_*`, queue updates and compaction notifications are
     // state-machine details. The UI already receives their meaningful effects
     // through text, tool, and agent_status events, so omit them from the chat
     // transcript instead of exposing an internal event timeline.

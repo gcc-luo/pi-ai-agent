@@ -244,7 +244,7 @@ export const useAgentStore = defineStore("agent", {
         // Compatibility fallback for servers that have not yet been upgraded
         // to emit `agent_status`.
         if (e.data.type === "agent_start") this.runStates[sid] = "working";
-        if (e.data.type === "agent_settled") this.runStates[sid] = "idle";
+        if (e.data.type === "agent_settled" || e.data.type === "agent_end") this.runStates[sid] = "idle";
         // Attach raw events to the most recent assistant message (any status) so the
         // full event stream is visible. If none exists yet, create a holding message.
         const lastAssistant = [...list].reverse().find((m) => m.role === "assistant");
