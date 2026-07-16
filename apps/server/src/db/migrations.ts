@@ -149,6 +149,21 @@ const MIGRATIONS = [
       ALTER TABLE kb_chunks ADD COLUMN embedding BLOB;
     `,
   },
+  {
+    // Fix: unicode61 groups consecutive CJK chars into one token (e.g. "夏日炎炎蝉声噪"
+    // becomes a single token). Drop and recreate the FTS index — the application startup
+    // code rebuilds it with per-character CJK tokenization via tokenizeForFts().
+    name: "008_kb_fts_rebuild",
+    sql: `
+      DROP TABLE IF EXISTS kb_chunks_fts;
+      CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(
+        content,
+        content='kb_chunks',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

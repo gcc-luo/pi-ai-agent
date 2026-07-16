@@ -16,6 +16,7 @@ import { KbChunkRepository } from "./db/repositories/kb-chunk.js";
 import { SessionKbBindingRepository } from "./db/repositories/session-kb-binding.js";
 import { KbSearchService } from "./kb/search-service.js";
 import { ParsePipeline } from "./kb/parse-pipeline.js";
+import { tokenizeForFts } from "./kb/fts-tokenize.js";
 import { buildApp } from "./app.js";
 import { projectsRoutes } from "./routes/projects.js";
 import { sessionsRoutes } from "./routes/sessions.js";
@@ -33,6 +34,11 @@ import { sessionKbBindingsRoutes } from "./routes/session-kb-bindings.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
+
+  // Rebuild FTS5 index if it's empty but kb_chunks has rows.
+  // This happens after migration 008 (drop+create) or first-time setup.
+  rebuildFtsIndexIfNeeded(db);
+
   const projects = new ProjectRepository(db);
   const sessions = new SessionRepository(db);
   sessions.markActiveAsCrashed();
@@ -92,4 +98,36 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(agentRoutes);
 
   return app;
+}
+
+/**
+ * Rebuild the FTS5 index from kb_chunks if the index is empty.
+ * Called on startup — handles migration 008 (drop+recreate) and fresh installs.
+ * Uses tokenizeForFts() to split CJK characters for proper unicode61 indexing.
+ */
+function rebuildFtsIndexIfNeeded(db: import("better-sqlite3").Database): void {
+  // For external-content FTS5 tables, COUNT(*) reads the content table — not the index.
+  // Check the _docsize shadow table instead: it only has rows for actually-indexed documents.
+  let indexedDocs: number;
+  try {
+    indexedDocs = (db.prepare("SELECT COUNT(*) as cnt FROM kb_chunks_fts_docsize").get() as { cnt: number }).cnt;
+  } catch {
+    indexedDocs = 0; // shadow table doesn't exist (fresh install)
+  }
+  if (indexedDocs > 0) return;
+
+  const chunkCount = (db.prepare("SELECT COUNT(*) as cnt FROM kb_chunks").get() as { cnt: number }).cnt;
+  if (chunkCount === 0) return;
+
+  console.log(`[KB FTS] rebuilding index: ${chunkCount} chunks to tokenize with jieba...`);
+  const chunks = db.prepare("SELECT rowid, content FROM kb_chunks").all() as { rowid: number; content: string }[];
+
+  const insert = db.prepare("INSERT INTO kb_chunks_fts (rowid, content) VALUES (?, ?)");
+  const tx = db.transaction(() => {
+    for (const chunk of chunks) {
+      insert.run(chunk.rowid, tokenizeForFts(chunk.content));
+    }
+  });
+  tx();
+  console.log(`[KB FTS] index rebuilt: ${chunks.length} chunks indexed`);
 }

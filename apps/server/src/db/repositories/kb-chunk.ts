@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { KbChunkDto } from "@pi-web-ui/shared";
+import { tokenizeForFts } from "../../kb/fts-tokenize.js";
 
 type Row = {
   rowid: number; kb_id: string; file_id: string; generation: number;
@@ -30,8 +31,9 @@ export class KbChunkRepository {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(input.kbId, input.fileId, input.generation, input.seq, input.titlePath, input.pageStart, input.pageEnd, input.content, input.charCount, input.embedding ?? null, now);
     const rowid = Number(info.lastInsertRowid);
-    // 同步 FTS5 索引
-    this.db.prepare("INSERT INTO kb_chunks_fts (rowid, content) VALUES (?, ?)").run(rowid, input.content);
+    // 同步 FTS5 索引 — 用 tokenizeForFts 在 CJK 字符间插入空格，
+    // 强制 unicode61 逐字索引，避免整行诗被当成单个 token
+    this.db.prepare("INSERT INTO kb_chunks_fts (rowid, content) VALUES (?, ?)").run(rowid, tokenizeForFts(input.content));
     return rowid;
   }
 

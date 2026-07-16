@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { KbSearchHitDto } from "@pi-web-ui/shared";
 import { decodeEmbedding, cosineSimilarity, EmbeddingModelConfig, getEmbedding } from "./embedding-client.js";
+import { segmentQuery } from "./fts-tokenize.js";
 
 export interface SearchInput {
   query: string;
@@ -15,7 +16,11 @@ export interface SearchResult {
   durationMs: number;
 }
 
-const CANDIDATE_LIMIT = 50;  // Fetch more candidates for hybrid ranking
+const FTS_CANDIDATE_LIMIT = 20;
+const VECTOR_CANDIDATE_LIMIT = 20;
+const RRF_K = 60;  // RRF constant — higher value compresses rank differences
+
+type ScoredCandidate = { hit: KbSearchHitDto; score: number; embedding: Buffer | null };
 
 export class KbSearchService {
   constructor(private db: Database.Database) {}
@@ -27,34 +32,47 @@ export class KbSearchService {
     console.log(`[KB Search] start: query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"} limit=${limit} embedding=${!!embeddingModel}`);
 
     if (!query.trim() || !kbIds.length) {
-      console.log(`[KB Search] skipped: empty query or no kbIds`);
       return { hits: [], durationMs: 0 };
     }
 
-    const ftsQuery = buildFtsQuery(query);
-    if (!ftsQuery) {
-      console.log(`[KB Search] skipped: empty ftsQuery after tokenization`);
-      return { hits: [], durationMs: 0 };
+    // ── Phase 1: FTS5 keyword search ──
+    const ftsCandidates = this.ftsSearchPhase(query, kbIds, fileIds);
+    console.log(`[KB Search] FTS candidates: ${ftsCandidates.length}`);
+
+    // ── Phase 1b: instr fallback for short queries (≤2 CJK chars) ──
+    if (ftsCandidates.length < limit && isShortCjkQuery(query)) {
+      const instrHits = this.instrFallback(query, kbIds, fileIds, limit - ftsCandidates.length);
+      if (instrHits.length > 0) {
+        console.log(`[KB Search] instr fallback: +${instrHits.length} hits`);
+        // Append instr hits after FTS candidates (lower priority)
+        ftsCandidates.push(...instrHits);
+      }
     }
 
-    console.log(`[KB Search] ftsQuery: "${ftsQuery}"`);
-
-    // Phase 1: FTS5 keyword search (get candidates)
-    const candidates = this.ftsSearch(ftsQuery, kbIds, fileIds, CANDIDATE_LIMIT);
-    console.log(`[KB Search] FTS candidates: ${candidates.length}`);
-
-    if (candidates.length === 0) {
+    if (ftsCandidates.length === 0 && !embeddingModel) {
       return { hits: [], durationMs: Math.round(performance.now() - start) };
     }
 
-    // Phase 2: Semantic ranking with embeddings (if model configured)
-    let hits: KbSearchHitDto[];
-
+    // ── Phase 2: Vector search (independent path, not just re-rank) ──
+    let vectorCandidates: ScoredCandidate[] = [];
     if (embeddingModel) {
-      hits = await this.semanticRank(candidates, query, embeddingModel, limit);
+      vectorCandidates = await this.vectorSearch(query, embeddingModel, kbIds, fileIds, VECTOR_CANDIDATE_LIMIT);
+      console.log(`[KB Search] vector candidates: ${vectorCandidates.length}`);
+    }
+
+    // ── Phase 3: RRF merge ──
+    let hits: KbSearchHitDto[];
+    if (embeddingModel && vectorCandidates.length > 0) {
+      hits = rrfMerge(ftsCandidates, vectorCandidates, limit);
+    } else if (ftsCandidates.length > 0) {
+      // Pure FTS5 ranking (no embedding model)
+      hits = ftsCandidates
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((c) => c.hit);
     } else {
-      // Pure FTS5 ranking
-      hits = candidates
+      // Only vector results (no FTS match)
+      hits = vectorCandidates
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((c) => c.hit);
@@ -64,13 +82,32 @@ export class KbSearchService {
     return { hits, durationMs: Math.round(performance.now() - start) };
   }
 
+  // ─── FTS5 keyword search ───
+
+  private ftsSearchPhase(
+    query: string,
+    kbIds: string[],
+    fileIds: string[] | undefined,
+  ): ScoredCandidate[] {
+    const ftsQuery = buildFtsQuery(query);
+    if (!ftsQuery) return [];
+    console.log(`[KB Search] ftsQuery: "${ftsQuery}"`);
+    // Extract query words for JS-based snippet highlighting
+    const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
+    return this.ftsSearch(ftsQuery, kbIds, fileIds, FTS_CANDIDATE_LIMIT, queryWords);
+  }
+
   private ftsSearch(
     ftsQuery: string,
     kbIds: string[],
     fileIds: string[] | undefined,
-    limit: number
-  ): { hit: KbSearchHitDto; score: number; embedding: Buffer | null }[] {
+    limit: number,
+    queryWords: string[],
+  ): ScoredCandidate[] {
     const kbPlaceholders = kbIds.map(() => "?").join(",");
+    // Note: no snippet() — FTS5 snippet offsets are wrong when the index is
+    // pre-tokenized (spaces between CJK chars) but the external content table
+    // stores the original text. We build snippets in JS instead.
     let sql = `
       SELECT
         c.rowid AS chunkId,
@@ -83,7 +120,6 @@ export class KbSearchService {
         c.content,
         c.embedding,
         bm25(kb_chunks_fts) AS score,
-        snippet(kb_chunks_fts, 0, '<mark>', '</mark>', '…', 24) AS snippet,
         kb.name AS kbName,
         f.name AS fileName
       FROM kb_chunks_fts
@@ -111,32 +147,79 @@ export class KbSearchService {
 
     const rows = this.db.prepare(sql).all(...params) as any[];
 
-    return rows.map((row) => ({
-      hit: {
-        chunkId: row.chunkId,
-        kbId: row.kbId,
-        kbName: row.kbName,
-        fileId: row.fileId,
-        fileName: row.fileName,
-        seq: row.seq,
-        titlePath: row.titlePath,
-        pageStart: row.pageStart,
-        pageEnd: row.pageEnd,
-        content: row.content,
-        snippet: row.snippet,
-        score: row.score,
-      },
-      score: row.score,
-      embedding: row.embedding,
-    }));
+    return rows.map((row) => {
+      const hit = rowToHit(row);
+      hit.snippet = buildHighlightSnippet(row.content, queryWords);
+      return { hit, score: row.score, embedding: row.embedding };
+    });
   }
 
-  private async semanticRank(
-    candidates: { hit: KbSearchHitDto; score: number; embedding: Buffer | null }[],
+  // ─── instr fallback for short CJK queries ───
+
+  private instrFallback(
+    query: string,
+    kbIds: string[],
+    fileIds: string[] | undefined,
+    limit: number,
+  ): ScoredCandidate[] {
+    const keyword = query.trim();
+    if (!keyword) return [];
+
+    const kbPlaceholders = kbIds.map(() => "?").join(",");
+    let sql = `
+      SELECT
+        c.rowid AS chunkId,
+        c.kb_id AS kbId,
+        c.file_id AS fileId,
+        c.seq,
+        c.title_path AS titlePath,
+        c.page_start AS pageStart,
+        c.page_end AS pageEnd,
+        c.content,
+        c.embedding,
+        kb.name AS kbName,
+        f.name AS fileName
+      FROM kb_chunks c
+      JOIN kb_files f ON f.id = c.file_id
+      JOIN knowledge_bases kb ON kb.id = c.kb_id
+      WHERE instr(c.content, ?) > 0
+        AND c.kb_id IN (${kbPlaceholders})
+        AND c.generation = f.parse_generation
+        AND f.parse_generation > 0
+        AND f.enabled = 1
+        AND kb.enabled = 1
+    `;
+
+    const params: (string | number)[] = [keyword, ...kbIds];
+
+    if (fileIds && fileIds.length > 0) {
+      const filePlaceholders = fileIds.map(() => "?").join(",");
+      sql += ` AND c.file_id IN (${filePlaceholders})`;
+      params.push(...fileIds);
+    }
+
+    sql += ` LIMIT ?`;
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+
+    return rows.map((row) => {
+      const hit = rowToHit(row);
+      hit.snippet = buildInstrSnippet(row.content, keyword);
+      hit.score = -10;  // Low BM25-equivalent so FTS results rank higher
+      return { hit, score: -10, embedding: row.embedding };
+    });
+  }
+
+  // ─── Vector search (independent retrieval, not just re-rank) ───
+
+  private async vectorSearch(
     query: string,
     embeddingModel: EmbeddingModelConfig,
-    limit: number
-  ): Promise<KbSearchHitDto[]> {
+    kbIds: string[],
+    fileIds: string[] | undefined,
+    limit: number,
+  ): Promise<ScoredCandidate[]> {
     // Generate query embedding
     let queryEmbedding: number[];
     try {
@@ -144,81 +227,202 @@ export class KbSearchService {
       console.log(`[KB Search] query embedding: dimension=${queryEmbedding.length}`);
     } catch (err: any) {
       console.error(`[KB Search] query embedding failed: ${err.message}`);
-      // Fall back to pure FTS ranking
-      return candidates
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((c) => c.hit);
+      return [];
     }
 
-    // Compute semantic similarity for candidates that have embeddings
-    const scored: { hit: KbSearchHitDto; hybridScore: number }[] = [];
+    // Load all chunks with embeddings from the target KBs
+    const kbPlaceholders = kbIds.map(() => "?").join(",");
+    let sql = `
+      SELECT
+        c.rowid AS chunkId,
+        c.kb_id AS kbId,
+        c.file_id AS fileId,
+        c.seq,
+        c.title_path AS titlePath,
+        c.page_start AS pageStart,
+        c.page_end AS pageEnd,
+        c.content,
+        c.embedding,
+        kb.name AS kbName,
+        f.name AS fileName
+      FROM kb_chunks c
+      JOIN kb_files f ON f.id = c.file_id
+      JOIN knowledge_bases kb ON kb.id = c.kb_id
+      WHERE c.kb_id IN (${kbPlaceholders})
+        AND c.generation = f.parse_generation
+        AND f.parse_generation > 0
+        AND f.enabled = 1
+        AND kb.enabled = 1
+        AND c.embedding IS NOT NULL
+    `;
 
-    for (const candidate of candidates) {
-      const bm25Score = candidate.score;
+    const params: (string | number)[] = [...kbIds];
 
-      let semanticScore = 0;
-      if (candidate.embedding) {
-        const chunkEmbedding = decodeEmbedding(candidate.embedding);
-        semanticScore = cosineSimilarity(queryEmbedding, chunkEmbedding);
-      }
+    if (fileIds && fileIds.length > 0) {
+      const filePlaceholders = fileIds.map(() => "?").join(",");
+      sql += ` AND c.file_id IN (${filePlaceholders})`;
+      params.push(...fileIds);
+    }
 
-      // Hybrid scoring: 0.4 * BM25 + 0.6 * semantic
-      // Normalize BM25 (can be negative) to roughly [0, 1] using sigmoid-like transform
-      const normalizedBm25 = 1 / (1 + Math.exp(-bm25Score / 5));  // Sigmoid
-      const normalizedSemantic = (semanticScore + 1) / 2;  // [-1, 1] → [0, 1]
+    const rows = this.db.prepare(sql).all(...params) as any[];
 
-      const hybridScore = 0.4 * normalizedBm25 + 0.6 * normalizedSemantic;
-
+    // Compute cosine similarity for each chunk
+    const scored: ScoredCandidate[] = [];
+    for (const row of rows) {
+      if (!row.embedding) continue;
+      const chunkEmb = decodeEmbedding(row.embedding);
+      const score = cosineSimilarity(queryEmbedding, chunkEmb);
       scored.push({
-        hit: {
-          ...candidate.hit,
-          score: hybridScore,
-        },
-        hybridScore,
+        hit: rowToHit(row),
+        score,
+        embedding: row.embedding,
       });
     }
 
-    // Sort by hybrid score and return top-K
-    return scored
-      .sort((a, b) => b.hybridScore - a.hybridScore)
-      .slice(0, limit)
-      .map((s) => s.hit);
+    // Sort by similarity descending
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit);
   }
 }
 
-function buildFtsQuery(input: string): string {
-  // Split by whitespace, wrap each token as a phrase
-  const tokens = input.trim().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return "";
+// ─── RRF (Reciprocal Rank Fusion) ───
 
-  return tokens.map((t) => {
-    const escaped = t.replace(/"/g, '""');
+function rrfMerge(
+  ftsResults: ScoredCandidate[],
+  vectorResults: ScoredCandidate[],
+  limit: number,
+): KbSearchHitDto[] {
+  // Sort each list by its own score (descending)
+  const ftsSorted = [...ftsResults].sort((a, b) => b.score - a.score);
+  const vecSorted = [...vectorResults].sort((a, b) => b.score - a.score);
 
-    // For tokens containing CJK characters, don't wrap in quotes.
-    // The unicode61 tokenizer treats each CJK character as a separate token,
-    // so phrase matching with quotes fails. Instead, list each character
-    // individually — FTS5 implicit AND requires all to match.
-    if (/[一-鿿㐀-䶿]/.test(t)) {
-      // Mix of CJK and non-CJK: split CJK chars individually, keep non-CJK as phrase
-      const parts: string[] = [];
-      let currentNonCjk = "";
-      for (const ch of escaped) {
-        if (/[一-鿿㐀-䶿]/.test(ch)) {
-          if (currentNonCjk) {
-            parts.push(`"${currentNonCjk}"`);
-            currentNonCjk = "";
-          }
-          parts.push(ch);
-        } else {
-          currentNonCjk += ch;
-        }
-      }
-      if (currentNonCjk) parts.push(`"${currentNonCjk}"`);
-      return parts.join(" ");
+  // Compute RRF score for each chunk
+  const rrfScores = new Map<number, { hit: KbSearchHitDto; rrfScore: number }>();
+
+  ftsSorted.forEach((c, rank) => {
+    const chunkId = c.hit.chunkId;
+    const existing = rrfScores.get(chunkId);
+    const rrf = 1 / (RRF_K + rank + 1);
+    if (existing) {
+      existing.rrfScore += rrf;
+    } else {
+      rrfScores.set(chunkId, { hit: c.hit, rrfScore: rrf });
     }
+  });
 
-    // Pure non-CJK token: phrase match
+  vecSorted.forEach((c, rank) => {
+    const chunkId = c.hit.chunkId;
+    const existing = rrfScores.get(chunkId);
+    const rrf = 1 / (RRF_K + rank + 1);
+    if (existing) {
+      existing.rrfScore += rrf;
+    } else {
+      rrfScores.set(chunkId, { hit: c.hit, rrfScore: rrf });
+    }
+  });
+
+  // Sort by RRF score and return top-K
+  return [...rrfScores.values()]
+    .sort((a, b) => b.rrfScore - a.rrfScore)
+    .slice(0, limit)
+    .map((r) => ({ ...r.hit, score: r.rrfScore }));
+}
+
+// ─── Helpers ───
+
+function buildFtsQuery(input: string): string {
+  const words = segmentQuery(input);
+  if (!words.length) return "";
+
+  return words.map((w) => {
+    const escaped = w.replace(/"/g, '""');
+    if (/[㐀-鿿]/.test(w)) return escaped;
     return `"${escaped}"`;
   }).join(" ");
+}
+
+/** Check if query is a short CJK string (≤2 characters) — needs instr fallback. */
+function isShortCjkQuery(query: string): boolean {
+  const trimmed = query.trim();
+  const chars = [...trimmed]; // spread handles surrogate pairs
+  if (chars.length > 2) return false;
+  return /[㐀-鿿]/.test(trimmed);
+}
+
+/**
+ * Build a snippet by highlighting query words in the ORIGINAL content.
+ * This replaces FTS5's snippet() which produces wrong offsets when the
+ * FTS index is pre-tokenized (CJK chars separated by spaces) but the
+ * external content table stores the original unmodified text.
+ *
+ * Strategy: find the first occurrence of any query word, extract a window
+ * around it, and wrap all query words in <mark> tags within that window.
+ */
+function buildHighlightSnippet(content: string, queryWords: string[]): string {
+  if (!queryWords.length) return content.slice(0, 200);
+
+  // Find the earliest occurrence of any query word
+  let bestIdx = Infinity;
+  let bestWord = "";
+  for (const w of queryWords) {
+    const idx = content.indexOf(w);
+    if (idx >= 0 && idx < bestIdx) {
+      bestIdx = idx;
+      bestWord = w;
+    }
+  }
+
+  if (bestIdx === Infinity) {
+    // No word found in content (shouldn't happen if FTS matched)
+    return content.slice(0, 200);
+  }
+
+  // Extract a window around the first match (~200 chars)
+  const windowSize = 200;
+  const start = Math.max(0, bestIdx - Math.floor(windowSize * 0.3));
+  const end = Math.min(content.length, start + windowSize);
+  const adjustedStart = start > 0 ? start : 0;
+  let snippet = content.slice(adjustedStart, end);
+
+  // Highlight ALL query words found in the snippet (longest first to avoid partial matches)
+  const sortedWords = [...queryWords].sort((a, b) => b.length - a.length);
+  for (const w of sortedWords) {
+    // Escape regex special chars in the word
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    snippet = snippet.replace(new RegExp(escaped, "g"), `<mark>${w}</mark>`);
+  }
+
+  const prefix = adjustedStart > 0 ? "…" : "";
+  const suffix = end < content.length ? "…" : "";
+  return `${prefix}${snippet}${suffix}`;
+}
+
+/** Build a simple snippet by highlighting the keyword in the content (instr fallback). */
+function buildInstrSnippet(content: string, keyword: string): string {
+  const idx = content.indexOf(keyword);
+  if (idx < 0) return content.slice(0, 200);
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(content.length, idx + keyword.length + 40);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < content.length ? "…" : "";
+  const before = content.slice(start, idx);
+  const after = content.slice(idx + keyword.length, end);
+  return `${prefix}${before}<mark>${keyword}</mark>${after}${suffix}`;
+}
+
+function rowToHit(row: any): KbSearchHitDto {
+  return {
+    chunkId: row.chunkId,
+    kbId: row.kbId,
+    kbName: row.kbName,
+    fileId: row.fileId,
+    fileName: row.fileName,
+    seq: row.seq,
+    titlePath: row.titlePath,
+    pageStart: row.pageStart,
+    pageEnd: row.pageEnd,
+    content: row.content,
+    snippet: row.snippet ?? "",
+    score: row.score ?? 0,
+  };
 }
