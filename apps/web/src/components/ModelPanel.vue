@@ -13,11 +13,6 @@ const editingId = ref<string | null>(null);
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; error?: string } | null>(null);
 
-// 卡片快捷测试状态
-const cardTestingId = ref<string | null>(null);
-const cardTestResult = ref<{ id: string; ok: boolean; error?: string } | null>(null);
-let cardTestTimer: ReturnType<typeof setTimeout> | null = null;
-
 const form = ref({
   id: "",
   label: "",
@@ -98,28 +93,6 @@ async function testConnection() {
     testResult.value = { ok: false, error: e.message ?? String(e) };
   } finally {
     testing.value = false;
-  }
-}
-
-async function quickTest(m: (typeof agent.modelDtos)[0]) {
-  if (cardTestTimer) { clearTimeout(cardTestTimer); cardTestTimer = null; }
-  cardTestingId.value = m.id;
-  cardTestResult.value = null;
-  try {
-    const result = await api.testModel({
-      id: m.id,
-      provider: m.provider,
-      modelType: m.modelType ?? "text",
-      apiBaseUrl: m.apiBaseUrl || undefined,
-      modelId: m.id,
-    });
-    cardTestResult.value = { id: m.id, ...result };
-  } catch (e: any) {
-    cardTestResult.value = { id: m.id, ok: false, error: e.message ?? String(e) };
-  } finally {
-    cardTestingId.value = null;
-    // 5 秒后自动清除结果提示
-    cardTestTimer = setTimeout(() => { cardTestResult.value = null; }, 5000);
   }
 }
 
@@ -208,21 +181,6 @@ function setDefault(id: string) {
             <div class="card-id">{{ m.id }}</div>
             <div v-if="m.apiBaseUrl" class="card-url">{{ m.apiBaseUrl }}</div>
             <div class="card-actions">
-              <button
-                class="action-btn"
-                :class="{ 'action-testing': cardTestingId === m.id }"
-                :disabled="cardTestingId === m.id"
-                :title="t('model.test')"
-                @click.stop="quickTest(m)"
-              >
-                <svg v-if="cardTestingId === m.id" class="spin" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path d="M6 1a5 5 0 014.6 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                </svg>
-                <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path d="M4.5 2.5L2 5l2.5 2.5M7.5 4.5L10 7l-2.5 2.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-                  <path d="M7 2L5 10" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-                </svg>
-              </button>
               <button class="action-btn" @click.stop="openEdit(m)" :title="t('model.edit')">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                   <path d="M8.5 1.5l2 2-7 7H1.5V8.5l7-7z" stroke="currentColor" stroke-width="1" stroke-linejoin="round" />
@@ -238,14 +196,6 @@ function setDefault(id: string) {
                 </template>
                 {{ t('model.deleteConfirm') }}
               </NPopconfirm>
-            </div>
-            <div
-              v-if="cardTestResult && cardTestResult.id === m.id"
-              class="card-test-result"
-              :class="cardTestResult.ok ? 'result-ok' : 'result-fail'"
-              :title="cardTestResult.ok ? '' : cardTestResult.error"
-            >
-              {{ cardTestResult.ok ? t('model.testOk') : t('model.testFail') }}
             </div>
           </div>
         </div>
@@ -493,37 +443,6 @@ function setDefault(id: string) {
   background: var(--bg-hover);
 }
 .action-delete:hover {
-  color: var(--rose);
-}
-.action-testing {
-  color: var(--accent);
-  cursor: wait;
-}
-
-.spin {
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.card-test-result {
-  margin-top: 4px;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 500;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.result-ok {
-  background: var(--green-dim);
-  color: var(--green);
-}
-.result-fail {
-  background: var(--rose-dim);
   color: var(--rose);
 }
 
