@@ -423,6 +423,7 @@ watch(activeTab, (tab) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 22px;
 }
 .ss-card-name {
   font-family: var(--font-mono);
@@ -436,6 +437,7 @@ watch(activeTab, (tab) => {
   margin: 0;
   font-size: 11px;
   color: var(--text-faint);
+  min-height: 16px;
 }
 .ss-card-desc {
   margin: 0;
@@ -446,12 +448,14 @@ watch(activeTab, (tab) => {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 54px;
 }
 .ss-card-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 4px;
+  margin-top: auto;
+  gap: 8px;
 }
 .ss-card-pop {
   font-family: var(--font-mono);
