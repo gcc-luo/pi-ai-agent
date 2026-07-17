@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { KbFileDto } from "@pi-web-ui/shared";
+import { KbFileDto, KbFilePage } from "@pi-web-ui/shared";
 import { ulid } from "../../util/ulid.js";
 
 type Row = {
@@ -52,11 +52,68 @@ export class KbFileRepository {
     ).all(kbId) as Row[]).map(toDto);
   }
 
+  /**
+   * 分页查询 KB 文件列表。hasActive 反映整个 KB 是否存在 pending/parsing
+   * 文件（不受过滤条件影响），用于驱动客户端轮询——即使当前过滤条件下
+   * 看不到 parsing 文件，只要 KB 内还有，轮询就应继续。
+   */
+  listByKbPaged(kbId: string, opts: {
+    search?: string;
+    status?: string;
+    ext?: string;
+    page: number;
+    pageSize: number;
+  }): KbFilePage {
+    const where: string[] = ["kb_id = ?"];
+    const params: (string | number)[] = [kbId];
+    if (opts.search) {
+      where.push("LOWER(name) LIKE ?");
+      params.push(`%${opts.search.toLowerCase()}%`);
+    }
+    if (opts.status) {
+      where.push("status = ?");
+      params.push(opts.status);
+    }
+    if (opts.ext) {
+      where.push("ext = ?");
+      params.push(opts.ext);
+    }
+    const whereSql = where.join(" AND ");
+    const offset = (opts.page - 1) * opts.pageSize;
+
+    const items = (this.db.prepare(
+      `SELECT * FROM kb_files WHERE ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).all(...params, opts.pageSize, offset) as Row[]).map(toDto);
+
+    const totalRow = this.db.prepare(
+      `SELECT COUNT(*) AS c FROM kb_files WHERE ${whereSql}`
+    ).get(...params) as { c: number };
+
+    const hasActiveRow = this.db.prepare(
+      "SELECT EXISTS(SELECT 1 FROM kb_files WHERE kb_id = ? AND status IN ('pending','parsing')) AS e"
+    ).get(kbId) as { e: number };
+
+    return {
+      items,
+      total: totalRow.c,
+      page: opts.page,
+      pageSize: opts.pageSize,
+      hasActive: hasActiveRow.e === 1,
+    };
+  }
+
   findByNameInKb(kbId: string, name: string): KbFileDto | null {
     const r = this.db.prepare(
       "SELECT * FROM kb_files WHERE kb_id = ? AND name = ?"
     ).get(kbId, name) as Row | undefined;
     return r ? toDto(r) : null;
+  }
+
+  /** 列出 KB 内全部 ready 且 enabled 的文件，用于对话侧 KB Picker/Banner，不分页 */
+  listSearchableByKb(kbId: string, limit = 1000): KbFileDto[] {
+    return (this.db.prepare(
+      "SELECT * FROM kb_files WHERE kb_id = ? AND status = 'ready' AND enabled = 1 ORDER BY created_at DESC LIMIT ?"
+    ).all(kbId, limit) as Row[]).map(toDto);
   }
 
   updateStatus(id: string, patch: {

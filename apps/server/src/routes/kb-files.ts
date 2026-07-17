@@ -11,11 +11,26 @@ const MAX_IMPORT_COUNT = 20;
 
 export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: string): FastifyPluginAsync {
   return async (app) => {
-    // GET /api/knowledge-bases/:kbId/files — 文件列表
-    app.get<{ Params: { kbId: string } }>("/knowledge-bases/:kbId/files", async (req, reply) => {
+    // GET /api/knowledge-bases/:kbId/files — 文件列表（分页 + 服务端过滤）
+    app.get<{
+      Params: { kbId: string };
+      Querystring: { page?: string; pageSize?: string; search?: string; status?: string; ext?: string };
+    }>("/knowledge-bases/:kbId/files", async (req, reply) => {
       const kb = app.knowledgeBases.findById(req.params.kbId);
       if (!kb) return reply.code(404).send({ error: "kb_not_found" });
-      return app.kbFiles.listByKb(req.params.kbId);
+      const page = Math.max(1, parseInt(req.query.page ?? "1", 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? "20", 10) || 20));
+      const search = req.query.search?.trim() || undefined;
+      const status = req.query.status || undefined;
+      const ext = req.query.ext || undefined;
+      return app.kbFiles.listByKbPaged(req.params.kbId, { page, pageSize, search, status, ext });
+    });
+
+    // GET /api/knowledge-bases/:kbId/files/searchable — KB 内全部 ready+enabled 文件，不分页
+    app.get<{ Params: { kbId: string } }>("/knowledge-bases/:kbId/files/searchable", async (req, reply) => {
+      const kb = app.knowledgeBases.findById(req.params.kbId);
+      if (!kb) return reply.code(404).send({ error: "kb_not_found" });
+      return app.kbFiles.listSearchableByKb(req.params.kbId);
     });
 
     // POST /api/knowledge-bases/:kbId/files — 新建 TXT/MD

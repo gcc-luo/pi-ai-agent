@@ -1,7 +1,7 @@
 import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
-  KbDto, KbFileDto, KbChunkDto, KbBindingDto, KbSearchHitDto,
+  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -108,7 +108,17 @@ export const api = {
     request<KbDto>("PUT", `/knowledge-bases/${id}`, patch),
   deleteKnowledgeBase: (id: string) => request<void>("DELETE", `/knowledge-bases/${id}`),
 
-  listKbFiles: (kbId: string) => request<KbFileDto[]>("GET", `/knowledge-bases/${kbId}/files`),
+  listKbFiles: (kbId: string, params?: { page?: number; pageSize?: number; search?: string; status?: string; ext?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.set("page", String(params.page));
+    if (params?.pageSize != null) q.set("pageSize", String(params.pageSize));
+    if (params?.search) q.set("search", params.search);
+    if (params?.status) q.set("status", params.status);
+    if (params?.ext) q.set("ext", params.ext);
+    const qs = q.toString();
+    return request<KbFilePage>("GET", `/knowledge-bases/${kbId}/files${qs ? `?${qs}` : ""}`);
+  },
+  listSearchableKbFiles: (kbId: string) => request<KbFileDto[]>("GET", `/knowledge-bases/${kbId}/files/searchable`),
   createKbFile: (kbId: string, name: string, ext: string, content: string) =>
     request<KbFileDto>("POST", `/knowledge-bases/${kbId}/files`, { name, ext, content }),
   importKbFiles: (kbId: string, files: File[]) => {

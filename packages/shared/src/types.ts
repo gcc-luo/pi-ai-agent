@@ -220,6 +220,15 @@ export interface KbFileDto {
   updatedAt: number;
 }
 
+export interface KbFilePage {
+  items: KbFileDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** KB 内是否存在 pending/parsing 文件，用于驱动客户端轮询 */
+  hasActive: boolean;
+}
+
 export interface KbChunkDto {
   id: number;
   kbId: string;

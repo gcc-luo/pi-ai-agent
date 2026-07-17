@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, onUnmounted, watch } from "vue";
 import { NButton, NSwitch, NInput, NSelect, NEmpty, NSpin, NTooltip } from "naive-ui";
 import { useKbFileStore } from "../stores/kb-file.js";
 import { useI18n } from "../i18n/index.js";
@@ -14,25 +14,41 @@ const props = defineProps<{ kbId: string }>();
 const kbFileStore = useKbFileStore();
 const { t } = useI18n();
 
-const searchQuery = ref("");
-const statusFilter = ref<string | null>(null);
-const extFilter = ref<string | null>(null);
 const showImport = ref(false);
 const showCreateEditor = ref(false);
 const detailFileId = ref<string | null>(null);
 const editFileId = ref<string | null>(null);
 const deleteTarget = ref<KbFileDto | null>(null);
 
-const files = computed(() => kbFileStore.files[props.kbId] ?? []);
+// 搜索输入与 store.search 分离：输入框立即响应用户输入，但提交给服务端做 300ms 防抖
+const searchInput = ref(kbFileStore.search);
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-const filteredFiles = computed(() => {
-  let list = files.value;
-  const q = searchQuery.value.trim().toLowerCase();
-  if (q) list = list.filter((f) => f.name.toLowerCase().includes(q));
-  if (statusFilter.value) list = list.filter((f) => f.status === statusFilter.value);
-  if (extFilter.value) list = list.filter((f) => f.ext === extFilter.value);
-  return list;
+watch(() => kbFileStore.search, (v) => {
+  if (v !== searchInput.value) searchInput.value = v;
 });
+
+function onSearchInput(v: string) {
+  searchInput.value = v;
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    kbFileStore.setSearch(props.kbId, v.trim());
+  }, 300);
+}
+
+function onSearchClear() {
+  if (searchTimer) clearTimeout(searchTimer);
+  kbFileStore.setSearch(props.kbId, "");
+}
+
+const files = computed(() => kbFileStore.files(props.kbId));
+const total = computed(() => kbFileStore.total(props.kbId));
+const totalPages = computed(() => kbFileStore.totalPages(props.kbId));
+const page = computed(() => kbFileStore.page);
+const pageSize = computed(() => kbFileStore.pageSize);
+
+const rangeStart = computed(() => total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1);
+const rangeEnd = computed(() => Math.min(page.value * pageSize.value, total.value));
 
 const statusOptions = computed(() => [
   { label: t("kb.file.status.pending"), value: "pending" },
@@ -47,9 +63,6 @@ const extOptions = computed(() => [
   { label: ".pdf", value: "pdf" },
   { label: ".docx", value: "docx" },
 ]);
-
-// 组件卸载时停止轮询
-onUnmounted(() => kbFileStore.stopPolling(props.kbId));
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -119,10 +132,10 @@ const tooltipOverrides = {
   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
 };
 
-function closeCreateEditor() {
-  showCreateEditor.value = false;
-  editFileId.value = null;
-}
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+  kbFileStore.stopPolling(props.kbId);
+});
 
 async function handleImportDone() {
   showImport.value = false;
@@ -135,27 +148,31 @@ async function handleImportDone() {
     <!-- Toolbar -->
     <div class="file-toolbar">
       <NInput
-        v-model:value="searchQuery"
+        v-model:value="searchInput"
         size="small"
         :placeholder="t('kb.search.placeholder')"
         clearable
         class="file-search"
+        @input="onSearchInput"
+        @clear="onSearchClear"
       />
       <NSelect
-        v-model:value="statusFilter"
+        :value="kbFileStore.status"
         :options="statusOptions"
         size="small"
         clearable
-        :placeholder="t('kb.file.status.ready')"
+        :placeholder="t('kb.status')"
         class="file-filter"
+        @update:value="(v: string | null) => kbFileStore.setStatus(kbId, v)"
       />
       <NSelect
-        v-model:value="extFilter"
+        :value="kbFileStore.ext"
         :options="extOptions"
         size="small"
         clearable
         :placeholder="t('kb.search.fileType')"
         class="file-filter"
+        @update:value="(v: string | null) => kbFileStore.setExt(kbId, v)"
       />
       <div class="file-toolbar-spacer" />
       <NButton size="small" @click="openCreateEditor">
@@ -174,9 +191,6 @@ async function handleImportDone() {
       <div v-else-if="!files.length" class="file-state">
         <NEmpty :description="t('kb.empty')" />
       </div>
-      <div v-else-if="!filteredFiles.length" class="file-state">
-        <NEmpty :description="t('kb.search.noResults')" />
-      </div>
       <table v-else class="file-table">
         <thead>
           <tr>
@@ -190,7 +204,7 @@ async function handleImportDone() {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="file in filteredFiles" :key="file.id">
+          <tr v-for="file in files" :key="file.id">
             <td class="col-name">
               <button class="file-name-btn" @click="openDetail(file.id)">
                 {{ file.name }}
@@ -218,10 +232,7 @@ async function handleImportDone() {
             <td class="col-actions">
               <NTooltip v-if="['txt', 'md'].includes(file.ext)" :delay="200" placement="top" :theme-overrides="tooltipOverrides">
                 <template #trigger>
-                  <button
-                    class="action-btn"
-                    @click="openEditor(file.id)"
-                  >
+                  <button class="action-btn" @click="openEditor(file.id)">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -231,10 +242,7 @@ async function handleImportDone() {
               </NTooltip>
               <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
                 <template #trigger>
-                  <button
-                    class="action-btn"
-                    @click="handleReparse(file)"
-                  >
+                  <button class="action-btn" @click="handleReparse(file)">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <path d="M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
                       <path d="M11.3 1.5v3h-3M2.7 12.5v-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
@@ -245,10 +253,7 @@ async function handleImportDone() {
               </NTooltip>
               <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
                 <template #trigger>
-                  <button
-                    class="action-btn action-danger"
-                    @click="requestDelete(file)"
-                  >
+                  <button class="action-btn action-danger" @click="requestDelete(file)">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                       <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -260,6 +265,34 @@ async function handleImportDone() {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="files.length > 0" class="file-pagination">
+      <span class="pagination-info">{{ t('kb.file.rangeInfo', { start: rangeStart, end: rangeEnd, total }) }}</span>
+      <div class="pagination-controls">
+        <button
+          class="page-btn"
+          :disabled="page <= 1"
+          :title="t('kb.file.prevPage')"
+          @click="kbFileStore.loadPage(kbId, page - 1)"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <span class="pagination-page">{{ t('kb.file.pageInfo', { page, total: totalPages }) }}</span>
+        <button
+          class="page-btn"
+          :disabled="page >= totalPages"
+          :title="t('kb.file.nextPage')"
+          @click="kbFileStore.loadPage(kbId, page + 1)"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M4.5 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Drawers & Dialogs -->
@@ -312,10 +345,10 @@ async function handleImportDone() {
   flex-wrap: wrap;
 }
 .file-search {
-  width: 200px;
+  width: 220px;
 }
 .file-filter {
-  width: 120px;
+  width: 130px;
 }
 .file-toolbar-spacer {
   flex: 1;
@@ -324,7 +357,7 @@ async function handleImportDone() {
 .file-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 28px 24px;
+  padding: 0 28px 12px;
 }
 .file-state {
   display: flex;
@@ -364,26 +397,11 @@ async function handleImportDone() {
   width: auto;
   min-width: 200px;
 }
-.col-ext {
-  width: 1%;
-  white-space: nowrap;
-}
-.col-size {
-  width: 1%;
-  white-space: nowrap;
-}
-.col-status {
-  width: 1%;
-  white-space: nowrap;
-}
-.col-chunks {
-  width: 1%;
-  white-space: nowrap;
-}
-.col-enabled {
-  width: 1%;
-  white-space: nowrap;
-}
+.col-ext { width: 1%; white-space: nowrap; }
+.col-size { width: 1%; white-space: nowrap; }
+.col-status { width: 1%; white-space: nowrap; }
+.col-chunks { width: 1%; white-space: nowrap; }
+.col-enabled { width: 1%; white-space: nowrap; }
 .col-actions {
   width: 1%;
   white-space: nowrap;
@@ -400,7 +418,7 @@ async function handleImportDone() {
   cursor: pointer;
   padding: 0;
   text-align: left;
-  transition: color var(--transition-fast);
+  transition: color 60ms ease;
 }
 .file-name-btn:hover {
   color: var(--accent);
@@ -451,5 +469,54 @@ async function handleImportDone() {
 }
 .action-danger:hover {
   color: var(--rose);
+}
+
+/* ─── Pagination ─── */
+.file-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 28px 16px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  gap: 12px;
+}
+.pagination-info {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 60ms ease;
+}
+.page-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagination-page {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 64px;
+  text-align: center;
 }
 </style>

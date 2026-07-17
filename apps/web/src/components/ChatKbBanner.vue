@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useKbBindingStore } from "../stores/kb-binding.js";
 import { useKbStore } from "../stores/kb.js";
 import { useKbFileStore } from "../stores/kb-file.js";
@@ -16,6 +16,18 @@ const { t } = useI18n();
 
 const bindings = computed(() => kbBindingStore.getForSession(props.sessionId));
 
+// 绑定变化时预拉一次可搜索文件，保证刷新页面后 banner 计数正确
+watch(
+  () => bindings.value.map((b) => b.kbId),
+  (kbIds, prevKbIds) => {
+    const prev = new Set(prevKbIds ?? []);
+    for (const id of kbIds) {
+      if (!prev.has(id)) kbFileStore.loadSearchableFiles(id);
+    }
+  },
+  { immediate: true },
+);
+
 const summary = computed(() => {
   const kbIds = new Set(bindings.value.map((b) => b.kbId));
   const fileCount = bindings.value.reduce((acc, b) => {
@@ -23,8 +35,7 @@ const summary = computed(() => {
       return acc + b.fileFilter.length;
     }
     // Count all searchable files if no filter
-    const files = kbFileStore.files[b.kbId] ?? [];
-    return acc + files.filter((f) => f.status === "ready" && f.enabled).length;
+    return acc + kbFileStore.searchableFiles(b.kbId).length;
   }, 0);
 
   return { kbCount: kbIds.size, fileCount };

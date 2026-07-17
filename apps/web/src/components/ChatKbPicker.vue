@@ -56,17 +56,18 @@ async function toggleKb(kb: KbDto) {
     const newBindings = [...bindings.map((b) => ({ kbId: b.kbId, fileFilter: b.fileFilter })), { kbId: kb.id, fileFilter: null }];
     await kbBindingStore.save(props.sessionId, newBindings);
     // Pre-load files for expansion
-    await kbFileStore.loadForKb(kb.id);
+    await kbFileStore.loadSearchableFiles(kb.id);
   }
   emit("updated");
 }
 
 function toggleExpand(kbId: string) {
   expandedKbId.value = expandedKbId.value === kbId ? null : kbId;
+  kbFileStore.loadSearchableFiles(kbId);
 }
 
 function getSearchableFiles(kbId: string) {
-  return (kbFileStore.files[kbId] ?? []).filter((f) => f.status === "ready" && f.enabled);
+  return kbFileStore.searchableFiles(kbId);
 }
 </script>
 
