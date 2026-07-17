@@ -23,6 +23,14 @@ const showCreateSkill = ref(false);
 const showImportZip = ref(false);
 const uninstallTarget = ref<string | null>(null);
 
+// 已安装技能模糊搜索
+const installedQuery = ref("");
+const filteredInstalledSkills = computed(() => {
+  const q = installedQuery.value.trim().toLowerCase();
+  if (!q) return installed.skills;
+  return installed.skills.filter((s) => s.name.toLowerCase().includes(q));
+});
+
 function fmt(n: number | null | undefined): string {
   if (n == null) return "—";
   if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
@@ -249,6 +257,14 @@ watch(activeTab, (tab) => {
     <!-- Installed tab -->
     <div v-else class="ss-installed-body">
       <div class="ss-installed-actions">
+        <NInput
+          v-model:value="installedQuery"
+          size="small"
+          :placeholder="t('skillStore.searchPlaceholder')"
+          clearable
+          class="ss-installed-search"
+        />
+        <div class="ss-installed-spacer" />
         <NButton size="small" type="primary" @click="showCreateSkill = true">
           + {{ t('skillStore.importManual') }}
         </NButton>
@@ -265,9 +281,10 @@ watch(activeTab, (tab) => {
 
       <div v-if="installed.loading && !installed.skills.length" class="ss-state"><NSpin size="small" /></div>
       <div v-else-if="!installed.skills.length" class="ss-state empty">{{ t('skillStore.installedEmpty') }}</div>
+      <div v-else-if="!filteredInstalledSkills.length" class="ss-state empty">{{ t('skillStore.noResults') }}</div>
       <ul v-else class="ss-card-list">
         <li
-          v-for="s in installed.skills"
+          v-for="s in filteredInstalledSkills"
           :key="s.name"
           class="ss-card"
           data-test="installed-card"
@@ -588,6 +605,13 @@ watch(activeTab, (tab) => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.ss-installed-search {
+  width: 220px;
+  flex: 0 1 220px;
+}
+.ss-installed-spacer {
+  flex: 1;
 }
 
 /* ─── Slide transition ─── */
