@@ -29,57 +29,71 @@ export class KbSearchService {
     const start = performance.now();
     const { query, kbIds, fileIds, limit = 8, embeddingModel } = input;
 
-    console.log(`[KB Search] start: query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"} limit=${limit} embedding=${!!embeddingModel}`);
+    console.log(`[KB Search] ─── start ─── query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"} limit=${limit} embedding=${!!embeddingModel}`);
 
     if (!query.trim() || !kbIds.length) {
+      console.log(`[KB Search] ─── done (empty input, 0ms)`);
       return { hits: [], durationMs: 0 };
     }
 
-    // ── Phase 1: FTS5 keyword search ──
+    // ── Step 1: FTS5 keyword search ──
+    const t1 = performance.now();
     const ftsCandidates = this.ftsSearchPhase(query, kbIds, fileIds);
-    console.log(`[KB Search] FTS candidates: ${ftsCandidates.length}`);
+    console.log(`[KB Search] Step 1/FTS5 keyword: ${ftsCandidates.length} candidates (${Math.round(performance.now() - t1)}ms)`);
 
-    // ── Phase 1b: instr fallback for short queries (≤2 CJK chars) ──
+    // ── Step 1b: instr fallback for short queries (≤2 CJK chars) ──
     if (ftsCandidates.length < limit && isShortCjkQuery(query)) {
+      const t1b = performance.now();
       const instrHits = this.instrFallback(query, kbIds, fileIds, limit - ftsCandidates.length);
       if (instrHits.length > 0) {
-        console.log(`[KB Search] instr fallback: +${instrHits.length} hits`);
-        // Append instr hits after FTS candidates (lower priority)
+        console.log(`[KB Search] Step 1b/instr fallback: +${instrHits.length} hits (${Math.round(performance.now() - t1b)}ms)`);
         ftsCandidates.push(...instrHits);
       }
     }
 
     if (ftsCandidates.length === 0 && !embeddingModel) {
-      return { hits: [], durationMs: Math.round(performance.now() - start) };
+      const ms = Math.round(performance.now() - start);
+      console.log(`[KB Search] ─── done (no results, ${ms}ms)`);
+      return { hits: [], durationMs: ms };
     }
 
-    // ── Phase 2: Vector search (independent path, not just re-rank) ──
+    // ── Step 2: Vector search (independent retrieval) ──
     let vectorCandidates: ScoredCandidate[] = [];
     if (embeddingModel) {
+      const t2 = performance.now();
       vectorCandidates = await this.vectorSearch(query, embeddingModel, kbIds, fileIds, VECTOR_CANDIDATE_LIMIT);
-      console.log(`[KB Search] vector candidates: ${vectorCandidates.length}`);
+      console.log(`[KB Search] Step 2/vector search: ${vectorCandidates.length} candidates (${Math.round(performance.now() - t2)}ms)`);
+    } else {
+      console.log(`[KB Search] Step 2/vector search: skipped (no embedding model)`);
     }
 
-    // ── Phase 3: RRF merge ──
+    // ── Step 3: Merge & rank ──
     let hits: KbSearchHitDto[];
+    let strategy: string;
     if (embeddingModel && vectorCandidates.length > 0) {
       hits = rrfMerge(ftsCandidates, vectorCandidates, limit);
+      strategy = "RRF merge (FTS + vector)";
     } else if (ftsCandidates.length > 0) {
-      // Pure FTS5 ranking (no embedding model)
       hits = ftsCandidates
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((c) => c.hit);
+      strategy = "FTS5 BM25 rank";
     } else {
-      // Only vector results (no FTS match)
       hits = vectorCandidates
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((c) => c.hit);
+      strategy = "vector cosine rank";
     }
 
-    console.log(`[KB Search] final hits: ${hits.length}`);
-    return { hits, durationMs: Math.round(performance.now() - start) };
+    const ms = Math.round(performance.now() - start);
+    console.log(`[KB Search] Step 3/merge: strategy="${strategy}" → ${hits.length} hits`);
+    hits.forEach((h, i) => {
+      console.log(`[KB Search]   #${i + 1} score=${h.score.toFixed(4)} file="${h.fileName}" chunk=${h.chunkId} seq=${h.seq} pages=${h.pageStart}-${h.pageEnd}`);
+    });
+    console.log(`[KB Search] ─── done (${ms}ms) ───`);
+    return { hits, durationMs: ms };
   }
 
   // ─── FTS5 keyword search ───
@@ -91,9 +105,9 @@ export class KbSearchService {
   ): ScoredCandidate[] {
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) return [];
-    console.log(`[KB Search] ftsQuery: "${ftsQuery}"`);
     // Extract query words for JS-based snippet highlighting
     const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
+    console.log(`[KB Search]   ftsQuery="${ftsQuery}" words=[${queryWords.join(", ")}]`);
     return this.ftsSearch(ftsQuery, kbIds, fileIds, FTS_CANDIDATE_LIMIT, queryWords);
   }
 
@@ -224,9 +238,9 @@ export class KbSearchService {
     let queryEmbedding: number[];
     try {
       queryEmbedding = await getEmbedding(embeddingModel, query);
-      console.log(`[KB Search] query embedding: dimension=${queryEmbedding.length}`);
+      console.log(`[KB Search]   query embedding: model=${embeddingModel.modelId} dimension=${queryEmbedding.length}`);
     } catch (err: any) {
-      console.error(`[KB Search] query embedding failed: ${err.message}`);
+      console.error(`[KB Search]   query embedding failed: ${err.message}`);
       return [];
     }
 
