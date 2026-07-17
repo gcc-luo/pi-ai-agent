@@ -50,6 +50,24 @@ const pageSize = computed(() => kbFileStore.pageSize);
 const rangeStart = computed(() => total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1);
 const rangeEnd = computed(() => Math.min(page.value * pageSize.value, total.value));
 
+// 跳页输入框：与 store.page 同步，回车或失焦提交
+const jumpInput = ref<string>(String(page.value));
+watch(page, (p) => { jumpInput.value = String(p); });
+
+function commitJump() {
+  const n = parseInt(jumpInput.value, 10);
+  if (!Number.isFinite(n)) {
+    jumpInput.value = String(page.value);
+    return;
+  }
+  const target = Math.max(1, Math.min(n, totalPages.value || 1));
+  if (target !== page.value) {
+    kbFileStore.loadPage(props.kbId, target);
+  } else {
+    jumpInput.value = String(page.value);
+  }
+}
+
 const statusOptions = computed(() => [
   { label: t("kb.file.status.pending"), value: "pending" },
   { label: t("kb.file.status.parsing"), value: "parsing" },
@@ -292,6 +310,19 @@ async function handleImportDone() {
             <path d="M4.5 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
+        <span class="pagination-jump">
+          <span class="jump-label">{{ t('kb.file.jumpTo') }}</span>
+          <input
+            v-model="jumpInput"
+            class="jump-input"
+            type="text"
+            inputmode="numeric"
+            :disabled="totalPages <= 1"
+            @keyup.enter="commitJump"
+            @blur="commitJump"
+          />
+          <span class="jump-label">{{ t('kb.file.jumpPage') }}</span>
+        </span>
       </div>
     </div>
 
@@ -518,5 +549,46 @@ async function handleImportDone() {
   color: var(--text-secondary);
   min-width: 64px;
   text-align: center;
+}
+
+/* ─── Jump to page ─── */
+.pagination-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-subtle);
+}
+.jump-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.jump-input {
+  width: 44px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+  transition: border-color 60ms ease;
+}
+.jump-input:focus:not(:disabled) {
+  border-color: var(--accent);
+}
+.jump-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.jump-input::-webkit-outer-spin-button,
+.jump-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 </style>
