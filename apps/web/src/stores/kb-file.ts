@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "../api/client.js";
+import { useKbStore } from "./kb.js";
 import type { KbFileDto } from "@pi-web-ui/shared";
 
 const POLL_INTERVAL_MS = 2000;
@@ -12,6 +13,19 @@ export const useKbFileStore = defineStore("kb-file", {
     _pollTimers: {} as Record<string, ReturnType<typeof setInterval>>,
   }),
   actions: {
+    /** 拉取 KB 摘要并写回 kbStore.current（仅当当前正在查看该 KB 时） */
+    async refreshKbSummary(kbId: string) {
+      try {
+        const kb = await api.getKnowledgeBase(kbId);
+        const kbStore = useKbStore();
+        if (kbStore.current?.id === kbId) {
+          kbStore.setCurrent(kb);
+        }
+      } catch {
+        // 摘要拉取失败不影响文件列表
+      }
+    },
+
     async loadForKb(kbId: string) {
       this.loading = true;
       try {
@@ -19,6 +33,8 @@ export const useKbFileStore = defineStore("kb-file", {
       } finally {
         this.loading = false;
       }
+      // 同步刷新 KB 头部统计（fileCount/chunkCount/failedFileCount 等）
+      this.refreshKbSummary(kbId);
       // 如果有文件正在解析，自动开启轮询
       if (this.hasActiveFiles(kbId)) {
         this.startPolling(kbId);
@@ -55,6 +71,8 @@ export const useKbFileStore = defineStore("kb-file", {
       if (this.files[kbId]) {
         this.files[kbId] = this.files[kbId].filter((f) => f.id !== fileId);
       }
+      // 文件数变化，同步刷新头部统计
+      this.refreshKbSummary(kbId);
     },
     async updateContent(fileId: string, patch: { name?: string; content?: string }) {
       const file = await api.updateKbFile(fileId, patch);
@@ -100,6 +118,8 @@ export const useKbFileStore = defineStore("kb-file", {
         } catch {
           // 网络异常忽略，下次轮询再试
         }
+        // 同步刷新头部统计：解析完成后 failedFileCount/fileCount 会立刻反映
+        this.refreshKbSummary(kbId);
         if (!this.hasActiveFiles(kbId)) {
           this.stopPolling(kbId);
         }
