@@ -271,12 +271,6 @@ watch(activeTab, (tab) => {
         <NButton size="small" @click="showImportZip = true">
           {{ t('skillStore.importZip') }}
         </NButton>
-        <NButton size="small" quaternary :loading="installed.loading" @click="installed.loadAll()">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="margin-right: 4px">
-            <path d="M2 6a4 4 0 016.5-3.1M10 6a4 4 0 01-6.5 3.1M9.5 1.5v2.2H7.3M2.5 10.5V8.3h2.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-          </svg>
-          {{ t('skillStore.search') }}
-        </NButton>
       </div>
 
       <div v-if="installed.loading && !installed.skills.length" class="ss-state"><NSpin size="small" /></div>
