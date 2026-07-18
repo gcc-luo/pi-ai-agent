@@ -6,7 +6,7 @@ import { useI18n } from "../i18n/index.js";
 import type { KbFileDto } from "@pi-web-ui/shared";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import ImportFilesDialog from "./ImportFilesDialog.vue";
-import KbFileDetailDrawer from "./KbFileDetailDrawer.vue";
+import KbFileDetailDialog from "./KbFileDetailDialog.vue";
 import KbFileEditorDrawer from "./KbFileEditorDrawer.vue";
 
 const props = defineProps<{ kbId: string }>();
@@ -327,7 +327,7 @@ async function handleImportDone() {
     </div>
 
     <!-- Drawers & Dialogs -->
-    <KbFileDetailDrawer
+    <KbFileDetailDialog
       :show="detailFileId !== null"
       :file-id="detailFileId"
       @close="detailFileId = null"

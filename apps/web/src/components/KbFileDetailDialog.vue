@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import { NDrawer, NDrawerContent, NSpin, NEmpty } from "naive-ui";
+import { NModal, NTabs, NTabPane, NSpin, NEmpty } from "naive-ui";
 import { api } from "../api/client.js";
 import type { KbFileDto, KbChunkDto } from "@pi-web-ui/shared";
 
@@ -20,6 +20,7 @@ const loading = ref(false);
 const contentLoading = ref(false);
 const chunksLoading = ref(false);
 const error = ref("");
+const activeTab = ref<"meta" | "preview" | "chunks">("meta");
 
 const isTextPreviewable = computed(() => {
   if (!file.value) return false;
@@ -123,6 +124,7 @@ watch(
   () => [props.show, props.fileId] as const,
   ([visible, id]) => {
     if (visible && id) {
+      activeTab.value = "meta";
       loadData(id);
     } else {
       file.value = null;
@@ -136,44 +138,40 @@ watch(
 </script>
 
 <template>
-  <NDrawer
+  <NModal
     :show="show"
-    placement="right"
+    preset="card"
+    :style="{ width: '720px', maxWidth: '92vw' }"
+    :title="file ? file.name : '文件详情'"
+    :bordered="false"
+    :mask-closable="true"
     @update:show="(v: boolean) => { if (!v) emit('close'); }"
   >
-    <NDrawerContent :width="480" closable>
-      <template #header>
-        <div v-if="file" class="drawer-header">
-          <div class="header-title-row">
-            <span class="file-name">{{ file.name }}</span>
-            <span class="ext-badge">.{{ file.ext }}</span>
-          </div>
-          <span class="status-badge" :style="{ color: statusColor, borderColor: statusColor }">
-            {{ statusLabel }}
-          </span>
-        </div>
-        <span v-else class="drawer-header-placeholder">文件详情</span>
-      </template>
+    <template #header-extra v-if="file">
+      <span class="ext-badge">.{{ file.ext }}</span>
+      <span class="status-badge" :style="{ color: statusColor, borderColor: statusColor }">
+        {{ statusLabel }}
+      </span>
+    </template>
 
-      <!-- Loading state -->
-      <div v-if="loading" class="loading-container">
-        <NSpin size="medium" />
-      </div>
+    <!-- Loading state -->
+    <div v-if="loading" class="loading-container">
+      <NSpin size="medium" />
+    </div>
 
-      <!-- Error state -->
-      <div v-else-if="error" class="error-container">
-        <NEmpty description="加载失败">
-          <template #extra>
-            <div class="error-text">{{ error }}</div>
-          </template>
-        </NEmpty>
-      </div>
+    <!-- Error state -->
+    <div v-else-if="error" class="error-container">
+      <NEmpty description="加载失败">
+        <template #extra>
+          <div class="error-text">{{ error }}</div>
+        </template>
+      </NEmpty>
+    </div>
 
-      <!-- Content -->
-      <div v-else-if="file" class="drawer-body">
-        <!-- Meta section -->
-        <section class="meta-section">
-          <h4 class="section-label">元数据</h4>
+    <!-- Content -->
+    <div v-else-if="file" class="dialog-body">
+      <NTabs v-model:value="activeTab" type="line" size="small" animated>
+        <NTabPane name="meta" tab="元数据">
           <div class="meta-grid">
             <div class="meta-item">
               <span class="meta-key">大小</span>
@@ -203,11 +201,9 @@ watch(
           <div v-if="file.status === 'failed' && file.failReason" class="fail-reason">
             {{ file.failReason }}
           </div>
-        </section>
+        </NTabPane>
 
-        <!-- Preview section -->
-        <section class="preview-section">
-          <h4 class="section-label">内容预览</h4>
+        <NTabPane name="preview" tab="内容预览">
           <div v-if="isTextPreviewable">
             <NSpin v-if="contentLoading" size="small" class="inline-spin" />
             <pre v-else-if="content !== null" class="content-preview">{{ content }}</pre>
@@ -216,14 +212,9 @@ watch(
           <div v-else class="preview-unavailable">
             预览不可用（仅支持 txt / md 文件）
           </div>
-        </section>
+        </NTabPane>
 
-        <!-- Chunk list section -->
-        <section class="chunk-section">
-          <h4 class="section-label">
-            分块列表
-            <span v-if="chunks.length" class="chunk-count">{{ chunks.length }}</span>
-          </h4>
+        <NTabPane name="chunks" :tab="`分块列表${chunks.length ? ' · ' + chunks.length : ''}`">
           <NSpin v-if="chunksLoading" size="small" class="inline-spin" />
           <div v-else-if="chunks.length === 0" class="no-chunks">暂无分块</div>
           <div v-else class="chunk-list">
@@ -241,34 +232,13 @@ watch(
               </div>
             </div>
           </div>
-        </section>
-      </div>
-    </NDrawerContent>
-  </NDrawer>
+        </NTabPane>
+      </NTabs>
+    </div>
+  </NModal>
 </template>
 
 <style scoped>
-.drawer-header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-.header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.file-name {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .ext-badge {
   flex-shrink: 0;
   font-family: var(--font-mono);
@@ -281,19 +251,13 @@ watch(
   color: var(--text-secondary);
 }
 .status-badge {
-  align-self: flex-start;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   padding: 1px 8px;
   border-radius: 99px;
   border: 1px solid;
-}
-.drawer-header-placeholder {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
+  margin-left: 8px;
 }
 
 .loading-container {
@@ -311,35 +275,22 @@ watch(
   margin-top: 8px;
 }
 
-.drawer-body {
+.dialog-body {
+  /* NModal card body already has padding; just provide a min height so
+     tabs don't collapse when switching panes */
+  min-height: 320px;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding-bottom: 16px;
+}
+.dialog-body :deep(.n-tabs-pane) {
+  padding-top: 12px;
 }
 
-.section-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin: 0 0 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Meta grid */
-.meta-section {
-  border-bottom: 1px solid var(--border-default);
-  padding-bottom: 16px;
-}
 .meta-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
+  gap: 12px 24px;
 }
 .meta-item {
   display: flex;
@@ -368,10 +319,6 @@ watch(
 }
 
 /* Preview */
-.preview-section {
-  border-bottom: 1px solid var(--border-default);
-  padding-bottom: 16px;
-}
 .content-preview {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -381,7 +328,7 @@ watch(
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 12px;
-  max-height: 300px;
+  max-height: 50vh;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -390,7 +337,7 @@ watch(
 .preview-unavailable {
   font-size: 12px;
   color: var(--text-muted);
-  padding: 16px;
+  padding: 24px;
   text-align: center;
   background: var(--bg-elevated);
   border: 1px dashed var(--border-default);
@@ -399,34 +346,23 @@ watch(
 .inline-spin {
   display: flex;
   justify-content: center;
-  padding: 16px 0;
+  padding: 24px 0;
 }
 
 /* Chunks */
-.chunk-section {
-  min-height: 0;
-}
-.chunk-count {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  padding: 0 6px;
-  border-radius: 99px;
-  background: var(--accent-dim);
-  color: var(--accent);
-}
 .no-chunks {
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
-  padding: 20px 0;
+  padding: 24px 0;
 }
 .chunk-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 480px;
+  max-height: 50vh;
   overflow-y: auto;
+  padding-right: 4px;
 }
 .chunk-card {
   padding: 10px 12px;
