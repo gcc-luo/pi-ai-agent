@@ -128,15 +128,56 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
 
-/** Cumulative session tokens formatted Claude-style: "↑in ↓out" in K units. */
+/** Cumulative session tokens with animated number transitions. */
+const displayedInput = ref(0);
+const displayedOutput = ref(0);
+let animFrameInput: number | null = null;
+let animFrameOutput: number | null = null;
+
+function animateNumber(from: number, to: number, duration: number, onUpdate: (v: number) => void, onDone: () => void): number {
+  const start = performance.now();
+  const diff = to - from;
+  function tick(now: number) {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    // easeOutCubic for smooth deceleration
+    const eased = 1 - Math.pow(1 - progress, 3);
+    onUpdate(from + diff * eased);
+    if (progress < 1) {
+      return requestAnimationFrame(tick);
+    } else {
+      onDone();
+      return null;
+    }
+  }
+  return requestAnimationFrame(tick);
+}
+
+watch(
+  () => agent.tokensFor(props.sessionId),
+  ({ input, output }) => {
+    if (animFrameInput !== null) cancelAnimationFrame(animFrameInput);
+    if (animFrameOutput !== null) cancelAnimationFrame(animFrameOutput);
+    const fromInput = displayedInput.value;
+    const fromOutput = displayedOutput.value;
+    if (input !== fromInput) {
+      animFrameInput = animateNumber(fromInput, input, 600, (v) => { displayedInput.value = v; }, () => { animFrameInput = null; });
+    }
+    if (output !== fromOutput) {
+      animFrameOutput = animateNumber(fromOutput, output, 600, (v) => { displayedOutput.value = v; }, () => { animFrameOutput = null; });
+    }
+  },
+  { immediate: true, deep: true }
+);
+
 const tokenLabel = computed(() => {
-  const { input, output } = agent.tokensFor(props.sessionId);
   const fmt = (n: number) => {
-    if (n <= 0) return "0";
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-    return String(n);
+    const rounded = Math.round(n);
+    if (rounded <= 0) return "0";
+    if (rounded >= 1000) return `${(rounded / 1000).toFixed(1)}K`;
+    return String(rounded);
   };
-  return { input: fmt(input), output: fmt(output) };
+  return { input: fmt(displayedInput.value), output: fmt(displayedOutput.value) };
 });
 
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
