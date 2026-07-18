@@ -42,9 +42,8 @@ const { currentLocale, toggleLocale } = useI18n();
         @click="$emit('navigate', 'model')"
       >
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.4"/>
-          <circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.4"/>
-          <circle cx="9" cy="9" r="1" fill="currentColor"/>
+          <path d="M9 2L15 5.5v7L9 16l-6-3.5v-7L9 2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="M9 9v7M9 9l6-3.5M9 9L3 5.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
         </svg>
         <span class="nav-label">模型</span>
       </button>
