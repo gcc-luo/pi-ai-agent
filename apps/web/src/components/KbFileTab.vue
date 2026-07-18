@@ -248,6 +248,17 @@ async function handleImportDone() {
               />
             </td>
             <td class="col-actions">
+              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
+                <template #trigger>
+                  <button class="action-btn" @click="openDetail(file.id)">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2" />
+                      <path d="M7 6.3v3.2M7 4v.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </template>
+                {{ t('kb.file.detail') }}
+              </NTooltip>
               <NTooltip v-if="['txt', 'md'].includes(file.ext)" :delay="200" placement="top" :theme-overrides="tooltipOverrides">
                 <template #trigger>
                   <button class="action-btn" @click="openEditor(file.id)">
@@ -436,7 +447,7 @@ async function handleImportDone() {
 .col-actions {
   width: 1%;
   white-space: nowrap;
-  min-width: 132px;
+  min-width: 168px;
 }
 
 .file-name-btn {
