@@ -151,11 +151,6 @@ function getSearchableFiles(kbId: string) {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
-.kb-picker-trigger.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
-}
 .kb-badge {
   position: absolute;
   top: -3px;
