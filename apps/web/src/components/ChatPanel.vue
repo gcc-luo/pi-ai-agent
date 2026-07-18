@@ -128,11 +128,15 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
 
-/** Cumulative session tokens formatted as "X.XK" or "0" when none. */
+/** Cumulative session tokens formatted Claude-style: "↑in ↓out" in K units. */
 const tokenLabel = computed(() => {
-  const total = agent.tokensFor(props.sessionId);
-  if (total <= 0) return "0";
-  return `${(total / 1000).toFixed(1)}K`;
+  const { input, output } = agent.tokensFor(props.sessionId);
+  const fmt = (n: number) => {
+    if (n <= 0) return "0";
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return String(n);
+  };
+  return { input: fmt(input), output: fmt(output) };
 });
 
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
@@ -190,7 +194,8 @@ async function loadMessages() {
   persistedMessages.value = await api.listMessages(props.sessionId);
   // Restore kb_search metadata from persisted messages
   const restored: Record<string, KbCallState> = {};
-  let historicalTokens = 0;
+  let historicalInput = 0;
+  let historicalOutput = 0;
   for (const m of persistedMessages.value) {
     if (m.role === "user") {
       const meta = getKbSearchMeta(m.metadata);
@@ -205,15 +210,16 @@ async function loadMessages() {
     }
     // Accumulate token usage from assistant message metadata
     if (m.role === "assistant" && m.metadata) {
-      const usage = m.metadata.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const usage = m.metadata.usage as { input?: number; output?: number } | undefined;
       if (usage) {
-        historicalTokens += (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+        historicalInput += usage.input ?? 0;
+        historicalOutput += usage.output ?? 0;
       }
     }
   }
   kbSearchByMessage.value = { ...kbSearchByMessage.value, ...restored };
-  // Reset and restore historical token total for this session
-  agent.sessionTokens[props.sessionId] = historicalTokens;
+  // Reset and restore historical token totals for this session
+  agent.sessionTokens[props.sessionId] = { input: historicalInput, output: historicalOutput };
   await nextTick();
   scrollToBottom();
 }
@@ -673,7 +679,10 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
           @import="showImportSkill = true"
         />
         <ChatKbPicker :session-id="sessionId" />
-        <span class="token-usage" :title="t('chat.tokenUsage')">{{ tokenLabel }}</span>
+        <span class="token-usage" :title="t('chat.tokenUsage')">
+          <span class="token-in"><span class="token-arrow up">↑</span>{{ tokenLabel.input }}</span>
+          <span class="token-out"><span class="token-arrow down">↓</span>{{ tokenLabel.output }}</span>
+        </span>
       </div>
       <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
@@ -1474,6 +1483,9 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 
 .token-usage {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
@@ -1482,6 +1494,18 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   white-space: nowrap;
   user-select: none;
 }
+.token-in, .token-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.token-arrow {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.token-arrow.up { color: #10b981; }
+.token-arrow.down { color: #6366f1; }
 
 .file-input-hidden {
   display: none;

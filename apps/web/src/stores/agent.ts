@@ -75,9 +75,9 @@ export const useAgentStore = defineStore("agent", {
     // kb_search event for that session so the chat panel can render the
     // call card under the user message that triggered the search.
     kbSearches: {} as Record<string, { phase: string; query: string; hits?: any[]; durationMs?: number; error?: string; at: number }>,
-    // Cumulative token usage (input + output) per session, accumulated from
-    // live message_end events. Historical totals can be added via addSessionTokens.
-    sessionTokens: {} as Record<string, number>,
+    // Cumulative token usage per session: { input, output } accumulated from
+    // live message_end events and historical metadata.
+    sessionTokens: {} as Record<string, { input: number; output: number }>,
   }),
   getters: {
     messagesFor: (state) => (sessionId: string): StreamMessage[] => state.streams[sessionId] ?? [],
@@ -91,7 +91,8 @@ export const useAgentStore = defineStore("agent", {
     isSessionBusy: (state) => (sessionId: string): boolean => {
       return state.runStates[sessionId] === "working";
     },
-    tokensFor: (state) => (sessionId: string): number => state.sessionTokens[sessionId] ?? 0,
+    tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
+      state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
   },
   actions: {
     init() {
@@ -144,8 +145,9 @@ export const useAgentStore = defineStore("agent", {
     interrupt(sessionId: string) {
       wsClient.send({ type: "interrupt", sessionId });
     },
-    addSessionTokens(sessionId: string, tokens: number) {
-      this.sessionTokens[sessionId] = (this.sessionTokens[sessionId] ?? 0) + tokens;
+    addSessionTokens(sessionId: string, input: number, output: number) {
+      const prev = this.sessionTokens[sessionId] ?? { input: 0, output: 0 };
+      this.sessionTokens[sessionId] = { input: prev.input + input, output: prev.output + output };
     },
     appendUser(sessionId: string, content: string) {
       const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts: partsFromText(content), status: "complete", createdAt: Date.now() };
@@ -209,11 +211,13 @@ export const useAgentStore = defineStore("agent", {
           }
           return { ...m, parts, status: "complete" as const };
         });
-        // Accumulate token usage from the LLM response
-        const usage = e.metadata?.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+        // Accumulate token usage from the LLM response.
+        // The Pi agent normalises provider usage into { input, output, totalTokens, ... }
+        const usage = e.metadata?.usage as { input?: number; output?: number } | undefined;
         if (usage) {
-          const total = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
-          if (total > 0) this.addSessionTokens(sid, total);
+          const input = usage.input ?? 0;
+          const output = usage.output ?? 0;
+          if (input > 0 || output > 0) this.addSessionTokens(sid, input, output);
         }
       } else if (e.type === "tool_call") {
         this.streams[sid] = list.map((m) => {
