@@ -139,7 +139,7 @@ const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.na
  * Only matches names that actually exist as installed skills so a stray
  * `/skill:foo` in code or prose is left untouched.
  */
-function splitSkillsFromText(text: string): { text: string; skills: string[]; tipLabel: string | null } {
+function splitSkillsFromText(text: string): { text: string; skills: string[]; tipLabel: string | null; files: string[] } {
   const known = knownSkillNames.value;
   // Pull out the tip block first so it doesn't pollute the cleaned text.
   const tipMatch = text.match(/<!-- skill-tip:start -->/);
@@ -156,9 +156,16 @@ function splitSkillsFromText(text: string): { text: string; skills: string[]; ti
       tipLabel = "已附加技能提示";
     }
   }
-  const stripped = text.replace(TIP_BLOCK_RE, "").replace(/<!-- kb-context:start -->[\s\S]*?<!-- kb-context:end -->\n*/g, "");
+  // Extract attached file code blocks (```ext title="filename" ... ```) so the
+  // bubble shows a compact file chip instead of the full content.
+  const files: string[] = [];
+  const afterFiles = text.replace(/```(\w+)\s+title="([^"]+)"\n[\s\S]*?```\n?/g, (_match, _ext, name) => {
+    files.push(name);
+    return "";
+  });
+  const stripped = afterFiles.replace(TIP_BLOCK_RE, "").replace(/<!-- kb-context:start -->[\s\S]*?<!-- kb-context:end -->\n*/g, "");
   if (!known.size) {
-    return { text: stripped.trim() || "", skills: [], tipLabel };
+    return { text: stripped.trim() || "", skills: [], tipLabel, files };
   }
   const skills: string[] = [];
   const cleaned = stripped.replace(/\/skill:([\w-]+)/g, (full, name: string) => {
@@ -168,7 +175,7 @@ function splitSkillsFromText(text: string): { text: string; skills: string[]; ti
     }
     return full;
   });
-  return { text: cleaned.replace(/[ \t]{2,}/g, " ").replace(/\s+$/g, "").trim() || "", skills, tipLabel };
+  return { text: cleaned.replace(/[ \t]{2,}/g, " ").replace(/\s+$/g, "").trim() || "", skills, tipLabel, files };
 }
 const persistedMessages = ref<{ id: string; role: string; content: string | null; metadata: Record<string, unknown> | null; createdAt: number }[]>([]);
 
@@ -514,6 +521,15 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
                       <circle cx="6" cy="6" r="1.4" fill="currentColor" />
                     </svg>
                     <span class="chip-name">{{ name }}</span>
+                  </span>
+                </div>
+                <div v-if="split.files.length" class="msg-file-chips">
+                  <span v-for="fname in split.files" :key="fname" class="file-chip static">
+                    <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 1.5h4L9 3.5v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-8a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+                      <path d="M7 1.5v2h2" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+                    </svg>
+                    <span class="chip-name">{{ fname }}</span>
                   </span>
                 </div>
                 <div v-if="split.text" class="msg-content" v-html="renderMarkdown(split.text)"></div>
@@ -1570,6 +1586,17 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+.msg-file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.file-chip.static {
+  padding-right: 10px;
 }
 
 /* Badge shown in the user bubble when an auto-injected tip was attached to
