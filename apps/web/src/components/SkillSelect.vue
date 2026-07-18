@@ -46,7 +46,7 @@ async function confirmUninstall() {
       <template #trigger>
         <button class="skill-trigger" :class="{ active: skillStore.skills.length }" :title="t('skill.dropdown')">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path d="M2 4h10M4 7h6M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <path d="M8 1L3 8h4l-1 5 5-7H7l1-5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
       </template>
