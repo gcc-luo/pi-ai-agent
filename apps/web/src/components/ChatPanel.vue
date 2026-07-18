@@ -207,9 +207,9 @@ onMounted(async () => {
 });
 
 watch(() => props.sessionId, async () => {
+  kbSearchByMessage.value = {};
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
-  kbSearchByMessage.value = {};
 });
 
 watch(
