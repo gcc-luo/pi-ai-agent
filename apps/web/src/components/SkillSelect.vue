@@ -45,8 +45,8 @@ async function confirmUninstall() {
     <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="320">
       <template #trigger>
         <button class="skill-trigger" :class="{ active: skillStore.skills.length }" :title="t('skill.dropdown')">
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path d="M8 1L3 8h4l-1 5 5-7H7l1-5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+          <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
+            <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
           </svg>
         </button>
       </template>
