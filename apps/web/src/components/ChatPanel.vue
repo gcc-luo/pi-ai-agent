@@ -28,6 +28,70 @@ const showImportSkill = ref(false);
 const input = ref("");
 const selectedSkills = ref<string[]>([]);
 const messagesEl = ref<HTMLElement | null>(null);
+const fileInputEl = ref<HTMLInputElement | null>(null);
+
+interface AttachedFile {
+  name: string;
+  ext: string;
+  content: string;
+  size: number;
+}
+const attachedFiles = ref<AttachedFile[]>([]);
+
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const TEXT_EXTS = new Set([
+  "txt", "md", "markdown", "json", "yaml", "yml", "csv", "tsv", "log",
+  "js", "ts", "tsx", "jsx", "vue", "py", "rb", "go", "rs", "java", "kt",
+  "c", "h", "cpp", "hpp", "cs", "php", "swift", "sh", "bash", "zsh",
+  "html", "htm", "css", "scss", "less", "xml", "svg", "toml", "ini",
+  "conf", "env", "sql", "graphql", "proto", "dart",
+]);
+const TEXT_EXTS_ACCEPT = Array.from(TEXT_EXTS).map((e) => `.${e}`).join(",");
+
+function triggerFilePick() {
+  fileInputEl.value?.click();
+}
+
+function onFilePicked(e: Event) {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+  if (!files) return;
+  for (const file of Array.from(files)) {
+    const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    if (!TEXT_EXTS.has(ext)) {
+      alert(t("chat.fileUnsupported") + `: ${file.name}`);
+      continue;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      alert(t("chat.fileTooLarge") + `: ${file.name}`);
+      continue;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = typeof reader.result === "string" ? reader.result : "";
+      attachedFiles.value = [
+        ...attachedFiles.value,
+        { name: file.name, ext, content, size: file.size },
+      ];
+    };
+    reader.onerror = () => {
+      console.error("Failed to read file:", file.name, reader.error);
+    };
+    reader.readAsText(file);
+  }
+  // Reset input so same file can be picked again later
+  target.value = "";
+}
+
+function removeAttachedFile(idx: number) {
+  attachedFiles.value = attachedFiles.value.filter((_, i) => i !== idx);
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // Track kb_search states per user message — keyed by user message id
 const kbSearchByMessage = ref<Record<string, KbCallState>>({});
@@ -215,7 +279,8 @@ function toolResultText(result: unknown): string {
 function send() {
   const text = input.value;
   const skills = selectedSkills.value;
-  if (!text.trim() && !skills.length) return;
+  const files = attachedFiles.value;
+  if (!text.trim() && !skills.length && !files.length) return;
   // Append the `/skill:<name>` tokens Pi expects at the end of the content;
   // the textarea stays clean — chips above carry the visible affordance.
   const skillSuffix = skills.map((n) => ` /skill:${n}`).join("");
@@ -223,9 +288,21 @@ function send() {
   // start of the payload so Pi sees the rule right next to the request rather
   // than having to dig it out of SKILL.md under context pressure.
   const tipPrefix = activeTipBody(skills) ?? "";
-  agent.send(props.sessionId, `${tipPrefix}${text}${skillSuffix}`);
+  // Build file prefix: each attached file becomes a fenced code block with
+  // its name as the info string, so the model can read its content inline
+  // and the rendered user bubble shows it as a normal code block.
+  const filePrefix = files.length
+    ? files
+        .map(
+          (f) =>
+            `\n\`\`\`${f.ext || "text"} title="${f.name}"\n${f.content}\n\`\`\`\n`,
+        )
+        .join("\n") + "\n"
+    : "";
+  agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`);
   input.value = "";
   selectedSkills.value = [];
+  attachedFiles.value = [];
   nextTick(scrollToBottom);
 }
 
@@ -526,7 +603,45 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
           </button>
         </span>
       </div>
-      <div class="composer-row">
+      <div v-if="attachedFiles.length" class="file-chips">
+        <span v-for="(f, i) in attachedFiles" :key="f.name + i" class="file-chip">
+          <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M3 1.5h4L9 3.5v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-8a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+            <path d="M7 1.5v2h2" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+          </svg>
+          <span class="chip-name">{{ f.name }}</span>
+          <span class="chip-meta">{{ formatFileSize(f.size) }}</span>
+          <button class="chip-remove" :title="t('kb.file.delete')" @click="removeAttachedFile(i)">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </button>
+        </span>
+      </div>
+      <input
+        ref="fileInputEl"
+        type="file"
+        multiple
+        class="file-input-hidden"
+        :accept="TEXT_EXTS_ACCEPT"
+        @change="onFilePicked"
+      />
+      <!-- Toolbar: upload + skill + KB -->
+      <div class="composer-toolbar">
+        <button class="tool-btn" :title="t('chat.upload')" @click="triggerFilePick">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M7 9.5V2M4 4.5L7 1.5l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M2 9v2.5a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+        </button>
+        <SkillSelect
+          @select="onSkillSelect"
+          @import="showImportSkill = true"
+        />
+        <ChatKbPicker :session-id="sessionId" />
+      </div>
+      <!-- Input with embedded send button -->
+      <div class="composer-input-wrap">
         <NInput
           v-model:value="input"
           type="textarea"
@@ -536,14 +651,9 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
           @keydown="handleKeySend"
           class="composer-input"
         />
-        <SkillSelect
-          @select="onSkillSelect"
-          @import="showImportSkill = true"
-        />
-        <ChatKbPicker :session-id="sessionId" />
         <button
           v-if="isBusy"
-          class="send-btn stop"
+          class="send-btn stop embedded"
           @click="agent.interrupt(props.sessionId)"
           :title="t('chat.stop')"
         >
@@ -553,8 +663,8 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
         </button>
         <button
           v-else
-          class="send-btn"
-          :disabled="!input.trim() && !selectedSkills.length"
+          class="send-btn embedded"
+          :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length"
           @click="send"
           :title="t('chat.send')"
         >
@@ -1300,10 +1410,41 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   flex-shrink: 0;
 }
 
-.composer-row {
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+.tool-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.composer-input-wrap {
+  position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
 }
 
 .composer-input {
@@ -1311,9 +1452,23 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 }
 .composer-input :deep(.n-input) {
   background: var(--bg-surface);
+  /* reserve space on the right so embedded send button doesn't cover text */
+  padding-right: 48px;
 }
 .composer-input :deep(.n-input__textarea-el) {
   background: transparent;
+  padding-right: 8px;
+}
+
+/* Embedded send button — absolutely positioned at bottom-right of the input */
+.send-btn.embedded {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  z-index: 1;
 }
 
 /* ─── Skill Chips ─── */
@@ -1323,6 +1478,37 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   flex-wrap: wrap;
   gap: 6px;
   padding: 2px 0;
+}
+
+/* ─── Attached File Chips ─── */
+
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-active);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.chip-meta {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .skill-chip {

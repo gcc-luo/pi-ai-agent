@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { NPopover } from "naive-ui";
 import { useSkillStore } from "../stores/skill.js";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
@@ -12,19 +13,14 @@ const emit = defineEmits<{
 const skillStore = useSkillStore();
 const { t } = useI18n();
 
-const open = ref(false);
+const showPopover = ref(false);
 const uninstallTarget = ref<string | null>(null);
 
 onMounted(() => { skillStore.loadAll(); });
 
-function toggle() {
-  open.value = !open.value;
-  if (open.value) skillStore.loadAll();
-}
-
 function selectSkill(name: string) {
   emit("select", name);
-  open.value = false;
+  showPopover.value = false;
 }
 
 function requestUninstall(name: string) {
@@ -46,47 +42,57 @@ async function confirmUninstall() {
 
 <template>
   <div class="skill-select">
-    <button class="toggle" data-test="skill-toggle" @click="toggle" :title="t('skill.dropdown')">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M2 4h10M4 7h6M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-      </svg>
-      <span class="toggle-label">{{ t('skill.dropdown') }}</span>
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" :class="{ flipped: open }">
-        <path d="M2 3l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
-
-    <div v-if="open" class="panel">
-      <div v-if="!skillStore.skills.length" class="empty">{{ t('skill.empty') }}</div>
-      <div
-        v-for="s in skillStore.skills"
-        v-else
-        :key="s.name"
-        class="skill-item"
-        data-test="skill-item"
-        @click="selectSkill(s.name)"
-      >
-        <div class="skill-info">
-          <div class="skill-name">{{ s.name }}</div>
-          <div class="skill-desc">{{ s.description }}</div>
-        </div>
-        <button
-          class="uninstall-btn"
-          data-test="uninstall-btn"
-          :title="t('skill.uninstall')"
-          @click.stop="requestUninstall(s.name)"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+    <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="320">
+      <template #trigger>
+        <button class="skill-trigger" :class="{ active: skillStore.skills.length }" :title="t('skill.dropdown')">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M2 4h10M4 7h6M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
           </svg>
         </button>
+      </template>
+
+      <div class="skill-picker-body">
+        <div class="skill-picker-header">
+          <span class="skill-picker-title">{{ t('skill.dropdown') }}</span>
+          <span class="skill-picker-hint">{{ skillStore.skills.length }}</span>
+        </div>
+
+        <div v-if="!skillStore.skills.length" class="skill-picker-empty">
+          {{ t('skill.empty') }}
+        </div>
+
+        <div v-else class="skill-picker-list">
+          <div
+            v-for="s in skillStore.skills"
+            :key="s.name"
+            class="skill-item"
+            data-test="skill-item"
+            @click="selectSkill(s.name)"
+          >
+            <div class="skill-info">
+              <div class="skill-name">{{ s.name }}</div>
+              <div class="skill-desc">{{ s.description }}</div>
+            </div>
+            <button
+              class="uninstall-btn"
+              data-test="uninstall-btn"
+              :title="t('skill.uninstall')"
+              @click.stop="requestUninstall(s.name)"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-footer">
+          <button class="import-btn" data-test="skill-import-btn" @click="emit('import'); showPopover = false">
+            + {{ t('skill.import') }}
+          </button>
+        </div>
       </div>
-      <div class="panel-footer">
-        <button class="import-btn" data-test="skill-import-btn" @click="emit('import'); open = false">
-          + {{ t('skill.import') }}
-        </button>
-      </div>
-    </div>
+    </NPopover>
 
     <ConfirmDialog
       :show="uninstallTarget !== null"
@@ -103,63 +109,77 @@ async function confirmUninstall() {
 
 <style scoped>
 .skill-select {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-}
-.toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 10px;
+}
+.skill-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
 }
-.toggle:hover {
+.skill-trigger:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
-.toggle-label {
+.skill-trigger.active {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.skill-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skill-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.skill-picker-title {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.panel {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  width: 320px;
-  max-height: 360px;
-  overflow-y: auto;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  z-index: 10;
-}
-.empty {
-  padding: 16px 12px;
   font-size: 12px;
-  color: var(--text-faint);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.skill-picker-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.skill-picker-empty {
+  padding: 16px 0;
   text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
   font-style: italic;
+}
+.skill-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
 }
 .skill-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   cursor: pointer;
   transition: background var(--transition-fast);
-  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
 }
 .skill-item:hover {
   background: var(--bg-hover);
@@ -202,7 +222,7 @@ async function confirmUninstall() {
   color: var(--rose);
 }
 .panel-footer {
-  padding: 6px 10px;
+  padding: 6px 0 0;
   border-top: 1px solid var(--border-subtle);
 }
 .import-btn {
@@ -222,5 +242,4 @@ async function confirmUninstall() {
   color: var(--accent);
   background: var(--accent-dim);
 }
-.flipped { transform: rotate(180deg); }
 </style>

@@ -75,7 +75,7 @@ function getSearchableFiles(kbId: string) {
   <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="300">
     <template #trigger>
       <button class="kb-picker-trigger" :class="{ active: selectedKbIds.size > 0 }">
-        <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+        <svg width="13" height="13" viewBox="0 0 18 18" fill="none">
           <path d="M3 3h4a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H3V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
           <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
         </svg>
@@ -135,8 +135,8 @@ function getSearchableFiles(kbId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -158,12 +158,12 @@ function getSearchableFiles(kbId: string) {
 }
 .kb-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
+  top: -3px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
   background: var(--accent);
   color: var(--bg-void);
   font-family: var(--font-mono);
