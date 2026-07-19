@@ -6,12 +6,14 @@ type Row = {
   id: string; project_id: string; title: string | null; parent_id: string | null;
   status: SessionStatus; pi_session_ref: string | null;
   created_at: number; updated_at: number; last_active_at: number | null;
+  deleted_at: number | null;
 };
 
 function toDto(r: Row): SessionDto {
   return {
     id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
+    deletedAt: r.deleted_at,
   };
 }
 
@@ -27,21 +29,21 @@ export class SessionRepository {
     `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, now, now);
     return {
       id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null,
-      status: "active", createdAt: now, updatedAt: now, lastActiveAt: null,
+      status: "active", createdAt: now, updatedAt: now, lastActiveAt: null, deletedAt: null,
     };
   }
 
   findById(id: string): SessionDto | null {
-    const r = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Row | undefined;
+    const r = this.db.prepare("SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
     return r ? toDto(r) : null;
   }
 
   listByProject(projectId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC").all(projectId) as Row[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM sessions WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId) as Row[]).map(toDto);
   }
 
   children(parentId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE parent_id = ?").all(parentId) as Row[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM sessions WHERE parent_id = ? AND deleted_at IS NULL").all(parentId) as Row[]).map(toDto);
   }
 
   touch(id: string, status: SessionStatus, opts?: { title?: string; piSessionRef?: string }): void {
@@ -67,10 +69,26 @@ export class SessionRepository {
   }
 
   markActiveAsCrashed(): void {
-    this.db.prepare("UPDATE sessions SET status = 'crashed', updated_at = ? WHERE status = 'active' OR status = 'idle'").run(Date.now());
+    this.db.prepare("UPDATE sessions SET status = 'crashed', updated_at = ? WHERE (status = 'active' OR status = 'idle') AND deleted_at IS NULL").run(Date.now());
   }
 
   delete(id: string): void {
+    const now = Date.now();
+    this.db.prepare("UPDATE sessions SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").run(now, now, id);
+  }
+
+  restore(id: string): void {
+    const now = Date.now();
+    this.db.prepare("UPDATE sessions SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL").run(now, id);
+  }
+
+  destroyPermanently(id: string): void {
+    this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
+    this.db.prepare("DELETE FROM session_kb_bindings WHERE session_id = ?").run(id);
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+  }
+
+  listDeleted(): SessionDto[] {
+    return (this.db.prepare("SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC").all() as Row[]).map(toDto);
   }
 }

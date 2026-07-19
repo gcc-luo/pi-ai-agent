@@ -31,6 +31,7 @@ import { knowledgeBasesRoutes } from "./routes/knowledge-bases.js";
 import { createKbFilesRoutes } from "./routes/kb-files.js";
 import { kbSearchRoutes } from "./routes/kb-search.js";
 import { sessionKbBindingsRoutes } from "./routes/session-kb-bindings.js";
+import { trashRoutes } from "./routes/trash.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -95,6 +96,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(createKbFilesRoutes(parsePipeline, config.kbFilesDir), { prefix: "/api" });
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
+  await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(agentRoutes);
 
   return app;

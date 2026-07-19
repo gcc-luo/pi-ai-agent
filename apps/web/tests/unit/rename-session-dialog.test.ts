@@ -31,6 +31,7 @@ describe("RenameSessionDialog", () => {
     createdAt: 0,
     updatedAt: 0,
     lastActiveAt: null,
+    deletedAt: null,
   };
 
   it("prefills the input with the session title when shown", async () => {

@@ -164,6 +164,13 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    name: "009_session_soft_delete",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN deleted_at INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(deleted_at) WHERE deleted_at IS NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -11,22 +11,25 @@ import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
 const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStoreView.vue"));
 const KnowledgeBaseView = defineAsyncComponent(() => import("./components/KnowledgeBaseView.vue"));
+const TrashView = defineAsyncComponent(() => import("./components/TrashView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
+import { useTrashStore } from "./stores/trash.js";
 import { useI18n } from "./i18n/index.js";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
 const connection = useConnectionStore();
 const agent = useAgentStore();
+const trashStore = useTrashStore();
 const { t } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base" | "trash">("chat");
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -41,6 +44,7 @@ onMounted(async () => {
   }
   connection.init();
   agent.init();
+  trashStore.load();
 });
 
 watch(selectedProjectId, async (id) => {
@@ -91,6 +95,8 @@ async function deleteProject(id: string) {
       sessionStore.$reset();
       selectedProjectId.value = null;
     }
+    // 刷新回收站数据，确保删除的项目会显示在回收站中
+    await trashStore.load();
   } catch (e: any) {
     console.error("Failed to delete project:", e);
     alert(`${e.message}`);
@@ -114,6 +120,8 @@ async function deleteSession(id: string) {
       sessionStore.current = null;
       sessionStore.messages = [];
     }
+    // 刷新回收站数据，确保删除的会话会显示在回收站中
+    await trashStore.load();
   } catch (e: any) {
     console.error("Failed to delete session:", e);
     alert(`${e.message}`);
@@ -278,6 +286,7 @@ function closePreview() {
       <ModelPanel v-else-if="activeNav === 'model'" />
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
+      <TrashView v-else-if="activeNav === 'trash'" />
     </div>
   </NConfigProvider>
 </template>

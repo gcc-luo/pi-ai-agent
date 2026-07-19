@@ -63,6 +63,7 @@ export interface ProjectDto {
   description: string | null;
   createdAt: number;
   updatedAt: number;
+  deletedAt: number | null;
 }
 
 export interface SessionDto {
@@ -74,6 +75,16 @@ export interface SessionDto {
   createdAt: number;
   updatedAt: number;
   lastActiveAt: number | null;
+  deletedAt: number | null;
+}
+
+export interface TrashItemDto {
+  kind: "project" | "session";
+  id: string;
+  name: string;
+  subtitle: string | null;
+  deletedAt: number;
+  projectId: string;
 }
 
 export interface MessageDto {

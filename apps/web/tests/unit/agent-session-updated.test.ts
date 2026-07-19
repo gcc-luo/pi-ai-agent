@@ -11,7 +11,7 @@ describe("agent store session_updated event", () => {
 
   const seedSession = (id: string, title: string | null) => ({
     id, projectId: "p1", title, parentId: null,
-    status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null,
+    status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
   });
 
   it("replaces the matching session in the list and keeps current in sync", async () => {

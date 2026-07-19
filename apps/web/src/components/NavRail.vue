@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { useConnectionStore } from "../stores/connection.js";
 import { useI18n } from "../i18n/index.js";
+import { useTrashStore } from "../stores/trash.js";
 
 defineProps<{
-  activeNav: "chat" | "model" | "skill-store" | "knowledge-base";
+  activeNav: "chat" | "model" | "skill-store" | "knowledge-base" | "trash";
 }>();
 
 defineEmits<{
-  (e: "navigate", nav: "chat" | "model" | "skill-store" | "knowledge-base"): void;
+  (e: "navigate", nav: "chat" | "model" | "skill-store" | "knowledge-base" | "trash"): void;
 }>();
 
 const connection = useConnectionStore();
 const { currentLocale, toggleLocale } = useI18n();
+const trashStore = useTrashStore();
 </script>
 
 <template>
@@ -69,6 +71,18 @@ const { currentLocale, toggleLocale } = useI18n();
           <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
         </svg>
         <span class="nav-label">知识库</span>
+      </button>
+
+      <button
+        class="nav-item"
+        :class="{ active: activeNav === 'trash' }"
+        @click="$emit('navigate', 'trash')"
+      >
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M4 5v9a2 2 0 002 2h6a2 2 0 002-2V5M3 5h12M7 5V3h4v2M7 8v5M11 8v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="nav-label">回收站</span>
+        <span v-if="trashStore.count > 0" class="nav-badge">{{ trashStore.count }}</span>
       </button>
     </div>
 
@@ -189,6 +203,24 @@ const { currentLocale, toggleLocale } = useI18n();
 .nav-label {
   font-size: 11px;
   font-weight: 500;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger-color);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* ─── Spacer ─── */

@@ -1,7 +1,7 @@
 import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
-  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto,
+  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -147,4 +147,12 @@ export const api = {
   getKbBindings: (sessionId: string) => request<KbBindingDto[]>("GET", `/sessions/${sessionId}/kb-bindings`),
   setKbBindings: (sessionId: string, bindings: { kbId: string; fileFilter?: string[] | null }[]) =>
     request<KbBindingDto[]>("PUT", `/sessions/${sessionId}/kb-bindings`, bindings),
+
+  // ─── Trash ───
+  listTrash: () => request<TrashItemDto[]>("GET", "/trash"),
+  restoreItem: (kind: "project" | "session", id: string) =>
+    request<void>("POST", "/trash/restore", { kind, id }),
+  destroyItem: (kind: "project" | "session", id: string) =>
+    request<void>("POST", "/trash/destroy", { kind, id }),
+  emptyTrash: () => request<void>("POST", "/trash/empty"),
 };

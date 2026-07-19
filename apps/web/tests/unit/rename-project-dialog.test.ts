@@ -35,6 +35,7 @@ describe("RenameProjectDialog", () => {
     description: null,
     createdAt: 0,
     updatedAt: 0,
+    deletedAt: null,
   };
 
   it("prefills the input with the project name when shown", async () => {
