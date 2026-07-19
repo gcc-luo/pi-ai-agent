@@ -44,6 +44,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.toolResult": "Result",
     "chat.toolProgress": "Progress",
     "chat.thinking": "Thinking",
+    "chat.scrollToBottom": "Scroll to bottom",
 
     // File viewer
     "viewer.selectFile": "Select a file to view",
@@ -325,6 +326,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "trash.destroySelected": "Delete selected",
     "trash.clearSelection": "Clear selection",
     "trash.destroySelectedConfirmMessage": "Permanently delete {count} selected items? This cannot be undone.",
+
+    // Settings
+    "settings.title": "Settings",
+    "settings.language": "Language",
+    "settings.languageDesc": "Switch between Chinese and English",
+    "settings.darkMode": "Dark mode",
+    "settings.darkModeDesc": "Toggle light/dark theme",
   },
   zh: {
     "brand.sub": "Agent 工作台",
@@ -365,6 +373,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.toolResult": "结果",
     "chat.toolProgress": "过程",
     "chat.thinking": "思考",
+    "chat.scrollToBottom": "滚动到底部",
 
     "viewer.selectFile": "选择一个文件查看",
     "viewer.unsupportedHint": "此文件类型暂不支持预览。",
@@ -639,5 +648,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "trash.destroySelected": "删除所选",
     "trash.clearSelection": "取消选择",
     "trash.destroySelectedConfirmMessage": "确认永久删除选中的 {count} 项内容？此操作不可撤销。",
+
+    // 设置
+    "settings.title": "设置",
+    "settings.language": "语言",
+    "settings.languageDesc": "切换中文 / English",
+    "settings.darkMode": "深色模式",
+    "settings.darkModeDesc": "切换亮色 / 暗色主题",
   },
 };

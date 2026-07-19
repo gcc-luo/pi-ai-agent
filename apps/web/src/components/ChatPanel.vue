@@ -292,6 +292,23 @@ function scrollToBottom() {
   }
 }
 
+// ─── Scroll-to-bottom button ───────────────────────────────────────────
+const showScrollButton = ref(false);
+
+function onMessagesScroll() {
+  const el = messagesEl.value;
+  if (!el) return;
+  // Show when user has scrolled up more than 200px from the bottom
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  showScrollButton.value = distanceFromBottom > 200;
+}
+
+function handleClickScrollToBottom() {
+  const el = messagesEl.value;
+  if (!el) return;
+  el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+}
+
 function formatJson(v: unknown): string {
   if (v === undefined || v === null) return "";
   if (typeof v === "string") return v;
@@ -520,8 +537,9 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
       </div>
     </div>
 
-    <!-- Messages -->
-    <div class="messages" ref="messagesEl">
+    <!-- Messages wrapper (scroll + button) -->
+    <div class="messages-wrap">
+    <div class="messages" ref="messagesEl" @scroll="onMessagesScroll">
       <div v-if="!allMessages.length" class="empty-state">
         <div class="empty-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -657,6 +675,20 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
         <span>{{ t('chat.generating') }}</span>
         <span class="generating-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
+    </div>
+
+      <Transition name="scroll-btn-fade">
+        <button
+          v-if="showScrollButton"
+          class="scroll-to-bottom-btn"
+          :title="t('chat.scrollToBottom')"
+          @click="handleClickScrollToBottom"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </Transition>
     </div>
 
     <!-- Composer -->
@@ -828,6 +860,15 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
 
 /* ─── Messages ─── */
 
+.messages-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -835,6 +876,44 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* ─── Scroll-to-bottom Button ─── */
+
+.scroll-to-bottom-btn {
+  position: absolute;
+  right: 24px;
+  bottom: 16px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: #eef0f4;
+  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all var(--transition-fast);
+  z-index: 10;
+}
+
+.scroll-to-bottom-btn:hover {
+  background: #e2e5eb;
+  color: var(--text-primary);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+}
+
+.scroll-btn-fade-enter-active,
+.scroll-btn-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.scroll-btn-fade-enter-from,
+.scroll-btn-fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 /* Always follows the final message. It remains visible between tool turns and

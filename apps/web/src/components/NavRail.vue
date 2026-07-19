@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { useConnectionStore } from "../stores/connection.js";
 import { useI18n } from "../i18n/index.js";
 import { useTrashStore } from "../stores/trash.js";
+import SettingsDialog from "./SettingsDialog.vue";
 
 defineProps<{
   activeNav: "chat" | "model" | "skill-store" | "knowledge-base" | "trash";
@@ -12,8 +14,9 @@ defineEmits<{
 }>();
 
 const connection = useConnectionStore();
-const { currentLocale, toggleLocale } = useI18n();
+const { t } = useI18n();
 const trashStore = useTrashStore();
+const showSettings = ref(false);
 </script>
 
 <template>
@@ -91,28 +94,24 @@ const trashStore = useTrashStore();
 
     <!-- Footer -->
     <div class="nav-footer">
-      <button
-        class="lang-toggle"
-        @click="toggleLocale()"
-        :title="currentLocale === 'en' ? '切换到中文' : 'Switch to English'"
-      >
-        <span class="lang-label">{{ currentLocale === 'en' ? '中' : 'EN' }}</span>
-      </button>
-
-      <div class="user-section">
-        <div class="user-avatar">
-          <span class="avatar-text">管</span>
-        </div>
-        <div class="user-info">
-          <span class="user-name">管理员</span>
-          <span class="workspace-name">个人空间</span>
-        </div>
-      </div>
-
       <div class="connection-indicator" :class="connection.status" :title="connection.status">
         <span class="conn-dot" />
       </div>
+
+      <button
+        class="nav-item settings-btn"
+        :title="t('settings.title')"
+        @click="showSettings = true"
+      >
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M7.5 2.5h3l.3 1.8a5.5 5.5 0 011.5.9l1.7-.6 1.5 2.6-1.4 1.2a5.5 5.5 0 010 1.7l1.4 1.2-1.5 2.6-1.7-.6a5.5 5.5 0 01-1.5.9l-.3 1.8h-3l-.3-1.8a5.5 5.5 0 01-1.5-.9l-1.7.6-1.5-2.6 1.4-1.2a5.5 5.5 0 010-1.7L3 6.3l1.5-2.6 1.7.6a5.5 5.5 0 011.5-.9l.3-1.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          <circle cx="9" cy="9" r="2.2" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+        <span class="nav-label">{{ t('settings.title') }}</span>
+      </button>
     </div>
+
+    <SettingsDialog :show="showSettings" @close="showSettings = false" />
   </nav>
 </template>
 
@@ -162,10 +161,10 @@ const trashStore = useTrashStore();
 
 .nav-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 4px;
-  padding: 12px 0;
+  gap: 8px;
+  padding: 10px 12px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -201,14 +200,13 @@ const trashStore = useTrashStore();
 }
 
 .nav-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .nav-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+  margin-left: auto;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -234,87 +232,17 @@ const trashStore = useTrashStore();
 .nav-footer {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 12px;
-  gap: 12px;
+  align-items: stretch;
+  padding: 0 12px 12px;
+  gap: 4px;
 }
 
-.lang-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-.lang-toggle:hover {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-
-.lang-label {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.user-section {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px;
-}
-
-.user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--primary-light);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.avatar-text {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.user-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.user-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.workspace-name {
-  font-size: 10px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .connection-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .conn-dot {
