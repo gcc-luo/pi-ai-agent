@@ -64,7 +64,7 @@ function dismiss() {
       {{ t('kb.chat.banner', { kbCount: summary.kbCount, fileCount: summary.fileCount }) }}
     </span>
     <span class="kb-banner-names">{{ kbNames.join(', ') }}</span>
-    <button class="kb-banner-dismiss" @click="dismiss" title="清除">
+    <button class="kb-banner-dismiss" @click="dismiss" :title="t('kb.chat.banner.dismiss')">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
         <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
       </svg>

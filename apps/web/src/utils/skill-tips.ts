@@ -9,7 +9,7 @@
 // "must register a CJK font" requirement impossible to miss on this turn.
 
 export interface SkillTip {
-  // Short label shown in chips/badges, e.g. "中文 PDF 字体注册提醒".
+  // i18n key for the short label shown in chips/badges (e.g. "skillTip.pdf.label").
   label: string;
   // The full body prepended to the user's message, wrapped in sentinel markers
   // by the caller.
@@ -18,7 +18,7 @@ export interface SkillTip {
 
 export const SKILL_TIPS: Record<string, SkillTip> = {
   pdf: {
-    label: "中文 PDF 字体注册提醒",
+    label: "skillTip.pdf.label",
     body: `【生成 PDF 字体规范 — 必读】
 含中文的 PDF 必须显式注册 CJK 字体，否则中文会出现方框、问号或乱码。ReportLab 内置的 Helvetica / Times 只能编码拉丁字符，绝不能用于绘制中文。
 

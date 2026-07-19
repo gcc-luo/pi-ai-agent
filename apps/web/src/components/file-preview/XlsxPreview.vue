@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { api } from "../../api/client.js";
+import { useI18n } from "../../i18n/index.js";
 
 // .xlsx → HTML table via SheetJS. SheetJS is dynamically imported on first
 // use so its ~700KB never lands in the main bundle for users who never open
@@ -13,6 +14,7 @@ const sheets = ref<SheetView[]>([]);
 const activeSheet = ref(0);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const { t } = useI18n();
 
 async function load() {
   loading.value = true;
@@ -53,10 +55,10 @@ watch(() => [props.projectId, props.path], load, { immediate: true });
         @click="activeSheet = i"
       >{{ s.name }}</button>
     </div>
-    <div v-if="loading" class="state">渲染中…</div>
+    <div v-if="loading" class="state">{{ t('viewer.rendering') }}</div>
     <div v-else-if="error" class="state error">{{ error }}</div>
     <div v-else-if="sheets.length" class="sheet-wrap" v-html="sheets[activeSheet]?.html ?? ''" />
-    <div v-else class="state">空工作簿</div>
+    <div v-else class="state">{{ t('viewer.emptyWorkbook') }}</div>
   </div>
 </template>
 

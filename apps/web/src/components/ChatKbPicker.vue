@@ -103,7 +103,7 @@ function getSearchableFiles(kbId: string) {
             />
             <button class="kb-item-name" @click="toggleExpand(kb.id)">
               <span class="kb-name-text">{{ kb.name }}</span>
-              <span class="kb-file-count">{{ kb.searchableFileCount }} files</span>
+              <span class="kb-file-count">{{ t('kb.chat.picker.fileCount', { n: kb.searchableFileCount }) }}</span>
               <svg
                 class="kb-expand-icon"
                 :class="{ open: expandedKbId === kb.id }"
@@ -121,7 +121,7 @@ function getSearchableFiles(kbId: string) {
               <span class="kb-file-ext">.{{ file.ext }}</span>
             </div>
             <div v-if="!getSearchableFiles(kb.id).length" class="kb-no-files">
-              无可检索文件
+              {{ t('kb.chat.picker.noFiles') }}
             </div>
           </div>
         </div>

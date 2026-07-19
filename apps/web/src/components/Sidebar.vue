@@ -76,7 +76,7 @@ function startDeleteSession(s: SessionDto) {
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: projectsCollapsed }">
             <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="section-label">项目</span>
+          <span class="section-label">{{ t('sidebar.projects') }}</span>
           <span class="section-count">{{ projectStore.projects.length }}</span>
         </button>
         <button class="section-action" @click="showNewProject = true" :title="t('sidebar.newProject')">
@@ -129,7 +129,7 @@ function startDeleteSession(s: SessionDto) {
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: sessionsCollapsed }">
             <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="section-label">会话</span>
+          <span class="section-label">{{ t('sidebar.sessions') }}</span>
           <span class="section-count">{{ sessionStore.sessions.length }}</span>
         </button>
         <button class="section-action" @click="emit('create-session')" :title="t('sidebar.newSession')">
@@ -171,8 +171,8 @@ function startDeleteSession(s: SessionDto) {
           </span>
         </div>
         <div v-if="!sessionStore.sessions.length" class="empty-state">
-          <span class="empty-text">当前项目暂无会话</span>
-          <button class="empty-action" @click="emit('create-session')">新建会话</button>
+          <span class="empty-text">{{ t('sidebar.noSessionsForProject') }}</span>
+          <button class="empty-action" @click="emit('create-session')">{{ t('sidebar.newSession') }}</button>
         </div>
       </div>
     </div>
@@ -184,7 +184,7 @@ function startDeleteSession(s: SessionDto) {
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: filesCollapsed }">
             <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="section-label">文件</span>
+          <span class="section-label">{{ t('sidebar.files') }}</span>
         </button>
         <div class="section-actions">
           <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">

@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { NInput, NButton, NSwitch, NSpin, NEmpty, NTag } from "naive-ui";
 import { useKbStore } from "../stores/kb.js";
+import { useI18n } from "../i18n/index.js";
 import type { KbDto } from "@pi-web-ui/shared";
 import CreateKbDialog from "./CreateKbDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
@@ -11,6 +12,7 @@ const emit = defineEmits<{
 }>();
 
 const kbStore = useKbStore();
+const { t } = useI18n();
 
 const searchQuery = ref("");
 const showCreateDialog = ref(false);
@@ -69,11 +71,11 @@ function formatTime(ts: number): string {
   <div class="kb-list-page">
     <header class="kb-header">
       <div class="kb-header-text">
-        <h1 class="kb-title">知识库</h1>
-        <p class="kb-subtitle">管理知识库，为 AI 对话提供上下文知识</p>
+        <h1 class="kb-title">{{ t('kb.title') }}</h1>
+        <p class="kb-subtitle">{{ t('kb.subtitle') }}</p>
       </div>
       <NButton type="primary" size="small" @click="openCreate">
-        + 新建知识库
+        {{ t('kb.newButton') }}
       </NButton>
     </header>
 
@@ -81,7 +83,7 @@ function formatTime(ts: number): string {
       <NInput
         v-model:value="searchQuery"
         size="small"
-        placeholder="搜索知识库名称..."
+        :placeholder="t('kb.searchNamePlaceholder')"
         clearable
         class="kb-search-input"
       />
@@ -92,14 +94,14 @@ function formatTime(ts: number): string {
         <NSpin size="small" />
       </div>
       <div v-else-if="!kbStore.knowledgeBases.length" class="kb-state empty">
-        <NEmpty description="暂无知识库">
+        <NEmpty :description="t('kb.empty')">
           <template #extra>
-            <NButton size="small" type="primary" @click="openCreate">创建第一个知识库</NButton>
+            <NButton size="small" type="primary" @click="openCreate">{{ t('kb.createFirst') }}</NButton>
           </template>
         </NEmpty>
       </div>
       <div v-else-if="!filteredKbs.length" class="kb-state empty">
-        <NEmpty description="未找到匹配的知识库" />
+        <NEmpty :description="t('kb.noMatch')" />
       </div>
       <ul v-else class="kb-card-list">
         <li
@@ -114,14 +116,14 @@ function formatTime(ts: number): string {
               size="tiny"
               :type="kb.enabled ? 'success' : 'default'"
               round
-            >{{ kb.enabled ? '已启用' : '已禁用' }}</NTag>
+            >{{ kb.enabled ? t('kb.enabled') : t('kb.disabled') }}</NTag>
           </div>
-          <p class="kb-card-desc">{{ kb.description || '暂无描述' }}</p>
+          <p class="kb-card-desc">{{ kb.description || t('kb.noDescription') }}</p>
           <div class="kb-card-stats">
-            <span class="kb-stat">文件 {{ kb.fileCount }}</span>
-            <span class="kb-stat">可检索 {{ kb.searchableFileCount }}</span>
-            <span class="kb-stat">分块 {{ kb.chunkCount }}</span>
-            <span v-if="kb.failedFileCount > 0" class="kb-stat kb-stat-fail">失败 {{ kb.failedFileCount }}</span>
+            <span class="kb-stat">{{ t('kb.fileCount', { count: kb.fileCount }) }}</span>
+            <span class="kb-stat">{{ t('kb.searchableFileCount', { count: kb.searchableFileCount }) }}</span>
+            <span class="kb-stat">{{ t('kb.chunkCount', { count: kb.chunkCount }) }}</span>
+            <span v-if="kb.failedFileCount > 0" class="kb-stat kb-stat-fail">{{ t('kb.failedFileCount', { count: kb.failedFileCount }) }}</span>
           </div>
           <div class="kb-card-foot">
             <span class="kb-card-time">{{ formatTime(kb.updatedAt) }}</span>
@@ -131,12 +133,12 @@ function formatTime(ts: number): string {
                 size="small"
                 @update:value="(v: boolean) => handleToggleEnabled(kb, v)"
               />
-              <button class="kb-action-btn" title="编辑" @click="openEdit(kb)">
+              <button class="kb-action-btn" :title="t('kb.edit')" @click="openEdit(kb)">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <button class="kb-action-btn kb-action-danger" title="删除" @click="requestDelete(kb)">
+              <button class="kb-action-btn kb-action-danger" :title="t('kb.delete')" @click="requestDelete(kb)">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
@@ -155,10 +157,10 @@ function formatTime(ts: number): string {
     />
     <ConfirmDialog
       :show="deleteTarget !== null"
-      title="删除知识库"
-      :message="`确定要删除知识库「${deleteTarget?.name ?? ''}」吗？此操作不可撤销，所有文件和分块数据将被永久删除。`"
-      confirm-label="删除"
-      cancel-label="取消"
+      :title="t('kb.deleteTitle')"
+      :message="t('kb.deleteConfirm', { name: deleteTarget?.name ?? '' })"
+      :confirm-label="t('kb.delete')"
+      :cancel-label="t('kb.create.cancel')"
       :danger="true"
       @close="deleteTarget = null"
       @confirm="confirmDelete"

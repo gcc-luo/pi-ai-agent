@@ -91,6 +91,86 @@
   --shadow-glow: none;
 
   --row-hover: rgba(0, 0, 0, 0.02);
+
+  /* Scrollbar (light) */
+  --scrollbar-thumb: #d1d8e0;
+  --scrollbar-thumb-hover: #a0aab5;
+}
+
+/* ─── Dark Mode ─── */
+
+[data-theme="dark"] {
+  /* Brand */
+  --primary-color: #2dd4a8;
+  --primary-hover: #3de0b5;
+  --primary-light: rgba(45, 212, 168, 0.12);
+
+  /* Background */
+  --background-page: #111318;
+  --background-panel: #1a1d24;
+  --background-hover: #22262e;
+  --background-selected: rgba(45, 212, 168, 0.10);
+
+  /* Borders */
+  --border-color: #2a2e37;
+  --border-color-light: #22262e;
+
+  /* Text */
+  --text-primary: #e4e7ec;
+  --text-secondary: #8b95a8;
+  --text-disabled: #5a6577;
+
+  /* Status */
+  --danger-color: #f87171;
+  --warning-color: #fbbf24;
+  --success-color: #2dd4a8;
+
+  /* Semantic aliases */
+  --bg-void: #0d0f13;
+  --bg-deep: #111318;
+  --bg-surface: #1a1d24;
+  --bg-elevated: #22262e;
+  --bg-hover: #22262e;
+  --bg-active: rgba(45, 212, 168, 0.10);
+
+  --accent: #2dd4a8;
+  --accent-hover: #3de0b5;
+  --accent-pressed: #18b89a;
+  --accent-dim: rgba(45, 212, 168, 0.12);
+  --accent-glow: rgba(45, 212, 168, 0.20);
+
+  --amber: #fbbf24;
+  --amber-dim: rgba(251, 191, 36, 0.12);
+  --rose: #f87171;
+  --rose-dim: rgba(248, 113, 113, 0.12);
+  --green: #2dd4a8;
+  --green-dim: rgba(45, 212, 168, 0.12);
+
+  --text-muted: #5a6577;
+  --text-faint: #3d4452;
+  --text-accent: #2dd4a8;
+
+  --border-default: #2a2e37;
+  --border-subtle: #22262e;
+  --border-active: #3d4452;
+  --border-accent: #2dd4a8;
+
+  --chat-user-bg: #1e2128;
+  --chat-user-border: #2a2e37;
+  --chat-user-text: #e4e7ec;
+  --chat-assistant-bg: #1a1d24;
+  --chat-assistant-border: #2a2e37;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(45, 212, 168, 0.08);
+
+  --row-hover: rgba(255, 255, 255, 0.03);
+
+  /* Scrollbar (dark) */
+  --scrollbar-thumb: #3d4452;
+  --scrollbar-thumb-hover: #5a6577;
 }
 
 /* ── Reset & Base ─── */
@@ -132,12 +212,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d8e0;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a0aab5;
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ─── Selection ─── */

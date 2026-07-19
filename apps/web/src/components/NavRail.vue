@@ -38,7 +38,7 @@ const showSettings = ref(false);
           <path d="M3 5a3 3 0 013-3h6a3 3 0 013 3v6a3 3 0 01-3 3H8.5L4 17v-3H6a3 3 0 01-3-3V5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
           <path d="M6 7h6M6 9.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
-        <span class="nav-label">会话</span>
+        <span class="nav-label">{{ t('nav.chat') }}</span>
       </button>
 
       <button
@@ -50,7 +50,7 @@ const showSettings = ref(false);
           <path d="M9 2L15 5.5v7L9 16l-6-3.5v-7L9 2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
           <path d="M9 9v7M9 9l6-3.5M9 9L3 5.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
         </svg>
-        <span class="nav-label">模型</span>
+        <span class="nav-label">{{ t('nav.model') }}</span>
       </button>
 
       <button
@@ -61,7 +61,7 @@ const showSettings = ref(false);
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
-        <span class="nav-label">技能</span>
+        <span class="nav-label">{{ t('nav.skillStore') }}</span>
       </button>
 
       <button
@@ -73,7 +73,7 @@ const showSettings = ref(false);
           <path d="M3 3h4a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H3V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
           <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
         </svg>
-        <span class="nav-label">知识库</span>
+        <span class="nav-label">{{ t('nav.knowledgeBase') }}</span>
       </button>
 
       <button
@@ -84,7 +84,7 @@ const showSettings = ref(false);
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M4 5v9a2 2 0 002 2h6a2 2 0 002-2V5M3 5h12M7 5V3h4v2M7 8v5M11 8v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span class="nav-label">回收站</span>
+        <span class="nav-label">{{ t('nav.trash') }}</span>
         <span v-if="trashStore.count > 0" class="nav-badge">{{ trashStore.count }}</span>
       </button>
     </div>

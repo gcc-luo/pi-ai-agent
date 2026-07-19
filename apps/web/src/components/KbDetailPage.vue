@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from "vue";
 import { NTabs, NTabPane, NSpin, NTag } from "naive-ui";
 import { useKbStore } from "../stores/kb.js";
 import { useKbFileStore } from "../stores/kb-file.js";
+import { useI18n } from "../i18n/index.js";
 import KbFileTab from "./KbFileTab.vue";
 import KbSearchTab from "./KbSearchTab.vue";
 import KbSettingsTab from "./KbSettingsTab.vue";
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 
 const kbStore = useKbStore();
 const kbFileStore = useKbFileStore();
+const { t } = useI18n();
 const activeTab = ref("files");
 const loading = ref(false);
 
@@ -48,7 +50,7 @@ function handleDeleted() {
 <template>
   <div class="kb-detail-page">
     <header class="kb-detail-header">
-      <button class="kb-back-btn" title="返回列表" @click="emit('back')">
+      <button class="kb-back-btn" :title="t('kb.backToList')" @click="emit('back')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -56,18 +58,18 @@ function handleDeleted() {
       <div v-if="kbStore.current" class="kb-detail-info">
         <h1 class="kb-detail-title">{{ kbStore.current.name }}</h1>
         <div class="kb-detail-stats">
-          <NTag size="tiny" round>{{ kbStore.current.fileCount }} 文件</NTag>
-          <NTag size="tiny" round>{{ kbStore.current.chunkCount }} 分块</NTag>
+          <NTag size="tiny" round>{{ t('kb.fileCount', { count: kbStore.current.fileCount }) }}</NTag>
+          <NTag size="tiny" round>{{ t('kb.chunkCount', { count: kbStore.current.chunkCount }) }}</NTag>
           <NTag v-if="kbStore.current.failedFileCount > 0" size="tiny" type="error" round>
-            {{ kbStore.current.failedFileCount }} 失败
+            {{ t('kb.failedFileCount', { count: kbStore.current.failedFileCount }) }}
           </NTag>
           <NTag size="tiny" :type="kbStore.current.enabled ? 'success' : 'default'" round>
-            {{ kbStore.current.enabled ? '已启用' : '已禁用' }}
+            {{ kbStore.current.enabled ? t('kb.enabled') : t('kb.disabled') }}
           </NTag>
         </div>
       </div>
       <div v-else class="kb-detail-info">
-        <h1 class="kb-detail-title">加载中...</h1>
+        <h1 class="kb-detail-title">{{ t('kb.loading') }}</h1>
       </div>
     </header>
 
@@ -76,13 +78,13 @@ function handleDeleted() {
     </div>
     <template v-else>
       <NTabs v-model:value="activeTab" type="line" class="kb-detail-tabs">
-        <NTabPane name="files" tab="文件">
+        <NTabPane name="files" :tab="t('kb.tabFiles')">
           <KbFileTab :kb-id="kbId" />
         </NTabPane>
-        <NTabPane name="search" tab="搜索测试">
+        <NTabPane name="search" :tab="t('kb.tabSearch')">
           <KbSearchTab :kb-id="kbId" />
         </NTabPane>
-        <NTabPane name="settings" tab="设置">
+        <NTabPane name="settings" :tab="t('kb.tabSettings')">
           <KbSettingsTab :kb-id="kbId" @deleted="handleDeleted" />
         </NTabPane>
       </NTabs>

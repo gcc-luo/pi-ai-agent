@@ -1,3 +1,7 @@
+import { useI18n } from "../i18n/index.js";
+
+const { t } = useI18n();
+
 export const KB_CONTEXT_BLOCK_RE = /<!-- kb-context:start -->[\s\S]*?<!-- kb-context:end -->\n*/g;
 
 export function stripKbContext(text: string): string {
@@ -30,8 +34,8 @@ export function renderKbCitations(text: string, chunkMap: Record<number, { kbNam
     if (meta.titlePath) parts.push(meta.titlePath);
     if (meta.pageStart != null) {
       const page = meta.pageEnd && meta.pageEnd !== meta.pageStart
-        ? `第 ${meta.pageStart}-${meta.pageEnd} 页`
-        : `第 ${meta.pageStart} 页`;
+        ? t("kb.context.pageRange", { start: meta.pageStart, end: meta.pageEnd })
+        : t("kb.context.pageSingle", { n: meta.pageStart });
       parts.push(page);
     }
     return `<span class="kb-citation-chip" data-chunk-id="${id}" title="${parts.join(' · ')}">📖 ${parts.join(' · ')}</span>`;

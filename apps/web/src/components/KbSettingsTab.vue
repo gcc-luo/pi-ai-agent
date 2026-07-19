@@ -76,7 +76,7 @@ async function handleSave() {
 
     await kbStore.update(props.kbId, patch);
   } catch (e: any) {
-    error.value = e?.message ?? "保存失败";
+    error.value = e?.message ?? t("kb.settings.saveError");
   } finally {
     saving.value = false;
   }
@@ -128,7 +128,7 @@ async function handleDelete() {
       <div class="field-row">
         <div class="field-text">
           <span class="field-label">{{ t('kb.enabled') }}</span>
-          <span class="field-hint">{{ enabled ? '对话中可检索此知识库' : '对话中将忽略此知识库' }}</span>
+          <span class="field-hint">{{ enabled ? t('kb.settings.enabledHint') : t('kb.settings.disabledHint') }}</span>
         </div>
         <NSwitch v-model:value="enabled" :disabled="saving" />
       </div>
@@ -160,8 +160,8 @@ async function handleDelete() {
 
       <!-- Danger zone -->
       <div class="danger-zone">
-        <h4 class="danger-title">危险操作</h4>
-        <p class="danger-desc">删除知识库将永久移除所有文件和分块数据，此操作不可撤销。</p>
+        <h4 class="danger-title">{{ t('kb.settings.dangerTitle') }}</h4>
+        <p class="danger-desc">{{ t('kb.settings.dangerDesc') }}</p>
         <button class="btn-danger" @click="showDeleteConfirm = true">
           {{ t('kb.delete') }}
         </button>

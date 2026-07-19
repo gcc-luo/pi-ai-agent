@@ -33,12 +33,12 @@ onMounted(() => {
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "刚刚";
-  if (mins < 60) return `${mins} 分钟前`;
+  if (mins < 1) return t("trash.time.justNow");
+  if (mins < 60) return t("trash.time.minutesAgo", { n: mins });
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} 小时前`;
+  if (hours < 24) return t("trash.time.hoursAgo", { n: hours });
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} 天前`;
+  if (days < 30) return t("trash.time.daysAgo", { n: days });
   return new Date(ts).toLocaleDateString("zh-CN");
 }
 
@@ -72,7 +72,7 @@ const projectNodes = computed<ProjectNode[]>(() => {
     if (!node) {
       node = {
         projectId: item.projectId,
-        name: item.subtitle || "未命名项目",
+        name: item.subtitle || t("trash.unnamedProject"),
         project: null,
         sessions: [],
         latestDeletedAt: item.deletedAt,
@@ -301,7 +301,7 @@ async function confirmDestroySelected() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--background-primary);
+  background: var(--bg-surface);
   overflow: hidden;
 }
 
@@ -362,8 +362,8 @@ async function confirmDestroySelected() {
   justify-content: space-between;
   gap: 16px;
   padding: 10px 48px;
-  background: #e8faf5;
-  border-bottom: 1px solid #b9eadb;
+  background: var(--accent-dim);
+  border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
@@ -453,15 +453,15 @@ async function confirmDestroySelected() {
 }
 
 .tree-row:hover {
-  background: var(--background-secondary);
+  background: var(--bg-elevated);
 }
 
 .project-row {
-  background: #fbfcfd;
+  background: var(--bg-surface);
 }
 
 .project-row.contextual {
-  background: #f8fafc;
+  background: var(--bg-elevated);
 }
 
 .session-children {
@@ -527,12 +527,12 @@ async function confirmDestroySelected() {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  background: var(--background-secondary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
 }
 
 .project-icon {
-  background: #e8faf5;
+  background: var(--accent-dim);
   color: var(--primary-color);
 }
 
@@ -568,7 +568,7 @@ async function confirmDestroySelected() {
   flex-shrink: 0;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--background-secondary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 500;

@@ -2,6 +2,7 @@
 import { ref, watch, computed } from "vue";
 import { NModal, NTabs, NTabPane, NSpin, NEmpty } from "naive-ui";
 import { api } from "../api/client.js";
+import { useI18n } from "../i18n/index.js";
 import type { KbFileDto, KbChunkDto } from "@pi-web-ui/shared";
 
 const props = defineProps<{
@@ -22,6 +23,8 @@ const chunksLoading = ref(false);
 const error = ref("");
 const activeTab = ref<"meta" | "preview" | "chunks">("meta");
 
+const { t } = useI18n();
+
 const isTextPreviewable = computed(() => {
   if (!file.value) return false;
   return ["txt", "md"].includes(file.value.ext);
@@ -38,17 +41,17 @@ const statusColor = computed(() => {
 
 const statusLabel = computed(() => {
   switch (file.value?.status) {
-    case "ready": return "就绪";
-    case "parsing": return "解析中";
-    case "failed": return "失败";
-    case "pending": return "等待中";
+    case "ready": return t("kb.file.status.ready");
+    case "parsing": return t("kb.file.status.parsing");
+    case "failed": return t("kb.file.status.failed");
+    case "pending": return t("kb.file.status.pending");
     default: return file.value?.status ?? "";
   }
 });
 
 const sourceLabel = computed(() => {
   if (!file.value) return "";
-  return file.value.source === "created" ? "创建" : "导入";
+  return file.value.source === "created" ? t("kb.file.source.created") : t("kb.file.source.imported");
 });
 
 function formatSize(bytes: number): string {
@@ -79,7 +82,7 @@ async function loadData(id: string) {
   try {
     file.value = await api.getKbFile(id);
   } catch (e: any) {
-    error.value = e?.message ?? "加载文件信息失败";
+    error.value = e?.message ?? t("kb.file.loadFileFailed");
     loading.value = false;
     return;
   }
@@ -142,7 +145,7 @@ watch(
     :show="show"
     preset="card"
     :style="{ width: '720px', maxWidth: '92vw' }"
-    :title="file ? file.name : '文件详情'"
+    :title="file ? file.name : t('kb.file.dialogTitle')"
     :bordered="false"
     :mask-closable="true"
     @update:show="(v: boolean) => { if (!v) emit('close'); }"
@@ -161,7 +164,7 @@ watch(
 
     <!-- Error state -->
     <div v-else-if="error" class="error-container">
-      <NEmpty description="加载失败">
+      <NEmpty :description="t('kb.file.loadFailed')">
         <template #extra>
           <div class="error-text">{{ error }}</div>
         </template>
@@ -171,30 +174,30 @@ watch(
     <!-- Content -->
     <div v-else-if="file" class="dialog-body">
       <NTabs v-model:value="activeTab" type="line" size="small" animated>
-        <NTabPane name="meta" tab="元数据">
+        <NTabPane name="meta" :tab="t('kb.file.tabMeta')">
           <div class="meta-grid">
             <div class="meta-item">
-              <span class="meta-key">大小</span>
+              <span class="meta-key">{{ t('kb.size') }}</span>
               <span class="meta-val">{{ formatSize(file.size) }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-key">字符数</span>
+              <span class="meta-key">{{ t('kb.file.meta.chars') }}</span>
               <span class="meta-val">{{ file.charCount != null ? file.charCount.toLocaleString() : "—" }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-key">页数</span>
+              <span class="meta-key">{{ t('kb.file.meta.pages') }}</span>
               <span class="meta-val">{{ file.pageCount != null ? file.pageCount : "—" }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-key">分块数</span>
+              <span class="meta-key">{{ t('kb.file.meta.chunks') }}</span>
               <span class="meta-val">{{ file.chunkCount != null ? file.chunkCount : "—" }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-key">最近解析</span>
+              <span class="meta-key">{{ t('kb.file.meta.lastParsed') }}</span>
               <span class="meta-val">{{ formatTime(file.lastParsedAt) }}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-key">来源</span>
+              <span class="meta-key">{{ t('kb.file.meta.source') }}</span>
               <span class="meta-val">{{ sourceLabel }}</span>
             </div>
           </div>
@@ -203,20 +206,20 @@ watch(
           </div>
         </NTabPane>
 
-        <NTabPane name="preview" tab="内容预览">
+        <NTabPane name="preview" :tab="t('kb.file.tabPreview')">
           <div v-if="isTextPreviewable">
             <NSpin v-if="contentLoading" size="small" class="inline-spin" />
             <pre v-else-if="content !== null" class="content-preview">{{ content }}</pre>
-            <div v-else class="preview-unavailable">预览加载失败</div>
+            <div v-else class="preview-unavailable">{{ t('kb.file.previewLoadFailed') }}</div>
           </div>
           <div v-else class="preview-unavailable">
-            预览不可用（仅支持 txt / md 文件）
+            {{ t('kb.file.previewUnavailable') }}
           </div>
         </NTabPane>
 
-        <NTabPane name="chunks" :tab="`分块列表${chunks.length ? ' · ' + chunks.length : ''}`">
+        <NTabPane name="chunks" :tab="chunks.length ? `${t('kb.file.tabChunks')} · ${chunks.length}` : t('kb.file.tabChunks')">
           <NSpin v-if="chunksLoading" size="small" class="inline-spin" />
-          <div v-else-if="chunks.length === 0" class="no-chunks">暂无分块</div>
+          <div v-else-if="chunks.length === 0" class="no-chunks">{{ t('kb.file.noChunks') }}</div>
           <div v-else class="chunk-list">
             <div v-for="chunk in chunks" :key="chunk.id" class="chunk-card">
               <div class="chunk-header">
@@ -228,7 +231,7 @@ watch(
               </div>
               <p class="chunk-content">{{ truncate(chunk.content, 200) }}</p>
               <div class="chunk-footer">
-                <span class="chunk-chars">{{ chunk.charCount.toLocaleString() }} 字符</span>
+                <span class="chunk-chars">{{ t('kb.file.chars', { n: chunk.charCount.toLocaleString() }) }}</span>
               </div>
             </div>
           </div>

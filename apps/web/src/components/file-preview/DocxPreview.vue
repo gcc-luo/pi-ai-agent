@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { api } from "../../api/client.js";
+import { useI18n } from "../../i18n/index.js";
 
 // .docx → HTML via mammoth. mammoth is dynamically imported on first use so
 // the ~270KB library never lands in the main bundle for users who never
@@ -11,6 +12,7 @@ const props = defineProps<{ projectId: string; path: string }>();
 const html = ref<string>("");
 const loading = ref(false);
 const error = ref<string | null>(null);
+const { t } = useI18n();
 
 async function load() {
   loading.value = true;
@@ -35,7 +37,7 @@ watch(() => [props.projectId, props.path], load, { immediate: true });
 
 <template>
   <div class="docx-preview">
-    <div v-if="loading" class="state">渲染中…</div>
+    <div v-if="loading" class="state">{{ t('viewer.rendering') }}</div>
     <div v-else-if="error" class="state error">{{ error }}</div>
     <div v-else class="docx-html" v-html="html" />
   </div>

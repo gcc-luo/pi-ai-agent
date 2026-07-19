@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
-import { NConfigProvider, NSelect } from "naive-ui";
+import { NConfigProvider, NSelect, darkTheme } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
@@ -17,6 +17,7 @@ import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
+import { useThemeStore } from "./stores/theme.js";
 import { useI18n } from "./i18n/index.js";
 
 const projectStore = useProjectStore();
@@ -24,6 +25,7 @@ const sessionStore = useSessionStore();
 const connection = useConnectionStore();
 const agent = useAgentStore();
 const trashStore = useTrashStore();
+const themeStore = useThemeStore();
 const { t } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
@@ -174,10 +176,54 @@ const lightOverrides = {
   },
 };
 
-// The application shell is intentionally light. Keeping Naive UI on the same
-// palette prevents teleported menus, drawers and modal inputs from falling
-// back to a stale dark preference stored in localStorage or the OS setting.
-const naiveTheme = null;
+const darkOverrides = {
+  common: {
+    primaryColor: "#2dd4a8",
+    primaryColorHover: "#3de0b5",
+    primaryColorPressed: "#18b89a",
+    primaryColorSuppl: "#2dd4a8",
+    bodyColor: "#111318",
+    cardColor: "#1a1d24",
+    modalColor: "#1a1d24",
+    popoverColor: "#1a1d24",
+    inputColor: "#22262e",
+    actionColor: "#22262e",
+    borderColor: "#2a2e37",
+    dividerColor: "#22262e",
+    textColor1: "#e4e7ec",
+    textColor2: "#8b95a8",
+    textColor3: "#5a6577",
+    borderRadius: "8px",
+    borderRadiusSmall: "4px",
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif',
+    fontFamilyMono: '"IBM Plex Mono", ui-monospace, monospace',
+  },
+  Button: {
+    colorPrimary: "#2dd4a8",
+    colorHoverPrimary: "#3de0b5",
+    colorPressedPrimary: "#18b89a",
+    textColorPrimary: "#ffffff",
+    textColorHoverPrimary: "#ffffff",
+    textColorPressedPrimary: "#ffffff",
+    borderRadiusMedium: "8px",
+  },
+  Input: {
+    color: "#22262e",
+    colorFocus: "#22262e",
+    border: "1px solid #2a2e37",
+    borderHover: "1px solid #3d4452",
+    borderFocus: "1px solid #2dd4a8",
+    borderRadius: "8px",
+    caretColor: "#2dd4a8",
+  },
+  Tree: {
+    nodeColorHover: "#22262e",
+    nodeColorActive: "#2a2e37",
+  },
+};
+
+const naiveTheme = computed(() => themeStore.isDark ? darkTheme : null);
+const themeOverrides = computed(() => themeStore.isDark ? darkOverrides : lightOverrides);
 
 const hasWorkspace = computed(
   () => selectedProjectId.value && selectedSessionId.value,
@@ -195,7 +241,7 @@ function closePreview() {
 </script>
 
 <template>
-  <NConfigProvider :theme="naiveTheme" :theme-overrides="lightOverrides">
+  <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
     <div class="app-shell">
       <NavRail :active-nav="activeNav" @navigate="activeNav = $event" />
 

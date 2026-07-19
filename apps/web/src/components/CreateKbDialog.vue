@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { NModal, NInput } from "naive-ui";
 import { useKbStore } from "../stores/kb.js";
+import { useI18n } from "../i18n/index.js";
 import type { KbDto } from "@pi-web-ui/shared";
 
 const props = defineProps<{
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 }>();
 
 const kbStore = useKbStore();
+const { t } = useI18n();
 
 const name = ref("");
 const description = ref("");
@@ -67,9 +69,9 @@ async function handleSave() {
     emit("saved");
     emit("close");
   } catch (e: any) {
-    const msg = e?.message ?? "操作失败";
+    const msg = e?.message ?? t("kb.create.errorDefault");
     if (msg.includes("duplicate") || msg.includes("conflict") || msg.includes("already exists")) {
-      errorMessage.value = `名称「${name.value.trim()}」已存在，请更换名称`;
+      errorMessage.value = t("kb.create.errorNameExists", { name: name.value.trim() });
     } else {
       errorMessage.value = msg;
     }
@@ -82,7 +84,7 @@ async function handleSave() {
   <NModal :show="show" @update:show="(v: boolean) => { if (!v) emit('close'); }">
     <div class="dialog" @click.stop>
       <div class="dialog-header">
-        <h3 class="dialog-title">{{ isEdit ? '编辑知识库' : '新建知识库' }}</h3>
+        <h3 class="dialog-title">{{ isEdit ? t('kb.create.editTitle') : t('kb.create.newTitle') }}</h3>
         <button class="dialog-close" @click="emit('close')" :disabled="phase === 'saving'">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
@@ -92,12 +94,12 @@ async function handleSave() {
 
       <div class="dialog-body">
         <label class="field">
-          <span class="label">名称 <span class="required">*</span></span>
+          <span class="label">{{ t('kb.create.nameLabel') }} <span class="required">*</span></span>
           <NInput
             ref="nameInput"
             v-model:value="name"
             size="small"
-            placeholder="输入知识库名称"
+            :placeholder="t('kb.create.namePlaceholder')"
             maxlength="100"
             show-count
             :status="name && !nameValid ? 'error' : undefined"
@@ -105,12 +107,12 @@ async function handleSave() {
           />
         </label>
         <label class="field">
-          <span class="label">描述</span>
+          <span class="label">{{ t('kb.create.descriptionLabel') }}</span>
           <NInput
             v-model:value="description"
             type="textarea"
             size="small"
-            placeholder="输入知识库描述（可选）"
+            :placeholder="t('kb.create.descriptionPlaceholder')"
             maxlength="500"
             show-count
             :autosize="{ minRows: 3, maxRows: 6 }"
@@ -123,11 +125,11 @@ async function handleSave() {
 
       <div class="dialog-actions">
         <button class="btn-cancel" @click="emit('close')" :disabled="phase === 'saving'">
-          取消
+          {{ t('kb.create.cancel') }}
         </button>
         <button class="btn-save" :disabled="!canSave" @click="handleSave">
           <span v-if="phase === 'saving'" class="btn-spinner" />
-          {{ isEdit ? '保存' : '创建' }}
+          {{ isEdit ? t('kb.create.save') : t('kb.create.create') }}
         </button>
       </div>
     </div>

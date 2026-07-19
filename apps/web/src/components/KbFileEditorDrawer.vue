@@ -2,6 +2,7 @@
 import { ref, watch, computed, nextTick } from "vue";
 import { NDrawer, NDrawerContent, NInput, NSpin } from "naive-ui";
 import { api } from "../api/client.js";
+import { useI18n } from "../i18n/index.js";
 import type { KbFileDto } from "@pi-web-ui/shared";
 
 const props = defineProps<{
@@ -23,6 +24,7 @@ const loading = ref(false);
 const saving = ref(false);
 const error = ref("");
 const nameInput = ref<InstanceType<typeof NInput> | null>(null);
+const { t } = useI18n();
 
 const isNewMode = computed(() => props.isNew === true && !props.fileId);
 
@@ -60,7 +62,7 @@ async function loadFile(id: string) {
     originalContent.value = contentData.content;
     nextTick(() => nameInput.value?.focus());
   } catch (e: any) {
-    error.value = e?.message ?? "加载文件失败";
+    error.value = e?.message ?? t("kb.file.editor.loadError");
   } finally {
     loading.value = false;
   }
@@ -93,7 +95,7 @@ async function handleSave() {
     }
     emit("saved");
   } catch (e: any) {
-    error.value = e?.message ?? "保存失败";
+    error.value = e?.message ?? t("kb.file.editor.saveError");
   } finally {
     saving.value = false;
   }
@@ -131,7 +133,7 @@ watch(
   >
     <NDrawerContent :width="560" closable>
       <template #header>
-        <span class="drawer-title">{{ isNewMode ? '新建文件' : '编辑文件' }}</span>
+        <span class="drawer-title">{{ isNewMode ? t('kb.file.editor.newTitle') : t('kb.file.editor.editTitle') }}</span>
       </template>
 
       <!-- Loading state -->
@@ -147,23 +149,23 @@ watch(
       <!-- Editor form (also shown in new mode when file is null) -->
       <div v-else-if="file || isNewMode" class="editor-body">
         <label class="field">
-          <span class="label">文件名</span>
+          <span class="label">{{ t('kb.file.editor.nameLabel') }}</span>
           <NInput
             ref="nameInput"
             v-model:value="name"
             size="small"
-            placeholder="输入文件名"
+            :placeholder="t('kb.file.editor.namePlaceholder')"
             :disabled="saving"
           />
         </label>
 
         <label class="field field-content">
-          <span class="label">内容</span>
+          <span class="label">{{ t('kb.file.editor.contentLabel') }}</span>
           <NInput
             v-model:value="content"
             type="textarea"
             :autosize="{ minRows: 18 }"
-            placeholder="文件内容"
+            :placeholder="t('kb.file.editor.contentPlaceholder')"
             :disabled="saving"
             class="content-textarea"
           />
@@ -173,11 +175,11 @@ watch(
 
         <div class="editor-actions">
           <button class="btn-cancel" @click="emit('close')" :disabled="saving">
-            取消
+            {{ t('kb.file.editor.cancel') }}
           </button>
           <button class="btn-save" :disabled="!canSave" @click="handleSave">
             <span v-if="saving" class="btn-spinner" />
-            保存
+            {{ t('kb.file.editor.save') }}
           </button>
         </div>
       </div>

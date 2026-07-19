@@ -88,14 +88,14 @@ async function handleImport() {
     const errorCount = result.errors.length;
 
     if (errorCount === 0) {
-      resultMessage.value = `成功导入 ${importedCount} 个文件`;
+      resultMessage.value = t("kb.import.success", { count: importedCount });
     } else {
-      resultMessage.value = `导入 ${importedCount} 个文件，${errorCount} 个失败`;
+      resultMessage.value = t("kb.import.partialFail", { imported: importedCount, failed: errorCount });
       errorMessage.value = result.errors.map((e) => `${e.name}: ${e.error}`).join("\n");
     }
     phase.value = "done";
   } catch (e: any) {
-    errorMessage.value = e?.message ?? "导入失败";
+    errorMessage.value = e?.message ?? t("kb.import.error");
     phase.value = "idle";
   }
 }
@@ -155,8 +155,8 @@ watch(
             <path d="M16 6v14M10 12l6-6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M6 22v2a2 2 0 002 2h16a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
-          <p class="drop-hint">拖拽文件到此处，或点击选择</p>
-          <p class="drop-sub">支持 .txt .md .pdf .docx（单文件 ≤ 50MB，最多 {{ MAX_FILES }} 个）</p>
+          <p class="drop-hint">{{ t('kb.import.dropHint') }}</p>
+          <p class="drop-sub">{{ t('kb.import.dropSub', { max: MAX_FILES }) }}</p>
           <input
             type="file"
             multiple
@@ -176,7 +176,7 @@ watch(
               class="file-remove"
               @click="removeFile(i)"
               :disabled="phase === 'importing'"
-              title="移除"
+              :title="t('kb.import.remove')"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
@@ -194,7 +194,7 @@ watch(
 
       <div class="dialog-actions">
         <template v-if="phase === 'done'">
-          <button class="btn-save" @click="handleDone">完成</button>
+          <button class="btn-save" @click="handleDone">{{ t('kb.import.done') }}</button>
         </template>
         <template v-else>
           <button class="btn-cancel" @click="handleClose" :disabled="phase === 'importing'">

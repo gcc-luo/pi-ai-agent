@@ -203,9 +203,9 @@ function splitSkillsFromText(text: string): { text: string; skills: string[]; ti
     if (bodyMatch) {
       const firstLine = (bodyMatch[1] ?? "").split("\n")[0] ?? "";
       const labelMatch = firstLine.match(/【([^】]+)】/);
-      tipLabel = labelMatch && labelMatch[1] ? labelMatch[1] : "已附加技能提示";
+      tipLabel = labelMatch && labelMatch[1] ? labelMatch[1] : t("chat.tipLabelFallback");
     } else {
-      tipLabel = "已附加技能提示";
+      tipLabel = t("chat.tipLabelFallback");
     }
   }
   // Extract attached file code blocks (```ext title="filename" ... ```) so the
@@ -521,7 +521,10 @@ const sessionErrors = computed(() =>
 // Label of the tip that will be auto-injected on send when one of the selected
 // skills has an entry in SKILL_TIPS. Drives the inline composer banner so the
 // user knows the reminder will be attached before they hit send.
-const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</script>
+const pendingTipLabel = computed(() => {
+  const key = activeTipLabel(selectedSkills.value);
+  return key ? t(key) : null;
+});</script>
 
 <template>
   <div class="chat-panel">
@@ -891,18 +894,18 @@ const pendingTipLabel = computed(() => activeTipLabel(selectedSkills.value));</s
   justify-content: center;
   border: 1px solid var(--border-default);
   border-radius: 50%;
-  background: #eef0f4;
+  background: var(--bg-elevated);
   color: var(--text-secondary);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
   transition: all var(--transition-fast);
   z-index: 10;
 }
 
 .scroll-to-bottom-btn:hover {
-  background: #e2e5eb;
+  background: var(--bg-hover);
   color: var(--text-primary);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
 }
 
 .scroll-btn-fade-enter-active,

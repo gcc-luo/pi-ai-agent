@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from "vue";
 import { api } from "../../api/client.js";
+import { useI18n } from "../../i18n/index.js";
 
 // .pptx → positioned HTML slides via JSZip + DOMParser. Parses the OOXML
 // package in the browser: reads ppt/presentation.xml for slide order and
@@ -11,6 +12,8 @@ import { api } from "../../api/client.js";
 // opened. No server-side conversion is required.
 
 const props = defineProps<{ projectId: string; path: string }>();
+
+const { t } = useI18n();
 
 interface Shape {
   type: "text" | "image";
@@ -251,7 +254,7 @@ function textStyle(s: Shape): Record<string, string> {
 
 <template>
   <div class="pptx-preview">
-    <div v-if="loading" class="state">渲染中…</div>
+    <div v-if="loading" class="state">{{ t('viewer.rendering') }}</div>
     <div v-else-if="error" class="state error">{{ error }}</div>
     <template v-else-if="slides.length">
       <div class="deck-toolbar">
@@ -278,7 +281,7 @@ function textStyle(s: Shape): Record<string, string> {
         </div>
       </div>
     </template>
-    <div v-else class="state">空演示文稿</div>
+    <div v-else class="state">{{ t('viewer.emptySlides') }}</div>
   </div>
 </template>
 
