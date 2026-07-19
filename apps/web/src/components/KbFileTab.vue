@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch } from "vue";
-import { NButton, NSwitch, NInput, NSelect, NEmpty, NSpin, NTooltip } from "naive-ui";
+import { ref, computed, h, onUnmounted, watch, type VNode } from "vue";
+import {
+  NButton,
+  NDataTable,
+  NEmpty,
+  NInput,
+  NPagination,
+  NSelect,
+  NSpin,
+  NSwitch,
+  NTooltip,
+  type DataTableColumns,
+} from "naive-ui";
 import { useKbFileStore } from "../stores/kb-file.js";
 import { useI18n } from "../i18n/index.js";
 import type { KbFileDto } from "@pi-web-ui/shared";
@@ -43,30 +54,11 @@ function onSearchClear() {
 
 const files = computed(() => kbFileStore.files(props.kbId));
 const total = computed(() => kbFileStore.total(props.kbId));
-const totalPages = computed(() => kbFileStore.totalPages(props.kbId));
 const page = computed(() => kbFileStore.page);
 const pageSize = computed(() => kbFileStore.pageSize);
 
 const rangeStart = computed(() => total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1);
 const rangeEnd = computed(() => Math.min(page.value * pageSize.value, total.value));
-
-// 跳页输入框：与 store.page 同步，回车或失焦提交
-const jumpInput = ref<string>(String(page.value));
-watch(page, (p) => { jumpInput.value = String(p); });
-
-function commitJump() {
-  const n = parseInt(jumpInput.value, 10);
-  if (!Number.isFinite(n)) {
-    jumpInput.value = String(page.value);
-    return;
-  }
-  const target = Math.max(1, Math.min(n, totalPages.value || 1));
-  if (target !== page.value) {
-    kbFileStore.loadPage(props.kbId, target);
-  } else {
-    jumpInput.value = String(page.value);
-  }
-}
 
 const statusOptions = computed(() => [
   { label: t("kb.file.status.pending"), value: "pending" },
@@ -141,6 +133,16 @@ function openCreateEditor() {
   showCreateEditor.value = true;
 }
 
+async function handlePageChange(nextPage: number) {
+  await kbFileStore.loadPage(props.kbId, nextPage);
+}
+
+async function handlePageSizeChange(nextPageSize: number) {
+  if (nextPageSize === pageSize.value) return;
+  kbFileStore.setPageSize(nextPageSize);
+  await kbFileStore.loadPage(props.kbId, 1);
+}
+
 const tooltipOverrides = {
   fontSize: "12px",
   padding: "4px 8px",
@@ -149,6 +151,112 @@ const tooltipOverrides = {
   textColor: "#ffffff",
   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
 };
+
+function renderAction(label: string, icon: VNode, onClick: () => void, danger = false) {
+  return h(
+    NTooltip,
+    { delay: 200, placement: "top", themeOverrides: tooltipOverrides },
+    {
+      trigger: () => h(
+        "button",
+        {
+          class: ["action-btn", { "action-danger": danger }],
+          type: "button",
+          "aria-label": label,
+          onClick,
+        },
+        icon,
+      ),
+      default: () => label,
+    },
+  );
+}
+
+function icon(paths: VNode[]) {
+  return h("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", "aria-hidden": "true" }, paths);
+}
+
+const detailIcon = () => icon([
+  h("circle", { cx: "7", cy: "7", r: "5.5", stroke: "currentColor", "stroke-width": "1.2" }),
+  h("path", { d: "M7 6.3v3.2M7 4v.6", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round" }),
+]);
+const editIcon = () => icon([
+  h("path", { d: "M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+const reparseIcon = () => icon([
+  h("path", { d: "M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round" }),
+  h("path", { d: "M11.3 1.5v3h-3M2.7 12.5v-3h3", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+const deleteIcon = () => icon([
+  h("path", { d: "M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+
+const columns = computed<DataTableColumns<KbFileDto>>(() => [
+  {
+    title: t("kb.name"),
+    key: "name",
+    minWidth: 200,
+    ellipsis: { tooltip: true },
+    render: (file) => h(
+      "button",
+      { class: "file-name-btn", type: "button", onClick: () => openDetail(file.id) },
+      file.name,
+    ),
+  },
+  {
+    title: t("kb.search.fileType"),
+    key: "ext",
+    width: 88,
+    render: (file) => h("span", { class: "ext-badge" }, `.${file.ext}`),
+  },
+  {
+    title: t("kb.size"),
+    key: "size",
+    width: 90,
+    render: (file) => formatSize(file.size),
+  },
+  {
+    title: t("kb.status"),
+    key: "status",
+    width: 180,
+    render: (file) => h("span", { class: "file-status" }, [
+      h("span", { class: "status-dot", style: { background: statusColor(file.status) } }),
+      t(`kb.file.status.${file.status}`),
+      file.status === "failed" && file.failReason
+        ? h("span", { class: "fail-hint", title: file.failReason }, ` (${t(`kb.file.fail.${file.failReason}`) !== `kb.file.fail.${file.failReason}` ? t(`kb.file.fail.${file.failReason}`) : file.failReason})`)
+        : null,
+    ]),
+  },
+  {
+    title: t("kb.chunkCount", { count: "" }),
+    key: "chunkCount",
+    width: 88,
+    render: (file) => file.chunkCount ?? "—",
+  },
+  {
+    title: t("kb.enabled"),
+    key: "enabled",
+    width: 84,
+    render: (file) => h(NSwitch, {
+      value: file.enabled,
+      size: "small",
+      "onUpdate:value": (enabled: boolean) => handleToggleEnabled(file, enabled),
+    }),
+  },
+  {
+    title: t("kb.actions"),
+    key: "actions",
+    width: 168,
+    render: (file) => h("div", { class: "file-actions" }, [
+      renderAction(t("kb.file.detail"), detailIcon(), () => openDetail(file.id)),
+      ...(["txt", "md"].includes(file.ext)
+        ? [renderAction(t("kb.file.edit"), editIcon(), () => openEditor(file.id))]
+        : []),
+      renderAction(t("kb.file.reparse"), reparseIcon(), () => handleReparse(file)),
+      renderAction(t("kb.file.delete"), deleteIcon(), () => requestDelete(file), true),
+    ]),
+  },
+]);
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer);
@@ -209,132 +317,30 @@ async function handleImportDone() {
       <div v-else-if="!files.length" class="file-state">
         <NEmpty :description="t('kb.empty')" />
       </div>
-      <table v-else class="file-table">
-        <thead>
-          <tr>
-            <th class="col-name">{{ t('kb.name') }}</th>
-            <th class="col-ext">{{ t('kb.search.fileType') }}</th>
-            <th class="col-size">{{ t('kb.size') }}</th>
-            <th class="col-status">{{ t('kb.status') }}</th>
-            <th class="col-chunks">{{ t('kb.chunkCount', { count: '' }) }}</th>
-            <th class="col-enabled">{{ t('kb.enabled') }}</th>
-            <th class="col-actions">{{ t('kb.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="file in files" :key="file.id">
-            <td class="col-name">
-              <button class="file-name-btn" @click="openDetail(file.id)">
-                {{ file.name }}
-              </button>
-            </td>
-            <td class="col-ext">
-              <span class="ext-badge">.{{ file.ext }}</span>
-            </td>
-            <td class="col-size">{{ formatSize(file.size) }}</td>
-            <td class="col-status">
-              <span class="status-dot" :style="{ background: statusColor(file.status) }" />
-              {{ t(`kb.file.status.${file.status}`) }}
-              <span v-if="file.status === 'failed' && file.failReason" class="fail-hint" :title="file.failReason">
-                ({{ t(`kb.file.fail.${file.failReason}`) !== `kb.file.fail.${file.failReason}` ? t(`kb.file.fail.${file.failReason}`) : file.failReason }})
-              </span>
-            </td>
-            <td class="col-chunks">{{ file.chunkCount ?? '—' }}</td>
-            <td class="col-enabled">
-              <NSwitch
-                :value="file.enabled"
-                size="small"
-                @update:value="(v: boolean) => handleToggleEnabled(file, v)"
-              />
-            </td>
-            <td class="col-actions">
-              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
-                <template #trigger>
-                  <button class="action-btn" @click="openDetail(file.id)">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2" />
-                      <path d="M7 6.3v3.2M7 4v.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                    </svg>
-                  </button>
-                </template>
-                {{ t('kb.file.detail') }}
-              </NTooltip>
-              <NTooltip v-if="['txt', 'md'].includes(file.ext)" :delay="200" placement="top" :theme-overrides="tooltipOverrides">
-                <template #trigger>
-                  <button class="action-btn" @click="openEditor(file.id)">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                </template>
-                {{ t('kb.file.edit') }}
-              </NTooltip>
-              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
-                <template #trigger>
-                  <button class="action-btn" @click="handleReparse(file)">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path d="M2 7a5 5 0 019.3-2.5M12 7a5 5 0 01-9.3 2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-                      <path d="M11.3 1.5v3h-3M2.7 12.5v-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                </template>
-                {{ t('kb.file.reparse') }}
-              </NTooltip>
-              <NTooltip :delay="200" placement="top" :theme-overrides="tooltipOverrides">
-                <template #trigger>
-                  <button class="action-btn action-danger" @click="requestDelete(file)">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path d="M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                </template>
-                {{ t('kb.file.delete') }}
-              </NTooltip>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <NDataTable
+        v-else
+        class="file-data-table"
+        :columns="columns"
+        :data="files"
+        bordered
+        :single-line="false"
+        :scroll-x="950"
+      />
     </div>
 
     <!-- Pagination -->
     <div v-if="files.length > 0" class="file-pagination">
       <span class="pagination-info">{{ t('kb.file.rangeInfo', { start: rangeStart, end: rangeEnd, total }) }}</span>
-      <div class="pagination-controls">
-        <button
-          class="page-btn"
-          :disabled="page <= 1"
-          :title="t('kb.file.prevPage')"
-          @click="kbFileStore.loadPage(kbId, page - 1)"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M7.5 2L3.5 6l4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <span class="pagination-page">{{ t('kb.file.pageInfo', { page, total: totalPages }) }}</span>
-        <button
-          class="page-btn"
-          :disabled="page >= totalPages"
-          :title="t('kb.file.nextPage')"
-          @click="kbFileStore.loadPage(kbId, page + 1)"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M4.5 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <span class="pagination-jump">
-          <span class="jump-label">{{ t('kb.file.jumpTo') }}</span>
-          <input
-            v-model="jumpInput"
-            class="jump-input"
-            type="text"
-            inputmode="numeric"
-            :disabled="totalPages <= 1"
-            @keyup.enter="commitJump"
-            @blur="commitJump"
-          />
-          <span class="jump-label">{{ t('kb.file.jumpPage') }}</span>
-        </span>
-      </div>
+      <NPagination
+        :page="page"
+        :page-size="pageSize"
+        :item-count="total"
+        :page-sizes="[20, 50, 100]"
+        show-size-picker
+        show-quick-jumper
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
+      />
     </div>
 
     <!-- Drawers & Dialogs -->
@@ -408,65 +414,39 @@ async function handleImportDone() {
   padding: 60px 0;
 }
 
-.file-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  table-layout: auto;
-}
-.file-table th {
-  text-align: left;
+.file-data-table :deep(.n-data-table-th) {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-default);
-  white-space: nowrap;
 }
-.file-table td {
-  padding: 10px 10px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  vertical-align: middle;
-}
-.file-table tr:hover td {
-  background: var(--bg-hover);
-}
-.col-name {
-  width: auto;
-  min-width: 200px;
-}
-.col-ext { width: 1%; white-space: nowrap; }
-.col-size { width: 1%; white-space: nowrap; }
-.col-status { width: 1%; white-space: nowrap; }
-.col-chunks { width: 1%; white-space: nowrap; }
-.col-enabled { width: 1%; white-space: nowrap; }
-.col-actions {
-  width: 1%;
-  white-space: nowrap;
-  min-width: 168px;
+.file-data-table :deep(.n-data-table-td) {
+  font-size: 13px;
 }
 
-.file-name-btn {
+.file-data-table :deep(.file-name-btn) {
   border: none;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--accent);
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   padding: 0;
   text-align: left;
-  transition: color 60ms ease;
+  appearance: none;
+  box-shadow: none;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 60ms ease, text-decoration-color 60ms ease;
 }
-.file-name-btn:hover {
-  color: var(--accent);
+.file-data-table :deep(.file-name-btn:hover) {
+  color: var(--primary-color);
+  text-decoration: underline;
 }
 
-.ext-badge {
+.file-data-table :deep(.ext-badge) {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -477,7 +457,7 @@ async function handleImportDone() {
   color: var(--text-secondary);
 }
 
-.status-dot {
+.file-data-table :deep(.status-dot) {
   display: inline-block;
   width: 6px;
   height: 6px;
@@ -485,35 +465,44 @@ async function handleImportDone() {
   margin-right: 6px;
   vertical-align: middle;
 }
+.file-data-table :deep(.file-status),
+.file-data-table :deep(.file-actions) {
+  display: inline-flex;
+  align-items: center;
+}
+.file-data-table :deep(.file-actions) {
+  gap: 4px;
+}
 
-.fail-hint {
+.file-data-table :deep(.fail-hint) {
   font-size: 11px;
   color: var(--rose);
   margin-left: 4px;
 }
 
-.action-btn {
+.file-data-table :deep(.action-btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
+  appearance: none;
+  box-shadow: none;
   color: var(--text-muted);
   cursor: pointer;
   transition: background-color 60ms ease, color 60ms ease;
 }
-.action-btn:hover {
-  background: var(--bg-hover);
+.file-data-table :deep(.action-btn:hover) {
   color: var(--text-primary);
 }
-.action-danger:hover {
+.file-data-table :deep(.action-danger:hover) {
   color: var(--rose);
 }
 
-/* ─── Pagination ─── */
 .file-pagination {
   display: flex;
   align-items: center;
@@ -527,79 +516,5 @@ async function handleImportDone() {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-}
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.page-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 60ms ease;
-}
-.page-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.pagination-page {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-secondary);
-  min-width: 64px;
-  text-align: center;
-}
-
-/* ─── Jump to page ─── */
-.pagination-jump {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border-subtle);
-}
-.jump-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.jump-input {
-  width: 44px;
-  height: 24px;
-  padding: 0 6px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-align: center;
-  outline: none;
-  transition: border-color 60ms ease;
-}
-.jump-input:focus:not(:disabled) {
-  border-color: var(--accent);
-}
-.jump-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.jump-input::-webkit-outer-spin-button,
-.jump-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
 }
 </style>
