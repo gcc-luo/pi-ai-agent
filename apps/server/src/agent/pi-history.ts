@@ -12,9 +12,11 @@ type PiMessage = {
   usage?: unknown;
   stopReason?: unknown;
   timestamp?: number;
+  /** JSONL 外层记录写入时间，即这条消息最终完成并落盘的时间。 */
+  recordedAt?: number;
 };
 
-type PiEntry = { type?: string; message?: PiMessage };
+type PiEntry = { type?: string; timestamp?: string | number; message?: PiMessage };
 
 function sessionDirectories(workdir: string): string[] {
   const root = path.join(os.homedir(), ".pi", "agent", "sessions");
@@ -59,7 +61,9 @@ function readPiMessages(file: string): PiMessage[] {
         if (!line.trim()) return [];
         try {
           const entry = JSON.parse(line) as PiEntry;
-          return entry.type === "message" && entry.message ? [entry.message] : [];
+          if (entry.type !== "message" || !entry.message) return [];
+          const recordedAt = timestampFromJsonlEntry(entry.timestamp);
+          return [{ ...entry.message, ...(recordedAt === null ? {} : { recordedAt }) }];
         } catch {
           return [];
         }
@@ -67,6 +71,13 @@ function readPiMessages(file: string): PiMessage[] {
   } catch {
     return [];
   }
+}
+
+function timestampFromJsonlEntry(value: string | number | undefined): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function textFromParts(parts: Record<string, unknown>[]): string {
@@ -79,7 +90,8 @@ function textFromParts(parts: Record<string, unknown>[]): string {
 /**
  * Early versions of the web UI only persisted assistant text. Rehydrate those
  * records from Pi's canonical JSONL transcript when a historical session opens.
- * Always sync `created_at` from the JSONL so displayed times match Pi's timestamps.
+ * Always sync `created_at` from the JSONL so displayed times match Pi's final
+ * record time, rather than the internal timestamp captured when a message began.
  */
 export function restorePiHistory(input: {
   workdir: string;
@@ -93,8 +105,9 @@ export function restorePiHistory(input: {
   if (!sessionFile) return;
   const piMessages = readPiMessages(sessionFile);
 
-  // Always sync created_at from the canonical JSONL so the displayed times
-  // match Pi's `message.timestamp` exactly. Idempotent: only writes on diff.
+  // The JSONL entry timestamp is written after the message finishes. This is
+  // especially important for the final assistant turn: its inner timestamp is
+  // often the turn start time, while the record timestamp is the session's end.
   syncTimestamps(input.messages, piMessages, input.repository);
 
   if (!missingParts) return;
@@ -158,8 +171,8 @@ export function restorePiHistory(input: {
 
 /**
  * Pair DB messages with JSONL messages by index within each role. When counts
- * match, overwrite `created_at` with the JSONL `message.timestamp` so displayed
- * times are exactly Pi's timestamps. A count mismatch means this is likely a
+ * match, overwrite `created_at` with the JSONL record time so displayed times
+ * reflect when each turn actually completed. A count mismatch means this is likely a
  * different Pi session — skip rather than guess.
  */
 function syncTimestamps(dbMessages: MessageDto[], piMessages: PiMessage[], repository: MessageRepository): void {
@@ -171,7 +184,7 @@ function syncTimestamps(dbMessages: MessageDto[], piMessages: PiMessage[], repos
       const piMsg = pi[i];
       const dbMsg = db[i];
       if (!piMsg || !dbMsg) continue;
-      const ts = piMsg.timestamp;
+      const ts = piMsg.recordedAt ?? piMsg.timestamp;
       if (typeof ts === "number" && ts !== dbMsg.createdAt) {
         repository.updateCreatedAt(dbMsg.id, ts);
       }
