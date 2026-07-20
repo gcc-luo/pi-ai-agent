@@ -94,7 +94,7 @@ export const api = {
     request<ModelDto>("PUT", "/models", { id, ...data }),
   deleteModel: (id: string) => request<void>("DELETE", `/models?id=${encodeURIComponent(id)}`),
   testModel: (data: { id?: string; provider: string; modelType?: string; apiBaseUrl?: string; apiKey?: string; modelId?: string }) =>
-    request<{ ok: boolean; error?: string }>("POST", "/models/test", data),
+    request<{ ok: boolean; error?: string; warning?: string }>("POST", "/models/test", data),
 
   browseDir: (dirPath?: string) =>
     request<{ currentPath: string; parentPath: string; directories: { name: string; path: string }[] }>("GET", `/fs/browse${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ""}`),

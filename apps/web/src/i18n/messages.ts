@@ -103,6 +103,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "model.test": "Test",
     "model.testOk": "Connection successful",
     "model.testFail": "Connection failed",
+    "model.testWarnNotMultimodal": "Connection works, but this model does not support image input. Please change the type to \"Text\".",
 
     // Nav
     "nav.chat": "Chat",
@@ -508,6 +509,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "model.test": "测试",
     "model.testOk": "连接成功",
     "model.testFail": "连接失败",
+    "model.testWarnNotMultimodal": "连接正常，但该模型不支持图片输入。请将类型改为「文本」。",
 
     "nav.chat": "对话",
     "nav.model": "模型",

@@ -109,7 +109,15 @@ async function testEmbeddingOpenAI(apiBaseUrl: string, apiKey: string, modelId?:
   }
 }
 
-async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+// Check whether an error response body indicates the model does not support
+// image/vision input. Common across OpenAI-compatible providers (OpenAI, Zhipu,
+// DashScope, SiliconFlow, etc.).
+function bodyRejectsImage(body: string): boolean {
+  const lower = body.toLowerCase();
+  return /image|vision|multimodal|visual|picture|图片|视觉|多模态/.test(lower);
+}
+
+async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/chat/completions`;
   try {
@@ -137,15 +145,20 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok || res.status === 400) return { ok: true };
+    if (res.ok) return { ok: true };
     const body = await res.text().catch(() => "");
+    // 400: connection works, but check if the model rejected the image
+    if (res.status === 400 && bodyRejectsImage(body)) {
+      return { ok: false, warning: "model_not_multimodal" };
+    }
+    if (res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
     return { ok: false, error: e.message ?? String(e) };
   }
 }
 
-async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
+async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/messages`;
   try {
@@ -178,8 +191,12 @@ async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, model
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok || res.status === 400) return { ok: true };
+    if (res.ok) return { ok: true };
     const body = await res.text().catch(() => "");
+    if (res.status === 400 && bodyRejectsImage(body)) {
+      return { ok: false, warning: "model_not_multimodal" };
+    }
+    if (res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
     return { ok: false, error: e.message ?? String(e) };
