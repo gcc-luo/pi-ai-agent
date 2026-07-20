@@ -37,6 +37,7 @@ const TINY_PNG_B64 =
 async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/chat/completions`;
+  console.log(`[ModelTest] text-openai: POST ${url} model=${modelId ?? "gpt-4o"}`);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -51,10 +52,12 @@ async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok || res.status === 400) return { ok: true };
     const body = await res.text().catch(() => "");
+    console.log(`[ModelTest] text-openai: status=${res.status} body=${body.slice(0, 500)}`);
+    if (res.ok || res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
+    console.log(`[ModelTest] text-openai: exception=${e.message}`);
     return { ok: false, error: e.message ?? String(e) };
   }
 }
@@ -62,6 +65,7 @@ async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?
 async function testAnthropic(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/messages`;
+  console.log(`[ModelTest] text-anthropic: POST ${url} model=${modelId ?? "claude-sonnet-4-20250514"}`);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -77,10 +81,12 @@ async function testAnthropic(apiBaseUrl: string, apiKey: string, modelId?: strin
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok || res.status === 400) return { ok: true };
     const body = await res.text().catch(() => "");
+    console.log(`[ModelTest] text-anthropic: status=${res.status} body=${body.slice(0, 500)}`);
+    if (res.ok || res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
+    console.log(`[ModelTest] text-anthropic: exception=${e.message}`);
     return { ok: false, error: e.message ?? String(e) };
   }
 }
@@ -120,6 +126,7 @@ function bodyRejectsImage(body: string): boolean {
 async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/chat/completions`;
+  console.log(`[ModelTest] multimodal-openai: POST ${url} model=${modelId ?? "gpt-4o"}`);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -145,8 +152,9 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok) return { ok: true };
     const body = await res.text().catch(() => "");
+    console.log(`[ModelTest] multimodal-openai: status=${res.status} body=${body.slice(0, 500)}`);
+    if (res.ok) return { ok: true };
     // 400: connection works, but check if the model rejected the image
     if (res.status === 400 && bodyRejectsImage(body)) {
       return { ok: false, warning: "model_not_multimodal" };
@@ -154,6 +162,7 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
     if (res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
+    console.log(`[ModelTest] multimodal-openai: exception=${e.message}`);
     return { ok: false, error: e.message ?? String(e) };
   }
 }
@@ -161,6 +170,7 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
 async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/messages`;
+  console.log(`[ModelTest] multimodal-anthropic: POST ${url} model=${modelId ?? "claude-sonnet-4-20250514"}`);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -191,14 +201,16 @@ async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, model
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok) return { ok: true };
     const body = await res.text().catch(() => "");
+    console.log(`[ModelTest] multimodal-anthropic: status=${res.status} body=${body.slice(0, 500)}`);
+    if (res.ok) return { ok: true };
     if (res.status === 400 && bodyRejectsImage(body)) {
       return { ok: false, warning: "model_not_multimodal" };
     }
     if (res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
+    console.log(`[ModelTest] multimodal-anthropic: exception=${e.message}`);
     return { ok: false, error: e.message ?? String(e) };
   }
 }
