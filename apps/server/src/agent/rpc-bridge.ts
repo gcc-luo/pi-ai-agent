@@ -203,7 +203,8 @@ export class RpcBridge extends EventEmitter {
 
   send(command: object): void {
     const piCommand = this.toPiCommand(command as any);
-    console.log(`[RpcBridge] send: type=${(piCommand as any)?.type} sessionId=${this.sessionId} msgLen=${String((piCommand as any)?.message ?? "").length}`);
+    const imageCount = Array.isArray((command as any)?.images) ? (command as any).images.length : 0;
+    console.log(`[RpcBridge] send: type=${(piCommand as any)?.type} sessionId=${this.sessionId} msgLen=${String((piCommand as any)?.message ?? "").length} images=${imageCount}`);
     try {
       this.proc.stdin.write(JSON.stringify(piCommand) + "\n");
       console.log(`[RpcBridge] write completed`);
@@ -214,7 +215,11 @@ export class RpcBridge extends EventEmitter {
 
   private toPiCommand(command: any): object {
     if (command?.type === "send") {
-      return { type: "prompt", message: command.content };
+      const cmd: Record<string, unknown> = { type: "prompt", message: command.content };
+      if (Array.isArray(command.images) && command.images.length > 0) {
+        cmd.images = command.images;
+      }
+      return cmd;
     }
     if (command?.type === "steer") {
       return { type: "steer", message: command.content };

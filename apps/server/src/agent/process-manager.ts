@@ -21,6 +21,7 @@ export interface ProcessManagerOptions {
 export interface ModelConfig {
   provider?: string;
   model?: string;
+  modelType?: string;
   apiKey?: string | null;
   apiBaseUrl?: string | null;
 }
@@ -58,7 +59,7 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function createCustomModelExtension(config: { provider: string; model: string; apiBaseUrl: string }): string {
+function createCustomModelExtension(config: { provider: string; model: string; apiBaseUrl: string; modelType?: string }): string {
   const extensionPath = path.join(
     os.tmpdir(),
     `pi-web-ui-model-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
@@ -66,6 +67,9 @@ function createCustomModelExtension(config: { provider: string; model: string; a
   const provider = JSON.stringify(config.provider);
   const model = JSON.stringify(config.model);
   const baseUrl = JSON.stringify(normalizeBaseUrl(config.apiBaseUrl));
+  const inputCapabilities = config.modelType === "multimodal"
+    ? "[\"text\", \"image\"]"
+    : "[\"text\"]";
 
   fs.writeFileSync(
     extensionPath,
@@ -80,7 +84,7 @@ function createCustomModelExtension(config: { provider: string; model: string; a
       `      id: ${model},`,
       `      name: ${model},`,
       "      reasoning: false,",
-      "      input: [\"text\"],",
+      `      input: ${inputCapabilities},`,
       "      contextWindow: 128000,",
       "      maxTokens: 16384,",
       "      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },",
@@ -138,7 +142,7 @@ export class ProcessManager extends EventEmitter {
 
     const extraArgs: string[] = [];
     if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
-      extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl }));
+      extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl, modelType: cfg.modelType }));
     }
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);

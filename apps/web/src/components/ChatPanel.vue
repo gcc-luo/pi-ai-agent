@@ -48,6 +48,26 @@ const TEXT_EXTS = new Set([
 ]);
 const TEXT_EXTS_ACCEPT = Array.from(TEXT_EXTS).map((e) => `.${e}`).join(",");
 
+// ─── Image attachment ───
+interface AttachedImage {
+  name: string;
+  mediaType: string;
+  data: string;      // base64 (no data: URI prefix)
+  size: number;
+  previewUrl: string; // data URL for <img> src
+}
+const attachedImages = ref<AttachedImage[]>([]);
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp",
+};
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGE_COUNT = 5;
+const IMAGE_EXTS_ACCEPT = Array.from(IMAGE_EXTS).map((e) => `.${e}`).join(",");
+const ALL_EXTS_ACCEPT = `${TEXT_EXTS_ACCEPT},${IMAGE_EXTS_ACCEPT}`;
+
 function triggerFilePick() {
   fileInputEl.value?.click();
 }
@@ -58,6 +78,22 @@ function onFilePicked(e: Event) {
   if (!files) return;
   for (const file of Array.from(files)) {
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+
+    // Image file path
+    if (IMAGE_EXTS.has(ext)) {
+      if (attachedImages.value.length >= MAX_IMAGE_COUNT) {
+        alert(t("chat.tooManyImages") + ` (max ${MAX_IMAGE_COUNT})`);
+        break;
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        alert(t("chat.imageTooLarge") + `: ${file.name}`);
+        continue;
+      }
+      readImageFile(file);
+      continue;
+    }
+
+    // Text file path
     if (!TEXT_EXTS.has(ext)) {
       alert(t("chat.fileUnsupported") + `: ${file.name}`);
       continue;
@@ -83,8 +119,60 @@ function onFilePicked(e: Event) {
   target.value = "";
 }
 
+function readImageFile(file: File) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = typeof reader.result === "string" ? reader.result : "";
+    const commaIdx = dataUrl.indexOf(",");
+    if (commaIdx < 0) return;
+    const base64Data = dataUrl.slice(commaIdx + 1);
+    const mediaType = IMAGE_MEDIA_TYPES[(file.name.split(".").pop() ?? "").toLowerCase()] ?? "image/png";
+    attachedImages.value = [
+      ...attachedImages.value,
+      { name: file.name, mediaType, data: base64Data, size: file.size, previewUrl: dataUrl },
+    ];
+  };
+  reader.onerror = () => {
+    console.error("Failed to read image:", file.name, reader.error);
+  };
+  reader.readAsDataURL(file);
+}
+
 function removeAttachedFile(idx: number) {
   attachedFiles.value = attachedFiles.value.filter((_, i) => i !== idx);
+}
+
+function removeAttachedImage(idx: number) {
+  attachedImages.value = attachedImages.value.filter((_, i) => i !== idx);
+}
+
+function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith("image/")) {
+      e.preventDefault();
+      if (attachedImages.value.length >= MAX_IMAGE_COUNT) {
+        alert(t("chat.tooManyImages") + ` (max ${MAX_IMAGE_COUNT})`);
+        return;
+      }
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const ext = item.type.split("/")[1] ?? "png";
+      const name = `screenshot-${Date.now()}.${ext === "jpeg" ? "jpg" : ext}`;
+      readImageFile(new File([blob], name, { type: item.type }));
+    }
+  }
+}
+
+// ─── Image lightbox ───
+const previewImage = ref<{ data: string; mediaType: string; name: string } | null>(null);
+
+function openImagePreview(part: { name: string; mediaType: string; data: string }) {
+  previewImage.value = { data: part.data, mediaType: part.mediaType, name: part.name };
+}
+function closeImagePreview() {
+  previewImage.value = null;
 }
 
 function formatFileSize(bytes: number): string {
@@ -369,17 +457,10 @@ function send() {
   const text = input.value;
   const skills = selectedSkills.value;
   const files = attachedFiles.value;
-  if (!text.trim() && !skills.length && !files.length) return;
-  // Append the `/skill:<name>` tokens Pi expects at the end of the content;
-  // the textarea stays clean — chips above carry the visible affordance.
+  const images = attachedImages.value;
+  if (!text.trim() && !skills.length && !files.length && !images.length) return;
   const skillSuffix = skills.map((n) => ` /skill:${n}`).join("");
-  // Auto-inject any skill-tip body (e.g. the CJK font reminder for pdf) at the
-  // start of the payload so Pi sees the rule right next to the request rather
-  // than having to dig it out of SKILL.md under context pressure.
   const tipPrefix = activeTipBody(skills) ?? "";
-  // Build file prefix: each attached file becomes a fenced code block with
-  // its name as the info string, so the model can read its content inline
-  // and the rendered user bubble shows it as a normal code block.
   const filePrefix = files.length
     ? files
         .map(
@@ -388,10 +469,14 @@ function send() {
         )
         .join("\n") + "\n"
     : "";
-  agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`);
+  const imageAttachments = images.length
+    ? images.map((img) => ({ name: img.name, mediaType: img.mediaType, data: img.data }))
+    : undefined;
+  agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`, imageAttachments);
   input.value = "";
   selectedSkills.value = [];
   attachedFiles.value = [];
+  attachedImages.value = [];
   nextTick(scrollToBottom);
 }
 
@@ -591,7 +676,16 @@ const pendingTipLabel = computed(() => {
         </div>
         <div class="msg-body">
           <template v-for="(p, pi) in m.parts" :key="pi">
-            <template v-if="p.kind === 'text' && m.role === 'user'">
+            <!-- Image part — show thumbnail in message bubble -->
+            <div v-if="p.kind === 'image'" class="msg-image-wrap">
+              <img
+                :src="`data:${p.mediaType};base64,${p.data}`"
+                :alt="p.name"
+                class="msg-image"
+                @click="openImagePreview(p)"
+              />
+            </div>
+            <template v-else-if="p.kind === 'text' && m.role === 'user'">
               <template v-for="split in [splitSkillsFromText(p.text)]" :key="0">
                 <div v-if="split.tipLabel" class="msg-tip-badge">
                   <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -734,12 +828,22 @@ const pendingTipLabel = computed(() => {
           </button>
         </span>
       </div>
+      <div v-if="attachedImages.length" class="image-previews">
+        <span v-for="(img, i) in attachedImages" :key="img.name + i" class="image-preview-chip">
+          <img :src="img.previewUrl" :alt="img.name" class="image-preview-thumb" />
+          <button class="chip-remove" :title="t('kb.file.delete')" @click="removeAttachedImage(i)">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </button>
+        </span>
+      </div>
       <input
         ref="fileInputEl"
         type="file"
         multiple
         class="file-input-hidden"
-        :accept="TEXT_EXTS_ACCEPT"
+        :accept="ALL_EXTS_ACCEPT"
         @change="onFilePicked"
       />
       <!-- Toolbar: upload + skill + KB -->
@@ -769,6 +873,7 @@ const pendingTipLabel = computed(() => {
           :autosize="{ minRows: 2, maxRows: 5 }"
           :placeholder="t('chat.placeholder')"
           @keydown="handleKeySend"
+          @paste="handlePaste"
           class="composer-input"
         />
         <button
@@ -784,7 +889,7 @@ const pendingTipLabel = computed(() => {
         <button
           v-else
           class="send-btn embedded"
-          :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length"
+          :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
           @click="send"
           :title="t('chat.send')"
         >
@@ -802,6 +907,11 @@ const pendingTipLabel = computed(() => {
       :show="showImportSkill"
       @close="showImportSkill = false"
     />
+    <Teleport to="body">
+      <div v-if="previewImage" class="image-lightbox" @click="closeImagePreview">
+        <img :src="`data:${previewImage.mediaType};base64,${previewImage.data}`" :alt="previewImage.name" class="lightbox-img" />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1890,5 +2000,87 @@ const pendingTipLabel = computed(() => {
   background: var(--accent);
   color: var(--bg-void);
   border-color: var(--accent);
+}
+
+/* ─── Image Previews in Composer ─── */
+
+.image-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.image-preview-chip {
+  position: relative;
+  display: inline-block;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-active);
+  background: var(--bg-elevated);
+}
+
+.image-preview-thumb {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+}
+
+.image-preview-chip .chip-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ─── Images in Message Bubbles ─── */
+
+.msg-image-wrap {
+  margin-bottom: 8px;
+}
+
+.msg-image {
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  object-fit: contain;
+  border: 1px solid var(--border-default);
+  transition: opacity var(--transition-fast);
+}
+
+.msg-image:hover {
+  opacity: 0.85;
+}
+
+/* ─── Image Lightbox ─── */
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--radius-md);
 }
 </style>

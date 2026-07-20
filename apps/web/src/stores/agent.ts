@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { wsClient } from "../api/ws.js";
 import { api, type ModelOption } from "../api/client.js";
 import { useSessionStore } from "./session.js";
-import type { ModelDto, ServerEvent, MessagePart, ToolCall } from "@pi-web-ui/shared";
+import type { ModelDto, ServerEvent, MessagePart, ToolCall, ImageAttachment } from "@pi-web-ui/shared";
 
 interface StreamMessage {
   id: string;
@@ -16,10 +16,18 @@ function partsFromText(text: string): MessagePart[] {
   return text ? [{ kind: "text", text }] : [];
 }
 
+function imagePartsFromMeta(metadata: Record<string, unknown> | null): MessagePart[] {
+  const images = Array.isArray(metadata?.images) ? metadata!.images : [];
+  return images.filter((img: any) => img?.mediaType && img?.data).map((img: any): MessagePart => ({
+    kind: "image", name: img.name ?? "image", mediaType: img.mediaType, data: img.data,
+  }));
+}
+
 function partsFromPersisted(content: string | null, metadata: Record<string, unknown> | null): MessagePart[] {
+  const imgParts = imagePartsFromMeta(metadata);
   const piParts = Array.isArray(metadata?.messageParts) ? metadata!.messageParts : [];
   if (piParts.length) {
-    return piParts.flatMap((part: any): MessagePart[] => {
+    const mapped = piParts.flatMap((part: any): MessagePart[] => {
       if (part?.type === "text" && typeof part.text === "string") return [{ kind: "text", text: part.text }];
       if (part?.type === "thinking" && typeof part.thinking === "string") return [{ kind: "thinking", text: part.thinking }];
       if (part?.type === "toolCall" && part.id && part.name) {
@@ -34,10 +42,11 @@ function partsFromPersisted(content: string | null, metadata: Record<string, unk
       }
       return [{ kind: "raw", data: part as Record<string, unknown> }];
     });
+    return [...imgParts, ...mapped];
   }
   const text = content ?? "";
   const toolCalls = Array.isArray(metadata?.toolCalls) ? (metadata!.toolCalls as ToolCall[]) : [];
-  const parts: MessagePart[] = [];
+  const parts: MessagePart[] = [...imgParts];
   if (text) parts.push({ kind: "text", text });
   for (const tc of toolCalls) {
     parts.push({ kind: "tool_call", toolCallId: tc.toolCallId, name: tc.name, args: tc.args, status: tc.status, result: tc.result });
@@ -137,10 +146,12 @@ export const useAgentStore = defineStore("agent", {
       this.modelDtos = this.modelDtos.filter((x) => x.id !== id);
       await this.loadConfig();
     },
-    send(sessionId: string, content: string) {
-      this.appendUser(sessionId, content);
+    send(sessionId: string, content: string, images?: ImageAttachment[]) {
+      this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
-      wsClient.send({ type: "send", sessionId, content });
+      const event: Record<string, unknown> = { type: "send", sessionId, content };
+      if (images?.length) event.images = images;
+      wsClient.send(event as any);
     },
     interrupt(sessionId: string) {
       wsClient.send({ type: "interrupt", sessionId });
@@ -149,8 +160,15 @@ export const useAgentStore = defineStore("agent", {
       const prev = this.sessionTokens[sessionId] ?? { input: 0, output: 0 };
       this.sessionTokens[sessionId] = { input: prev.input + input, output: prev.output + output };
     },
-    appendUser(sessionId: string, content: string) {
-      const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts: partsFromText(content), status: "complete", createdAt: Date.now() };
+    appendUser(sessionId: string, content: string, images?: ImageAttachment[]) {
+      const parts: MessagePart[] = [];
+      if (images?.length) {
+        for (const img of images) {
+          parts.push({ kind: "image", name: img.name, mediaType: img.mediaType, data: img.data });
+        }
+      }
+      if (content) parts.push({ kind: "text", text: content });
+      const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts, status: "complete", createdAt: Date.now() };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
     },
     handle(e: ServerEvent) {

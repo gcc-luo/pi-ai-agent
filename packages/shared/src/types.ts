@@ -1,6 +1,13 @@
+// Image attachment for multimodal messages
+export interface ImageAttachment {
+  name: string;
+  mediaType: string;  // "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+  data: string;       // base64-encoded (no data: URI prefix)
+}
+
 // WebSocket events: client → server
 export type ClientEvent =
-  | { type: "send"; sessionId: string; content: string }
+  | { type: "send"; sessionId: string; content: string; images?: ImageAttachment[] }
   | { type: "interrupt"; sessionId: string }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }
@@ -51,6 +58,7 @@ export type MessagePart =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool_call"; toolCallId: string; name: string; args: unknown; status: "running" | "complete"; result?: unknown; progress?: unknown[] }
+  | { kind: "image"; name: string; mediaType: string; data: string }
   | { kind: "raw"; data: Record<string, unknown> };
 
 export type SessionStatus = "active" | "idle" | "suspended" | "crashed";

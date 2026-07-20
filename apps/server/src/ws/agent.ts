@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { ClientEvent, ServerEvent, ToolCall } from "@pi-web-ui/shared";
+import { ClientEvent, ImageAttachment, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
 import { buildKbContext } from "../kb/inject-context.js";
 import { ulid } from "../util/ulid.js";
@@ -68,6 +68,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         const modelConfig = defaultModel ? {
           provider: defaultModel.provider,
           model: defaultModel.id,
+          modelType: defaultModel.modelType,
           apiKey: app.models.getApiKey(defaultModel.id),
           apiBaseUrl: defaultModel.apiBaseUrl,
         } : undefined;
@@ -222,12 +223,45 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0}`);
-        state.bridge.send({ type: event.type, sessionId: event.sessionId, content });
+        // Validate image attachments (send only)
+        if (event.type === "send" && event.images?.length) {
+          const IMAGE_LIMIT = 5;
+          const SIZE_LIMIT = 5 * 1024 * 1024; // 5MB per image (raw, before base64)
+          const ALLOWED_MEDIA = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+          if (event.images.length > IMAGE_LIMIT) {
+            send({ type: "error", sessionId: session.id, code: "too_many_images", message: `Maximum ${IMAGE_LIMIT} images per message` });
+            return;
+          }
+          for (const img of event.images) {
+            if (!ALLOWED_MEDIA.has(img.mediaType)) {
+              send({ type: "error", sessionId: session.id, code: "unsupported_image", message: `Unsupported image type: ${img.mediaType}` });
+              return;
+            }
+            const estimatedRawSize = (img.data.length * 3) / 4;
+            if (estimatedRawSize > SIZE_LIMIT) {
+              send({ type: "error", sessionId: session.id, code: "image_too_large", message: `Image too large: ${img.name} (max 5MB)` });
+              return;
+            }
+          }
+        }
+
+        console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
+        const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
+        if (event.type === "send" && event.images?.length) {
+          bridgePayload.images = event.images;
+        }
+        state.bridge.send(bridgePayload);
         console.log(`[WS Agent] bridge.send completed, appending message`);
 
-        const msgMeta = kbSearchMeta ? { kbSearch: kbSearchMeta } : undefined;
-        app.messages.append({ sessionId: event.sessionId, role: "user", content, metadata: msgMeta as any });
+        const msgMeta: Record<string, unknown> = {};
+        if (kbSearchMeta) msgMeta.kbSearch = kbSearchMeta;
+        if (event.type === "send" && event.images?.length) {
+          msgMeta.images = event.images.map((img: ImageAttachment) => ({
+            name: img.name, mediaType: img.mediaType, data: img.data,
+          }));
+        }
+        const hasMeta = Object.keys(msgMeta).length > 0;
+        app.messages.append({ sessionId: event.sessionId, role: "user", content, metadata: hasMeta ? msgMeta : undefined as any });
         console.log(`[WS Agent] message persisted`);
         if (event.type === "send" && session.title == null) {
           const derived = deriveDefaultTitle(event.content);
