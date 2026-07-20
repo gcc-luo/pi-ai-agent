@@ -30,9 +30,25 @@ interface TestBody {
   modelId?: string;
 }
 
-// 1x1 transparent PNG (base64) — small valid image payload for multimodal probe.
-const TINY_PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+// 4x4 bright red square PNG (base64) — recognizable test image for multimodal probe.
+// A vision-capable model should identify this as red/crimson/colored.
+const RED_SQUARE_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQI12P4z8BQz0BFwMDAwMDAxAAGIJqBAcxmYGJgAAAAPwEKAJ/YBkkAAAAASUVORK5CYII=";
+
+// Check if model response describes visual content (color, shape, etc.)
+function responseDescribesImage(text: string): boolean {
+  const lower = text.toLowerCase();
+  // Keywords indicating the model actually "saw" the image
+  const visualKeywords = [
+    "red", "crimson", "scarlet", "红色", "红",
+    "color", "colour", "颜色", "色",
+    "square", "rectangle", "shape", "方块", "方形", "形状",
+    "image", "picture", "photo", "图片", "图像", "照片",
+    "solid", "plain", "simple", "纯色",
+    "bright", "dark", "light", "亮", "暗",
+  ];
+  return visualKeywords.some((kw) => lower.includes(kw));
+}
 
 async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = apiBaseUrl.replace(/\/+$/, "");
@@ -140,21 +156,37 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
           {
             role: "user",
             content: [
-              { type: "text", text: "hi" },
+              { type: "text", text: "Describe the color and shape you see in this image in one short sentence." },
               {
                 type: "image_url",
-                image_url: { url: `data:image/png;base64,${TINY_PNG_B64}` },
+                image_url: { url: `data:image/png;base64,${RED_SQUARE_PNG_B64}` },
               },
             ],
           },
         ],
-        max_tokens: 1,
+        max_tokens: 100,
       }),
       signal: AbortSignal.timeout(15000),
     });
     const body = await res.text().catch(() => "");
     console.log(`[ModelTest] multimodal-openai: status=${res.status} body=${body.slice(0, 500)}`);
-    if (res.ok) return { ok: true };
+
+    if (res.ok) {
+      // Parse response and check if model actually described the image
+      try {
+        const json = JSON.parse(body);
+        const content = json.choices?.[0]?.message?.content ?? "";
+        console.log(`[ModelTest] multimodal-openai: response content="${content.slice(0, 200)}"`);
+        if (!responseDescribesImage(content)) {
+          console.log(`[ModelTest] multimodal-openai: model did not describe image visual content`);
+          return { ok: true, warning: "model_not_multimodal" };
+        }
+      } catch {
+        // Failed to parse, but HTTP was OK — assume connection works
+      }
+      return { ok: true };
+    }
+
     // 400: connection works, but check if the model rejected the image
     if (res.status === 400 && bodyRejectsImage(body)) {
       return { ok: false, warning: "model_not_multimodal" };
@@ -181,18 +213,18 @@ async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, model
       },
       body: JSON.stringify({
         model: modelId ?? "claude-sonnet-4-20250514",
-        max_tokens: 1,
+        max_tokens: 100,
         messages: [
           {
             role: "user",
             content: [
-              { type: "text", text: "hi" },
+              { type: "text", text: "Describe the color and shape you see in this image in one short sentence." },
               {
                 type: "image",
                 source: {
                   type: "base64",
                   media_type: "image/png",
-                  data: TINY_PNG_B64,
+                  data: RED_SQUARE_PNG_B64,
                 },
               },
             ],
@@ -203,7 +235,24 @@ async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, model
     });
     const body = await res.text().catch(() => "");
     console.log(`[ModelTest] multimodal-anthropic: status=${res.status} body=${body.slice(0, 500)}`);
-    if (res.ok) return { ok: true };
+
+    if (res.ok) {
+      // Parse response and check if model actually described the image
+      try {
+        const json = JSON.parse(body);
+        // Anthropic returns content as array: [{ type: "text", text: "..." }]
+        const content = json.content?.[0]?.text ?? "";
+        console.log(`[ModelTest] multimodal-anthropic: response content="${content.slice(0, 200)}"`);
+        if (!responseDescribesImage(content)) {
+          console.log(`[ModelTest] multimodal-anthropic: model did not describe image visual content`);
+          return { ok: true, warning: "model_not_multimodal" };
+        }
+      } catch {
+        // Failed to parse, but HTTP was OK — assume connection works
+      }
+      return { ok: true };
+    }
+
     if (res.status === 400 && bodyRejectsImage(body)) {
       return { ok: false, warning: "model_not_multimodal" };
     }
