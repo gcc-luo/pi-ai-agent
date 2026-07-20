@@ -227,9 +227,9 @@ function setDefault(id: string) {
             <NCheckbox v-model:checked="form.isDefault">{{ t('model.isDefault') }}</NCheckbox>
           </NFormItem>
         </NForm>
-        <div v-if="testResult" class="test-result" :class="testResult.ok ? 'test-ok' : testResult.warning ? 'test-warn' : 'test-fail'">
-          <template v-if="testResult.ok">{{ t('model.testOk') }}</template>
-          <template v-else-if="testResult.warning">{{ t('model.testWarnNotMultimodal') }}</template>
+        <div v-if="testResult" class="test-result" :class="testResult.warning ? 'test-warn' : testResult.ok ? 'test-ok' : 'test-fail'">
+          <template v-if="testResult.warning">{{ t('model.testWarnNotMultimodal') }}</template>
+          <template v-else-if="testResult.ok">{{ t('model.testOk') }}</template>
           <template v-else>{{ t('model.testFail') }}: {{ testResult.error }}</template>
         </div>
         <template #footer>
