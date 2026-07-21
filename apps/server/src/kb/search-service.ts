@@ -87,6 +87,15 @@ export class KbSearchService {
       strategy = "vector cosine rank";
     }
 
+    // ── Step 4: Ensure all hits have snippets ──
+    // Vector-only results may lack snippets; generate them from content.
+    const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
+    for (const h of hits) {
+      if (!h.snippet && h.content) {
+        h.snippet = buildHighlightSnippet(h.content, queryWords);
+      }
+    }
+
     const ms = Math.round(performance.now() - start);
     console.log(`[KB Search] Step 3/merge: strategy="${strategy}" → ${hits.length} hits`);
     hits.forEach((h, i) => {
