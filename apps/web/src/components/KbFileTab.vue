@@ -322,6 +322,7 @@ async function handleImportDone() {
         class="file-data-table"
         :columns="columns"
         :data="files"
+        size="small"
         bordered
         :single-line="false"
         :scroll-x="950"
@@ -335,7 +336,7 @@ async function handleImportDone() {
         :page="page"
         :page-size="pageSize"
         :item-count="total"
-        :page-sizes="[20, 50, 100]"
+        :page-sizes="[10, 20, 50, 100]"
         show-size-picker
         show-quick-jumper
         @update:page="handlePageChange"
@@ -420,9 +421,11 @@ async function handleImportDone() {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  padding: 8px 12px;
 }
 .file-data-table :deep(.n-data-table-td) {
   font-size: 13px;
+  padding: 8px 12px;
 }
 
 .file-data-table :deep(.file-name-btn) {

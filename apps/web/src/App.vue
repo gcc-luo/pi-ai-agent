@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
-import { NConfigProvider, NSelect, darkTheme } from "naive-ui";
+import { NConfigProvider, NSelect, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
@@ -26,7 +26,7 @@ const connection = useConnectionStore();
 const agent = useAgentStore();
 const trashStore = useTrashStore();
 const themeStore = useThemeStore();
-const { t } = useI18n();
+const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
@@ -224,6 +224,8 @@ const darkOverrides = {
 
 const naiveTheme = computed(() => themeStore.isDark ? darkTheme : null);
 const themeOverrides = computed(() => themeStore.isDark ? darkOverrides : lightOverrides);
+const naiveLocale = computed(() => currentLocale.value === "zh" ? zhCN : enUS);
+const naiveDateLocale = computed(() => currentLocale.value === "zh" ? dateZhCN : dateEnUS);
 
 const hasWorkspace = computed(
   () => selectedProjectId.value && selectedSessionId.value,
@@ -241,7 +243,7 @@ function closePreview() {
 </script>
 
 <template>
-  <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
+  <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides" :locale="naiveLocale" :date-locale="naiveDateLocale">
     <div class="app-shell">
       <NavRail :active-nav="activeNav" @navigate="activeNav = $event" />
 

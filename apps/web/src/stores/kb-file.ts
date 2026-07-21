@@ -4,7 +4,7 @@ import { useKbStore } from "./kb.js";
 import type { KbFileDto, KbFilePage } from "@pi-web-ui/shared";
 
 const POLL_INTERVAL_MS = 2000;
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 100;
 
 export const useKbFileStore = defineStore("kb-file", {
