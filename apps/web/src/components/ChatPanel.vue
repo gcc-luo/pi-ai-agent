@@ -869,8 +869,8 @@ const pendingTipLabel = computed(() => {
         <NInput
           v-model:value="input"
           type="textarea"
-          :rows="2"
-          :autosize="{ minRows: 2, maxRows: 5 }"
+          :rows="3"
+          :autosize="{ minRows: 3, maxRows: 5 }"
           :placeholder="t('chat.placeholder')"
           @keydown="handleKeySend"
           @paste="handlePaste"
@@ -893,12 +893,13 @@ const pendingTipLabel = computed(() => {
           @click="send"
           :title="t('chat.send')"
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
             <path
               d="M2 9l14-7-7 14V9H2z"
               fill="currentColor"
             />
           </svg>
+          <span class="send-label">{{ t('chat.send') }}</span>
         </button>
       </div>
     </div>
@@ -1756,7 +1757,7 @@ const pendingTipLabel = computed(() => {
 .composer-input :deep(.n-input) {
   background: var(--bg-surface);
   /* reserve space on the right so embedded send button doesn't cover text */
-  padding-right: 48px;
+  padding-right: 96px;
 }
 .composer-input :deep(.n-input__textarea-el) {
   background: transparent;
@@ -1768,10 +1769,18 @@ const pendingTipLabel = computed(() => {
   position: absolute;
   right: 6px;
   bottom: 6px;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
+  width: auto;
+  height: 30px;
+  padding: 0 14px;
+  gap: 5px;
+  border-radius: 15px;
+  font-size: 13px;
+  font-weight: 500;
   z-index: 1;
+}
+.send-label {
+  line-height: 1;
+  white-space: nowrap;
 }
 
 /* ─── Skill Chips ─── */
