@@ -262,12 +262,12 @@ function startDeleteSession(s: SessionDto) {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  max-height: 200px;
+  flex: 1 1 0;
   min-height: 0;
   border-bottom: 1px solid var(--border-color);
 }
 .sidebar-section.collapsed {
-  max-height: none;
+  flex: 0 0 auto;
 }
 
 .section-header {
@@ -513,9 +513,8 @@ function startDeleteSession(s: SessionDto) {
 /* ─── Files Section ─── */
 
 .sidebar-files {
-  flex: 1;
+  flex: 2 1 0;
   min-height: 0;
-  max-height: none;
   display: flex;
   flex-direction: column;
 }
