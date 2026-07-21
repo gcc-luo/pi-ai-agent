@@ -64,12 +64,6 @@ function onIframeError() {
       </a>
     </div>
 
-    <!-- Converting -->
-    <div v-else-if="loading" class="state">
-      <div class="spinner" />
-      <span>{{ t("viewer.officeConverting") }}</span>
-    </div>
-
     <!-- Conversion error -->
     <div v-else-if="error" class="state error">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -84,15 +78,21 @@ function onIframeError() {
       <span>{{ error }}</span>
     </div>
 
-    <!-- PDF iframe -->
-    <iframe
-      v-else
-      :src="pdfUrl"
-      class="office-frame"
-      title="Office preview"
-      @load="onIframeLoad"
-      @error="onIframeError"
-    />
+    <!-- PDF iframe (always rendered when available; loading overlay on top) -->
+    <template v-else>
+      <div v-if="loading" class="loading-overlay">
+        <div class="spinner" />
+        <span>{{ t("viewer.officeConverting") }}</span>
+      </div>
+      <iframe
+        :src="pdfUrl"
+        class="office-frame"
+        :class="{ 'frame-hidden': loading }"
+        title="Office preview"
+        @load="onIframeLoad"
+        @error="onIframeError"
+      />
+    </template>
   </div>
 </template>
 
@@ -103,6 +103,24 @@ function onIframeError() {
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-void);
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  background: var(--bg-void);
+  z-index: 1;
+}
+
+.frame-hidden {
+  visibility: hidden;
 }
 
 .office-frame {

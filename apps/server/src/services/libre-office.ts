@@ -27,6 +27,9 @@ export class LibreOfficeService {
   private concurrent = 0;
   private maxConcurrent = 2;
   private queue: Array<() => void> = [];
+  /** Persistent user-profile dirs (one per concurrency slot) to avoid cold-start overhead. */
+  private profileDirs: string[] = [];
+  private profileReady: Promise<void> | null = null;
 
   constructor(config: LibreOfficeConfig) {
     this.config = config;
@@ -39,13 +42,23 @@ export class LibreOfficeService {
 
     const candidates = this.config.binaryPath
       ? [this.config.binaryPath]
-      : ["soffice", "libreoffice"];
+      : [
+          "soffice",
+          "libreoffice",
+          // macOS default install location
+          "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+          // Common Linux locations
+          "/usr/bin/soffice",
+          "/usr/bin/libreoffice",
+          "/snap/bin/libreoffice",
+        ];
 
     for (const bin of candidates) {
       try {
         await execFileAsync(bin, ["--version"], { timeout: 5000 });
         this.binaryPath = bin;
         this.available = true;
+        this.profileReady = this.initProfileDirs();
         return true;
       } catch {
         /* try next */
@@ -54,6 +67,40 @@ export class LibreOfficeService {
 
     this.available = false;
     return false;
+  }
+
+  /** Pre-create persistent profile dirs and warm up LibreOffice. */
+  private async initProfileDirs(): Promise<void> {
+    const baseDir = path.join(os.tmpdir(), "pi-lo-profiles");
+    await fs.rm(baseDir, { recursive: true, force: true }).catch(() => {});
+    await fs.mkdir(baseDir, { recursive: true });
+
+    for (let i = 0; i < this.maxConcurrent; i++) {
+      const dir = path.join(baseDir, `slot-${i}`);
+      await fs.mkdir(dir, { recursive: true });
+      this.profileDirs.push(dir);
+    }
+
+    // Pre-warm: run a dummy conversion so the first real request is fast
+    try {
+      await execFileAsync(
+        this.binaryPath,
+        [
+          "--headless", "--norestore", "--nolockcheck",
+          `-env:UserInstallation=file://${this.profileDirs[0]!.replace(/\\/g, "/")}`,
+          "--version",
+        ],
+        { timeout: 15000 },
+      );
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  /** Acquire a persistent profile dir for the current conversion slot. */
+  private getProfileDir(): string {
+    // Use the concurrent count as a simple slot index
+    return this.profileDirs[(this.concurrent - 1) % this.profileDirs.length]!;
   }
 
   /** Convert an Office file to PDF, returning the cached PDF path. */
@@ -71,10 +118,12 @@ export class LibreOfficeService {
         /* cache miss */
       }
 
-      // Isolated temp dir for LibreOffice user profile (avoids lock conflicts)
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-lo-"));
-      const tmpOutDir = path.join(tmpDir, "out");
-      await fs.mkdir(tmpOutDir, { recursive: true });
+      // Wait for profile dirs to be ready
+      if (this.profileReady) await this.profileReady;
+
+      // Use persistent profile dir (avoids cold-start overhead)
+      const profileDir = this.getProfileDir();
+      const tmpOutDir = await fs.mkdtemp(path.join(os.tmpdir(), "pi-lo-out-"));
 
       try {
         // execFile (not exec) — no shell interpretation, safe from injection
@@ -84,7 +133,7 @@ export class LibreOfficeService {
             "--headless",
             "--norestore",
             "--nolockcheck",
-            `-env:UserInstallation=file://${tmpDir.replace(/\\/g, "/")}`,
+            `-env:UserInstallation=file://${profileDir.replace(/\\/g, "/")}`,
             "--convert-to",
             "pdf",
             "--outdir",
@@ -108,7 +157,7 @@ export class LibreOfficeService {
 
         return { pdfPath: cachedPdf, fromCache: false };
       } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(tmpOutDir, { recursive: true, force: true }).catch(() => {});
       }
     } finally {
       this.releaseSlot();
