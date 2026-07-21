@@ -12,9 +12,7 @@ export type FilePreviewKind =
   | "video"
   | "audio"
   | "pdf"
-  | "docx"
-  | "xlsx"
-  | "pptx"
+  | "office"
   | "unsupported";
 
 const TEXT_EXTENSIONS = new Set([
@@ -59,9 +57,16 @@ const EXTENSION_KIND: Record<string, FilePreviewKind> = {
   aac: "audio",
   m4a: "audio",
   pdf: "pdf",
-  docx: "docx",
-  xlsx: "xlsx",
-  pptx: "pptx",
+  docx: "office",
+  xlsx: "office",
+  pptx: "office",
+  doc: "office",
+  xls: "office",
+  ppt: "office",
+  odt: "office",
+  ods: "office",
+  odp: "office",
+  rtf: "office",
 };
 
 export function fileExtension(name: string): string {

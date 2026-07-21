@@ -84,6 +84,12 @@ export const api = {
   deleteFile: (projectId: string, path: string) =>
     request<void>("DELETE", `/files/${projectId}/delete?path=${encodeURIComponent(path)}`),
 
+  // Office → PDF via LibreOffice
+  officePdfUrl: (projectId: string, path: string) =>
+    `${BASE}/files/${projectId}/office-pdf?path=${encodeURIComponent(path)}`,
+  checkOfficeAvailability: () =>
+    request<{ available: boolean }>("GET", "/files/office-status"),
+
   getConfig: () => request<ConfigDto>("GET", "/config"),
   updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),
 

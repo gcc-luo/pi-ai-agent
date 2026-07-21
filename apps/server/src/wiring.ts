@@ -32,6 +32,8 @@ import { createKbFilesRoutes } from "./routes/kb-files.js";
 import { kbSearchRoutes } from "./routes/kb-search.js";
 import { sessionKbBindingsRoutes } from "./routes/session-kb-bindings.js";
 import { trashRoutes } from "./routes/trash.js";
+import { LibreOfficeService } from "./services/libre-office.js";
+import { createOfficePdfRoutes } from "./routes/office-pdf.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -97,6 +99,17 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
+
+  // LibreOffice → PDF conversion for Office file previews
+  const loService = new LibreOfficeService({
+    binaryPath: config.libreOfficeBinary || undefined,
+    timeoutMs: config.loConvertTimeoutMs,
+    cacheDir: config.loCacheDir,
+    maxCacheFiles: config.loMaxCacheFiles,
+    maxCacheBytes: config.loMaxCacheBytes,
+  });
+  await app.register(createOfficePdfRoutes(loService), { prefix: "/api" });
+
   await app.register(agentRoutes);
 
   return app;

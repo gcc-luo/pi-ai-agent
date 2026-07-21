@@ -19,6 +19,11 @@ export interface Config {
   skillStoreTimeoutMs: number;
   skillsMpApiKey: string;
   kbFilesDir: string;
+  libreOfficeBinary: string;
+  loConvertTimeoutMs: number;
+  loCacheDir: string;
+  loMaxCacheFiles: number;
+  loMaxCacheBytes: number;
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
@@ -43,5 +48,10 @@ export function loadConfig(): Config {
     suspendedTimeoutMs: Number(process.env.SUSPENDED_TIMEOUT_MS ?? 30 * 60 * 1000),
     noResponseTimeoutMs: Number(process.env.NO_RESPONSE_TIMEOUT_MS ?? 30 * 1000),
     kbFilesDir: process.env.PI_KB_FILES_DIR ?? path.join(root, "kb-files"),
+    libreOfficeBinary: process.env.LIBREOFFICE_BINARY ?? "",
+    loConvertTimeoutMs: Number(process.env.LO_CONVERT_TIMEOUT_MS ?? 60_000),
+    loCacheDir: process.env.LO_CACHE_DIR ?? path.join(root, "lo-cache"),
+    loMaxCacheFiles: Number(process.env.LO_MAX_CACHE_FILES ?? 200),
+    loMaxCacheBytes: Number(process.env.LO_MAX_CACHE_BYTES ?? 500 * 1024 * 1024),
   };
 }

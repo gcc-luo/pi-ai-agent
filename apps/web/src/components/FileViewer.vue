@@ -10,9 +10,7 @@ import ImagePreview from "./file-preview/ImagePreview.vue";
 import VideoPreview from "./file-preview/VideoPreview.vue";
 import AudioPreview from "./file-preview/AudioPreview.vue";
 import PdfPreview from "./file-preview/PdfPreview.vue";
-import DocxPreview from "./file-preview/DocxPreview.vue";
-import XlsxPreview from "./file-preview/XlsxPreview.vue";
-import PptxPreview from "./file-preview/PptxPreview.vue";
+import OfficePreview from "./file-preview/OfficePreview.vue";
 import UnsupportedPreview from "./file-preview/UnsupportedPreview.vue";
 
 const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
@@ -109,9 +107,7 @@ watch(
     <VideoPreview v-else-if="kind === 'video'" :url="rawUrl" />
     <AudioPreview v-else-if="kind === 'audio'" :url="rawUrl" />
     <PdfPreview v-else-if="kind === 'pdf'" :url="rawUrl" />
-    <DocxPreview v-else-if="kind === 'docx'" :project-id="projectId" :path="path" />
-    <XlsxPreview v-else-if="kind === 'xlsx'" :project-id="projectId" :path="path" />
-    <PptxPreview v-else-if="kind === 'pptx'" :project-id="projectId" :path="path" />
+    <OfficePreview v-else-if="kind === 'office'" :project-id="projectId" :path="path!" />
     <UnsupportedPreview
       v-else
       :path="path!"

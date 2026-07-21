@@ -60,6 +60,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "viewer.rendering": "Rendering…",
     "viewer.emptyWorkbook": "Empty workbook",
     "viewer.emptySlides": "Empty slides",
+    "viewer.officeConverting": "Converting document…",
+    "viewer.officeConvertFailed": "Document conversion failed",
+    "viewer.officeUnavailable": "LibreOffice not installed",
+    "viewer.officeUnavailableHint": "To preview Office documents (.docx, .xlsx, .pptx, .doc, .xls, .ppt, .odt, .ods, .odp, .rtf), please install LibreOffice. After installation, restart the server.",
+    "viewer.officeDownloadLink": "Download LibreOffice",
+    "viewer.officeTimeout": "Document conversion timed out",
 
     // Toggle tooltips
     "toggle.light": "Switch to light mode",
@@ -469,6 +475,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "viewer.rendering": "渲染中…",
     "viewer.emptyWorkbook": "空工作簿",
     "viewer.emptySlides": "空演示文稿",
+    "viewer.officeConverting": "正在转换文档…",
+    "viewer.officeConvertFailed": "文档转换失败",
+    "viewer.officeUnavailable": "未安装 LibreOffice",
+    "viewer.officeUnavailableHint": "要预览 Office 文档（.docx、.xlsx、.pptx、.doc、.xls、.ppt、.odt、.ods、.odp、.rtf），请在系统中安装 LibreOffice。安装后请重启服务端。",
+    "viewer.officeDownloadLink": "下载 LibreOffice",
+    "viewer.officeTimeout": "文档转换超时，文件可能过于复杂",
 
     "toggle.light": "切换到浅色模式",
     "toggle.dark": "切换到暗色模式",
