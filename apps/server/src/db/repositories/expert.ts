@@ -99,16 +99,23 @@ export class ExpertRepository {
   }
 
   seedPresets(presets: Array<Omit<Parameters<typeof this.create>[0], "isPreset">>): void {
-    const count = this.countPresets();
-    console.log(`[ExpertRepository] countPresets: ${count}`);
-    if (count > 0) return;
-    console.log(`[ExpertRepository] seeding ${presets.length} preset experts...`);
+    // Seed by name rather than only on an empty table. This lets a product
+    // update add newly bundled experts for existing installations while
+    // leaving all previously created presets and custom experts untouched.
+    const existingNames = new Set(
+      (this.db.prepare("SELECT name FROM experts WHERE is_preset = 1").all() as { name: string }[])
+        .map((expert) => expert.name),
+    );
+    const missing = presets.filter((preset) => !existingNames.has(preset.name));
+    if (!missing.length) return;
+
+    console.log(`[ExpertRepository] seeding ${missing.length} new preset experts...`);
     const tx = this.db.transaction(() => {
-      for (const p of presets) {
+      for (const p of missing) {
         this.create({ ...p, isPreset: true });
       }
     });
     tx();
-    console.log(`[ExpertRepository] seeding complete, count now: ${this.countPresets()}`);
+    console.log(`[ExpertRepository] preset seeding complete, count now: ${this.countPresets()}`);
   }
 }
