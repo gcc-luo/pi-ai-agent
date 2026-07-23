@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineAsyncComponent } from "vue";
-import { NConfigProvider, NSelect, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
+import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from "vue";
+import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
@@ -12,6 +12,7 @@ import ModelPanel from "./components/ModelPanel.vue";
 const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStoreView.vue"));
 const KnowledgeBaseView = defineAsyncComponent(() => import("./components/KnowledgeBaseView.vue"));
 const TrashView = defineAsyncComponent(() => import("./components/TrashView.vue"));
+const ExpertView = defineAsyncComponent(() => import("./components/ExpertView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
@@ -31,7 +32,7 @@ const { t, currentLocale } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base" | "trash">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "trash">("chat");
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -128,6 +129,23 @@ async function deleteSession(id: string) {
     console.error("Failed to delete session:", e);
     alert(`${e.message}`);
   }
+}
+
+// Navigate from a non-chat view (e.g. ExpertView) to a specific session in
+// the chat view. Used when the user summons an expert — we need to switch to
+// chat, select the right project and session, and open it.
+async function navigateToSession(payload: { projectId: string; sessionId: string }) {
+  activeNav.value = "chat";
+  if (selectedProjectId.value !== payload.projectId) {
+    // Setting selectedProjectId triggers a watcher that loads sessions and
+    // auto-selects the first one. We wait for it to finish, then override
+    // with the expert session we actually want.
+    selectedProjectId.value = payload.projectId;
+    await nextTick();
+    // Give the watcher time to complete its async loads.
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  selectedSessionId.value = payload.sessionId;
 }
 
 const lightOverrides = {
@@ -244,6 +262,7 @@ function closePreview() {
 
 <template>
   <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides" :locale="naiveLocale" :date-locale="naiveDateLocale">
+    <NMessageProvider>
     <div class="app-shell">
       <NavRail :active-nav="activeNav" @navigate="activeNav = $event" />
 
@@ -334,8 +353,10 @@ function closePreview() {
       <ModelPanel v-else-if="activeNav === 'model'" />
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
+      <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
       <TrashView v-else-if="activeNav === 'trash'" />
     </div>
+    </NMessageProvider>
   </NConfigProvider>
 </template>
 

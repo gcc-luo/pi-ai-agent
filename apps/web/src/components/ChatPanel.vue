@@ -10,6 +10,7 @@ import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
 import { useKbStore } from "../stores/kb.js";
 import ChatKbPicker from "./ChatKbPicker.vue";
+import ChatExpertPicker from "./ChatExpertPicker.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
@@ -716,7 +717,7 @@ const pendingTipLabel = computed(() => {
               </template>
             </template>
             <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
-            <details v-else-if="p.kind === 'thinking'" class="thinking-trace">
+            <details v-else-if="p.kind === 'thinking'" class="thinking-trace" open>
               <summary class="thinking-summary">
                 <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
               </summary>
@@ -846,7 +847,7 @@ const pendingTipLabel = computed(() => {
         :accept="ALL_EXTS_ACCEPT"
         @change="onFilePicked"
       />
-      <!-- Toolbar: upload + skill + KB -->
+      <!-- Toolbar: upload + skill + expert + KB -->
       <div class="composer-toolbar">
         <button class="tool-btn" :title="t('chat.upload')" @click="triggerFilePick">
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
@@ -858,6 +859,7 @@ const pendingTipLabel = computed(() => {
           @select="onSkillSelect"
           @import="showImportSkill = true"
         />
+        <ChatExpertPicker :session-id="sessionId" />
         <ChatKbPicker :session-id="sessionId" />
         <span class="token-usage" :title="t('chat.tokenUsage')">
           <span class="token-in"><span class="token-arrow up">↑</span>{{ tokenLabel.input }}</span>
@@ -1516,6 +1518,8 @@ const pendingTipLabel = computed(() => {
   font-style: italic;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 4.5em;
+  overflow-y: auto;
 }
 
 .raw-summary {
@@ -1652,6 +1656,12 @@ const pendingTipLabel = computed(() => {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Hide tool output and running line when details is collapsed */
+.tool-trace details:not([open]) + .tool-output,
+.tool-trace details:not([open]) + .tool-running-line {
+  display: none;
 }
 
 .tool-running-line {

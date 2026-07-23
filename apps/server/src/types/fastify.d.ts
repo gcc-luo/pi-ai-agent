@@ -13,6 +13,7 @@ import type { KbFileRepository } from "../db/repositories/kb-file.js";
 import type { KbChunkRepository } from "../db/repositories/kb-chunk.js";
 import type { SessionKbBindingRepository } from "../db/repositories/session-kb-binding.js";
 import type { KbSearchService } from "../kb/search-service.js";
+import type { ExpertRepository } from "../db/repositories/expert.js";
 import type { Config } from "../config.js";
 
 declare module "fastify" {
@@ -31,6 +32,7 @@ declare module "fastify" {
     kbChunks: KbChunkRepository;
     kbBindings: SessionKbBindingRepository;
     kbSearch: KbSearchService;
+    experts: ExpertRepository;
     config: Config;
   }
 }

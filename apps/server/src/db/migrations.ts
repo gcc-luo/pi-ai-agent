@@ -171,6 +171,32 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(deleted_at) WHERE deleted_at IS NULL;
     `,
   },
+  {
+    name: "010_experts",
+    sql: `
+      CREATE TABLE experts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT '🤖',
+        category TEXT NOT NULL,
+        description TEXT NOT NULL,
+        system_prompt TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '[]',
+        is_preset INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_experts_category ON experts(category);
+      CREATE INDEX idx_experts_preset ON experts(is_preset);
+    `,
+  },
+  {
+    name: "011_session_expert",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN expert_id TEXT REFERENCES experts(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

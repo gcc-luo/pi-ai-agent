@@ -27,6 +27,7 @@ describe("RenameSessionDialog", () => {
     projectId: "p1",
     title: "old",
     parentId: null,
+    expertId: null,
     status: "active",
     createdAt: 0,
     updatedAt: 0,

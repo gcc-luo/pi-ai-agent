@@ -28,6 +28,13 @@ export const useSessionStore = defineStore("sessions", {
       if (this.current?.id === id) this.current = updated;
       return updated;
     },
+    async setExpert(id: string, expertId: string | null) {
+      const updated = await api.updateSessionExpert(id, expertId);
+      const idx = this.sessions.findIndex((s) => s.id === id);
+      if (idx >= 0) this.sessions.splice(idx, 1, updated);
+      if (this.current?.id === id) this.current = updated;
+      return updated;
+    },
     async remove(id: string) {
       await api.deleteSession(id);
       this.sessions = this.sessions.filter((s) => s.id !== id);

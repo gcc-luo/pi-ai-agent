@@ -79,6 +79,7 @@ export interface SessionDto {
   projectId: string;
   title: string | null;
   parentId: string | null;
+  expertId: string | null;
   status: SessionStatus;
   createdAt: number;
   updatedAt: number;
@@ -139,6 +140,26 @@ export interface SkillDto {
   name: string;
   description: string;
   path: string;
+}
+
+// ─── Expert Center ───
+
+export type ExpertCategory =
+  | "development" | "design" | "data" | "marketing"
+  | "product" | "finance" | "legal" | "operations";
+
+export interface ExpertDto {
+  id: string;
+  name: string;
+  icon: string;
+  category: ExpertCategory;
+  description: string;
+  systemPrompt: string;
+  tags: string[];
+  isPreset: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ─── Skill store (vendored pi-skill-hub provider DTOs) ───

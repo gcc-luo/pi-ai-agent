@@ -9,6 +9,7 @@ import { ProjectRepository } from "../../src/db/repositories/project.js";
 import { SessionRepository } from "../../src/db/repositories/session.js";
 import { MessageRepository } from "../../src/db/repositories/message.js";
 import { ModelRepository } from "../../src/db/repositories/model.js";
+import { ExpertRepository } from "../../src/db/repositories/expert.js";
 import { SessionStateStore } from "../../src/agent/session-state.js";
 import { projectsRoutes } from "../../src/routes/projects.js";
 import { sessionsRoutes } from "../../src/routes/sessions.js";
@@ -30,6 +31,7 @@ describe("sessions edit route", () => {
       sessions: new SessionRepository(db),
       messages: new MessageRepository(db),
       models: new ModelRepository(db),
+      experts: new ExpertRepository(db),
       sessionStates: new SessionStateStore(),
     });
     await app.register(projectsRoutes, { prefix: "/api/projects" });
@@ -86,5 +88,28 @@ describe("sessions edit route", () => {
       payload: { title: "x" },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it("assigns and clears an expert for the current session", async () => {
+    const { sessionId } = await setupProjectAndSession();
+    const expert = app.experts.create({
+      name: "Reviewer", category: "development", description: "Reviews code", systemPrompt: "Review code.",
+    });
+
+    const selected = await app.inject({
+      method: "PUT",
+      url: `/api/sessions/${sessionId}`,
+      payload: { expertId: expert.id },
+    });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.json().expertId).toBe(expert.id);
+
+    const cleared = await app.inject({
+      method: "PUT",
+      url: `/api/sessions/${sessionId}`,
+      payload: { expertId: null },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().expertId).toBeNull();
   });
 });

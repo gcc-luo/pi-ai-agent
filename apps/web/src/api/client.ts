@@ -1,7 +1,7 @@
 import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
-  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto,
+  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -44,6 +44,8 @@ export const api = {
   getSession: (id: string) => request<SessionDto>("GET", `/sessions/${id}`),
   updateSession: (id: string, title: string) =>
     request<SessionDto>("PUT", `/sessions/${id}`, { title }),
+  updateSessionExpert: (id: string, expertId: string | null) =>
+    request<SessionDto>("PUT", `/sessions/${id}`, { expertId }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
   listSkills: () => request<SkillDto[]>("GET", "/skills"),
@@ -161,4 +163,16 @@ export const api = {
   destroyItem: (kind: "project" | "session", id: string) =>
     request<void>("POST", "/trash/destroy", { kind, id }),
   emptyTrash: () => request<void>("POST", "/trash/empty"),
+
+  // ─── Experts ───
+  listExperts: (category?: string) =>
+    request<ExpertDto[]>("GET", `/experts${category ? `?category=${encodeURIComponent(category)}` : ""}`),
+  getExpert: (id: string) => request<ExpertDto>("GET", `/experts/${id}`),
+  createExpert: (input: { name: string; icon?: string; category: string; description: string; systemPrompt: string; tags?: string[] }) =>
+    request<ExpertDto>("POST", "/experts", input),
+  updateExpert: (id: string, patch: { name?: string; icon?: string; category?: string; description?: string; systemPrompt?: string; tags?: string[]; sortOrder?: number }) =>
+    request<ExpertDto>("PUT", `/experts/${id}`, patch),
+  deleteExpert: (id: string) => request<void>("DELETE", `/experts/${id}`),
+  summonExpert: (expertId: string, projectId: string) =>
+    request<SessionDto>("POST", `/experts/${expertId}/summon`, { projectId }),
 };

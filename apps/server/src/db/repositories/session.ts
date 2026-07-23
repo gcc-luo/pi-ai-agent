@@ -4,14 +4,14 @@ import { ulid } from "../../util/ulid.js";
 
 type Row = {
   id: string; project_id: string; title: string | null; parent_id: string | null;
-  status: SessionStatus; pi_session_ref: string | null;
+  expert_id: string | null; status: SessionStatus; pi_session_ref: string | null;
   created_at: number; updated_at: number; last_active_at: number | null;
   deleted_at: number | null;
 };
 
 function toDto(r: Row): SessionDto {
   return {
-    id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id,
+    id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id, expertId: r.expert_id,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
     deletedAt: r.deleted_at,
   };
@@ -20,15 +20,15 @@ function toDto(r: Row): SessionDto {
 export class SessionRepository {
   constructor(private db: Database.Database) {}
 
-  create(input: { projectId: string; parentId?: string; title?: string }): SessionDto {
+  create(input: { projectId: string; parentId?: string; title?: string; expertId?: string }): SessionDto {
     const id = ulid();
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO sessions (id, project_id, title, parent_id, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'active', ?, ?)
-    `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, now, now);
+      INSERT INTO sessions (id, project_id, title, parent_id, expert_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+    `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, input.expertId ?? null, now, now);
     return {
-      id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null,
+      id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
       status: "active", createdAt: now, updatedAt: now, lastActiveAt: null, deletedAt: null,
     };
   }
@@ -66,6 +66,13 @@ export class SessionRepository {
     if (!cur) throw new Error("session not found");
     this.db.prepare("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?")
       .run(patch.title, Date.now(), id);
+  }
+
+  setExpert(id: string, expertId: string | null): void {
+    const cur = this.findById(id);
+    if (!cur) throw new Error("session not found");
+    this.db.prepare("UPDATE sessions SET expert_id = ?, updated_at = ? WHERE id = ?")
+      .run(expertId, Date.now(), id);
   }
 
   markActiveAsCrashed(): void {

@@ -25,12 +25,29 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
-    const body = (req.body ?? {}) as { title?: string };
-    const title = body.title?.trim();
-    if (!title) return reply.code(400).send({ error: "title required" });
+    const body = (req.body ?? {}) as { title?: string; expertId?: string | null };
     const cur = app.sessions.findById(req.params.id);
     if (!cur) return reply.code(404).send({ error: "not found" });
-    app.sessions.update(req.params.id, { title });
+
+    if ("title" in body) {
+      const title = body.title?.trim();
+      if (!title) return reply.code(400).send({ error: "title required" });
+      app.sessions.update(req.params.id, { title });
+    }
+
+    if ("expertId" in body) {
+      if (body.expertId !== null && typeof body.expertId !== "string") {
+        return reply.code(400).send({ error: "expertId must be a string or null" });
+      }
+      if (body.expertId && !app.experts.findById(body.expertId)) {
+        return reply.code(404).send({ error: "expert not found" });
+      }
+      app.sessions.setExpert(req.params.id, body.expertId ?? null);
+    }
+
+    if (!("title" in body) && !("expertId" in body)) {
+      return reply.code(400).send({ error: "title or expertId required" });
+    }
     return app.sessions.findById(req.params.id);
   });
 

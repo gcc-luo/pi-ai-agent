@@ -245,6 +245,19 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
+        // The expert assignment belongs to the session, not one individual
+        // prompt. Read it for every turn so selecting, replacing, or clearing
+        // an expert takes effect immediately, including in an already-running
+        // conversation. The injected instruction is sent only to Pi; the
+        // persisted user message below remains the text the user actually wrote.
+        if (event.type === "send" && session.expertId) {
+          const expert = app.experts.findById(session.expertId);
+          if (expert?.systemPrompt) {
+            content = `<system-instruction>\n${expert.systemPrompt}\n</system-instruction>\n\n${content}`;
+            console.log(`[WS Agent] expert system prompt injected: sessionId=${session.id} expertId=${expert.id} promptLen=${expert.systemPrompt.length}`);
+          }
+        }
+
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
         const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
         if (event.type === "send" && event.images?.length) {
@@ -261,7 +274,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }));
         }
         const hasMeta = Object.keys(msgMeta).length > 0;
-        app.messages.append({ sessionId: event.sessionId, role: "user", content, metadata: hasMeta ? msgMeta : undefined as any });
+        app.messages.append({ sessionId: event.sessionId, role: "user", content: event.content, metadata: hasMeta ? msgMeta : undefined as any });
         console.log(`[WS Agent] message persisted`);
         if (event.type === "send" && session.title == null) {
           const derived = deriveDefaultTitle(event.content);
