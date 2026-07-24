@@ -2,6 +2,7 @@ import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
+  ScheduledTaskDto, TaskLogDto, TaskType,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -175,4 +176,24 @@ export const api = {
   deleteExpert: (id: string) => request<void>("DELETE", `/experts/${id}`),
   summonExpert: (expertId: string, projectId: string) =>
     request<SessionDto>("POST", `/experts/${expertId}/summon`, { projectId }),
+
+  // ─── Scheduled Tasks ───
+  listScheduledTasks: () =>
+    request<ScheduledTaskDto[]>("GET", "/scheduled-tasks"),
+  createScheduledTask: (data: {
+    name: string; description?: string; cronExpression: string;
+    taskType: TaskType; payload?: string; enabled?: boolean;
+  }) => request<ScheduledTaskDto>("POST", "/scheduled-tasks", data),
+  updateScheduledTask: (id: string, data: {
+    name?: string; description?: string; cronExpression?: string;
+    taskType?: TaskType; payload?: string; enabled?: boolean;
+  }) => request<ScheduledTaskDto>("PUT", `/scheduled-tasks/${id}`, data),
+  deleteScheduledTask: (id: string) =>
+    request<void>("DELETE", `/scheduled-tasks/${id}`),
+  toggleScheduledTask: (id: string, enabled: boolean) =>
+    request<ScheduledTaskDto>("PATCH", `/scheduled-tasks/${id}/toggle`, { enabled }),
+  getScheduledTaskLogs: (id: string, limit?: number) =>
+    request<TaskLogDto[]>("GET", `/scheduled-tasks/${id}/logs${limit ? `?limit=${limit}` : ""}`),
+  runScheduledTask: (id: string) =>
+    request<{ message: string }>("POST", `/scheduled-tasks/${id}/run`),
 };

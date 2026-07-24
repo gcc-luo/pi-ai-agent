@@ -6,11 +6,11 @@ import { useTrashStore } from "../stores/trash.js";
 import SettingsDialog from "./SettingsDialog.vue";
 
 defineProps<{
-  activeNav: "chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "trash";
+  activeNav: "chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "scheduled-tasks" | "trash";
 }>();
 
 defineEmits<{
-  (e: "navigate", nav: "chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "trash"): void;
+  (e: "navigate", nav: "chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "scheduled-tasks" | "trash"): void;
 }>();
 
 const connection = useConnectionStore();
@@ -86,6 +86,20 @@ const showSettings = ref(false);
           <path d="M3 16c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
         </svg>
         <span class="nav-label">{{ t('nav.experts') }}</span>
+      </button>
+
+      <button
+        class="nav-item"
+        :class="{ active: activeNav === 'scheduled-tasks' }"
+        @click="$emit('navigate', 'scheduled-tasks')"
+      >
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <circle cx="9" cy="10" r="6" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M9 7v3l2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 2h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M9 2v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <span class="nav-label">{{ t('nav.scheduledTasks') }}</span>
       </button>
 
       <button

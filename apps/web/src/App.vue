@@ -13,6 +13,7 @@ const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStor
 const KnowledgeBaseView = defineAsyncComponent(() => import("./components/KnowledgeBaseView.vue"));
 const TrashView = defineAsyncComponent(() => import("./components/TrashView.vue"));
 const ExpertView = defineAsyncComponent(() => import("./components/ExpertView.vue"));
+const ScheduledTasksView = defineAsyncComponent(() => import("./components/ScheduledTasksView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
@@ -32,7 +33,7 @@ const { t, currentLocale } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "trash">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store" | "knowledge-base" | "experts" | "scheduled-tasks" | "trash">("chat");
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -354,6 +355,7 @@ function closePreview() {
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
       <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
+      <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" />
       <TrashView v-else-if="activeNav === 'trash'" />
     </div>
     </NMessageProvider>
