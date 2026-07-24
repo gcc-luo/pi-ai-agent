@@ -197,6 +197,34 @@ const MIGRATIONS = [
       ALTER TABLE sessions ADD COLUMN expert_id TEXT REFERENCES experts(id) ON DELETE SET NULL;
     `,
   },
+  {
+    name: "012_scheduled_tasks",
+    sql: `
+      CREATE TABLE scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        cron_expression TEXT NOT NULL,
+        task_type TEXT NOT NULL DEFAULT 'prompt',
+        payload TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_run_at INTEGER,
+        next_run_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE task_logs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'running',
+        output TEXT NOT NULL DEFAULT '',
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER
+      );
+      CREATE INDEX idx_task_logs_task ON task_logs(task_id);
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

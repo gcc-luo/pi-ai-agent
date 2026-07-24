@@ -318,3 +318,31 @@ export interface Result<T, E = string> {
   data?: T;
   error?: E;
 }
+
+// ─── Scheduled Tasks ───
+
+export type TaskType = "prompt" | "reminder";
+
+export interface ScheduledTaskDto {
+  id: string;
+  name: string;
+  description: string;
+  cronExpression: string;
+  taskType: TaskType;
+  /** JSON string — type-specific config (prompt text, reminder message, etc.) */
+  payload: string;
+  enabled: boolean;
+  lastRunAt: number | null;
+  nextRunAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskLogDto {
+  id: string;
+  taskId: string;
+  status: "success" | "failed" | "running";
+  output: string;
+  startedAt: number;
+  finishedAt: number | null;
+}

@@ -36,6 +36,9 @@ import { LibreOfficeService } from "./services/libre-office.js";
 import { createOfficePdfRoutes } from "./routes/office-pdf.js";
 import { ExpertRepository } from "./db/repositories/expert.js";
 import { expertsRoutes } from "./routes/experts.js";
+import { ScheduledTaskRepository, TaskLogRepository } from "./db/repositories/scheduled-task.js";
+import { TaskScheduler } from "./services/task-scheduler.js";
+import { scheduledTasksRoutes } from "./routes/scheduled-tasks.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -62,6 +65,8 @@ export async function buildConfiguredApp(config: Config) {
   const kbSearch = new KbSearchService(db);
   const sessionStates = new SessionStateStore();
   const experts = new ExpertRepository(db);
+  const scheduledTasks = new ScheduledTaskRepository(db);
+  const taskLogs = new TaskLogRepository(db);
 
   // Seed preset experts (idempotent — adds only presets not yet present).
   experts.seedPresets([
@@ -99,7 +104,8 @@ export async function buildConfiguredApp(config: Config) {
   // Build app first so we can pass app.log to ProcessManager
   const app = await buildApp(config, {
     db, projects, sessions, messages, models, sessionStates, skills, skillStore,
-    knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts, config,
+    knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
+    scheduledTasks, taskLogs, config,
   });
   const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, logger: app.log });
   (app as any).processManager = processManager;
@@ -130,6 +136,13 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
+
+  // Scheduled tasks
+  const taskScheduler = new TaskScheduler(scheduledTasks, taskLogs, app.log);
+  (app as any).taskScheduler = taskScheduler;
+  await app.register(scheduledTasksRoutes, { prefix: "/api/scheduled-tasks" });
+  app.addHook("onReady", async () => taskScheduler.start());
+  app.addHook("onClose", async () => taskScheduler.stop());
 
   // LibreOffice → PDF conversion for Office file previews
   const loService = new LibreOfficeService({
