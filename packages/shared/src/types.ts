@@ -331,6 +331,8 @@ export interface ScheduledTaskDto {
   taskType: TaskType;
   /** JSON string — type-specific config (prompt text, reminder message, etc.) */
   payload: string;
+  /** Project where prompt tasks create sessions. Null for reminder tasks. */
+  projectId: string | null;
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number | null;
@@ -343,6 +345,8 @@ export interface TaskLogDto {
   taskId: string;
   status: "success" | "failed" | "running";
   output: string;
+  /** Session created for this execution (prompt tasks only). */
+  sessionId: string | null;
   startedAt: number;
   finishedAt: number | null;
 }

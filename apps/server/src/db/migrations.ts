@@ -225,6 +225,15 @@ const MIGRATIONS = [
       CREATE INDEX idx_task_logs_task ON task_logs(task_id);
     `,
   },
+  {
+    name: "013_task_session_link",
+    sql: `
+      ALTER TABLE scheduled_tasks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
+      ALTER TABLE task_logs ADD COLUMN session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
+      CREATE INDEX idx_scheduled_tasks_project ON scheduled_tasks(project_id);
+      CREATE INDEX idx_task_logs_session ON task_logs(session_id);
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

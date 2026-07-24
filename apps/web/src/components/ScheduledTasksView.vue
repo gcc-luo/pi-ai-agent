@@ -1,70 +1,120 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { NButton, NSpin, NEmpty, NSwitch, NTag, useMessage } from "naive-ui";
+import { onMounted, ref, computed, h, type VNode } from "vue";
+import {
+  NButton,
+  NDataTable,
+  NEmpty,
+  NModal,
+  NPagination,
+  NSpin,
+  NSwitch,
+  NTag,
+  NTooltip,
+  useMessage,
+  type DataTableColumns,
+} from "naive-ui";
 import { useScheduledTasksStore } from "../stores/scheduled-tasks.js";
+import { useProjectStore } from "../stores/project.js";
 import { useI18n } from "../i18n/index.js";
 import { cronToHuman, timeAgo, formatDateTime } from "../utils/cron-helper.js";
 import type { ScheduledTaskDto, TaskLogDto } from "@pi-web-ui/shared";
 import CreateScheduledTaskDialog from "./CreateScheduledTaskDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
+const emit = defineEmits<{
+  "navigate-session": [payload: { projectId: string; sessionId: string }];
+}>();
+
 const store = useScheduledTasksStore();
+const projectStore = useProjectStore();
 const { t } = useI18n();
 const message = useMessage();
 
+// ─── State ───
 const showCreate = ref(false);
 const editTask = ref<ScheduledTaskDto | null>(null);
-const deleteTarget = ref<string | null>(null);
-const expandedLogs = ref<Set<string>>(new Set());
-const logsLoading = ref<Set<string>>(new Set());
+const deleteTarget = ref<ScheduledTaskDto | null>(null);
+
+// Logs modal
+const logsTaskId = ref<string | null>(null);
+const logsLoading = ref(false);
+
+// Client-side pagination
+const page = ref(1);
+const pageSize = ref(20);
+
+const total = computed(() => store.tasks.length);
+const pagedTasks = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return store.tasks.slice(start, start + pageSize.value);
+});
+const rangeStart = computed(() => total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1);
+const rangeEnd = computed(() => Math.min(page.value * pageSize.value, total.value));
+
+function handlePageChange(next: number) {
+  page.value = next;
+}
+function handlePageSizeChange(next: number) {
+  pageSize.value = next;
+  page.value = 1;
+}
 
 onMounted(() => {
   store.loadAll();
 });
 
-function typeLabel(type: string): string {
-  return t(`scheduledTasks.type.${type}`);
+// ─── Helpers ───
+
+function projectName(id: string | null): string {
+  if (!id) return "—";
+  return projectStore.projects.find((p) => p.id === id)?.name ?? "—";
 }
 
-function typeTagType(type: string): "info" | "warning" {
-  return type === "prompt" ? "info" : "warning";
+function navigateToSession(task: ScheduledTaskDto, log: TaskLogDto) {
+  if (log.sessionId && task.projectId) {
+    emit("navigate-session", { projectId: task.projectId, sessionId: log.sessionId });
+  }
 }
 
-async function handleToggle(id: string, enabled: boolean) {
+// ─── Actions ───
+
+async function handleToggle(task: ScheduledTaskDto, enabled: boolean) {
   try {
-    await store.toggle(id, enabled);
+    await store.toggle(task.id, enabled);
   } catch (e: any) {
     message.error(e?.message ?? "Toggle failed");
   }
 }
 
-async function handleRun(id: string) {
+async function handleRun(task: ScheduledTaskDto) {
   try {
-    await store.runNow(id);
+    await store.runNow(task.id);
     message.success(t("scheduledTasks.runTriggered"));
-    // Refresh logs after a short delay
-    setTimeout(() => store.loadLogs(id), 1500);
+    // Refresh logs after a short delay if logs modal is open for this task
+    setTimeout(async () => {
+      if (logsTaskId.value === task.id) {
+        await store.loadLogs(task.id);
+      }
+    }, 2000);
   } catch (e: any) {
     message.error(e?.message ?? "Run failed");
   }
 }
 
-async function toggleLogs(taskId: string) {
-  if (expandedLogs.value.has(taskId)) {
-    expandedLogs.value.delete(taskId);
-  } else {
-    expandedLogs.value.add(taskId);
-    if (!store.logs[taskId]) {
-      logsLoading.value.add(taskId);
-      try {
-        await store.loadLogs(taskId);
-      } catch (e: any) {
-        message.error(e?.message ?? "Load logs failed");
-      } finally {
-        logsLoading.value.delete(taskId);
-      }
-    }
+async function openLogs(task: ScheduledTaskDto) {
+  logsTaskId.value = task.id;
+  logsLoading.value = true;
+  try {
+    await store.loadLogs(task.id);
+  } catch (e: any) {
+    message.error(e?.message ?? "Load logs failed");
+  } finally {
+    logsLoading.value = false;
   }
+}
+
+function closeLogs() {
+  logsTaskId.value = null;
 }
 
 function handleEdit(task: ScheduledTaskDto) {
@@ -74,7 +124,7 @@ function handleEdit(task: ScheduledTaskDto) {
 
 async function handleSubmit(data: {
   name: string; description: string; cronExpression: string;
-  taskType: string; payload: string; enabled: boolean;
+  taskType: string; payload: string; projectId?: string; enabled: boolean;
 }) {
   try {
     if (editTask.value) {
@@ -92,8 +142,12 @@ async function handleSubmit(data: {
 async function confirmDelete() {
   if (!deleteTarget.value) return;
   try {
-    await store.remove(deleteTarget.value);
+    await store.remove(deleteTarget.value.id);
     message.success(t("file.deleted"));
+    // Clamp page if current page is now empty
+    if (pagedTasks.value.length === 0 && page.value > 1) {
+      page.value--;
+    }
   } catch (e: any) {
     message.error(e?.message ?? "Delete failed");
   } finally {
@@ -101,120 +155,202 @@ async function confirmDelete() {
   }
 }
 
-function logStatusIcon(status: string): string {
+// ─── Log display helpers ───
+
+function logStatusLabel(status: string): string {
   switch (status) {
-    case "success": return "✓";
-    case "failed": return "✗";
-    case "running": return "⟳";
-    default: return "?";
+    case "success": return t("scheduledTasks.logSuccess");
+    case "failed": return t("scheduledTasks.logFailed");
+    case "running": return t("scheduledTasks.logRunning");
+    default: return status;
   }
 }
 
-function logStatusClass(status: string): string {
+function logStatusType(status: string): "success" | "error" | "info" {
   switch (status) {
-    case "success": return "log-status-success";
-    case "failed": return "log-status-failed";
-    case "running": return "log-status-running";
-    default: return "";
+    case "success": return "success";
+    case "failed": return "error";
+    default: return "info";
   }
 }
+
+// ─── Table columns ───
+
+const tooltipOverrides = {
+  fontSize: "12px",
+  padding: "4px 8px",
+  borderRadius: "4px",
+  color: "var(--primary-color)",
+  textColor: "#ffffff",
+  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+};
+
+function renderAction(label: string, icon: VNode, onClick: () => void, danger = false) {
+  return h(
+    NTooltip,
+    { delay: 200, placement: "top", themeOverrides: tooltipOverrides },
+    {
+      trigger: () => h(
+        "button",
+        {
+          class: ["action-btn", { "action-danger": danger }],
+          type: "button",
+          "aria-label": label,
+          onClick,
+        },
+        icon,
+      ),
+      default: () => label,
+    },
+  );
+}
+
+function icon(paths: VNode[]) {
+  return h("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", "aria-hidden": "true" }, paths);
+}
+
+const runIcon = () => icon([
+  h("path", { d: "M3 2l9 5-9 5V2z", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+const logsIcon = () => icon([
+  h("path", { d: "M2 3h10v8H2V3zm2 2.5h6M4 7h4", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+const editIcon = () => icon([
+  h("path", { d: "M10.5 1.5l2 2L4.5 11.5H2.5v-2L10.5 1.5z", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+const deleteIcon = () => icon([
+  h("path", { d: "M3 4h8l-.7 7.3a1 1 0 01-1 .7H4.7a1 1 0 01-1-.7L3 4zm2-2h4m-6 2V3a1 1 0 011-1h6a1 1 0 011 1v1", stroke: "currentColor", "stroke-width": "1.2", "stroke-linecap": "round", "stroke-linejoin": "round" }),
+]);
+
+const columns = computed<DataTableColumns<ScheduledTaskDto>>(() => [
+  {
+    title: t("scheduledTasks.name"),
+    key: "name",
+    minWidth: 160,
+    ellipsis: { tooltip: true },
+    render: (task) => {
+      const children: VNode[] = [h("span", { class: "task-name-text" }, task.name)];
+      if (task.description) {
+        children.push(h("span", { class: "task-desc" }, task.description));
+      }
+      return h("div", { class: "task-name-cell" }, children);
+    },
+  },
+  {
+    title: t("scheduledTasks.taskType"),
+    key: "taskType",
+    width: 100,
+    render: (task) => h(
+      NTag,
+      { size: "small", bordered: false, type: task.taskType === "prompt" ? "info" : "warning" },
+      { default: () => t(`scheduledTasks.type.${task.taskType}`) },
+    ),
+  },
+  {
+    title: t("scheduledTasks.targetProject"),
+    key: "projectId",
+    width: 140,
+    ellipsis: { tooltip: true },
+    render: (task) => h("span", { class: "project-cell" }, projectName(task.projectId)),
+  },
+  {
+    title: t("scheduledTasks.cronExpression"),
+    key: "cronExpression",
+    width: 160,
+    render: (task) => h("span", { class: "cron-cell" }, cronToHuman(task.cronExpression)),
+  },
+  {
+    title: t("scheduledTasks.lastRun"),
+    key: "lastRunAt",
+    width: 120,
+    render: (task) => h("span", { class: "time-cell" }, timeAgo(task.lastRunAt)),
+  },
+  {
+    title: t("scheduledTasks.nextRun"),
+    key: "nextRunAt",
+    width: 150,
+    render: (task) => h("span", { class: "time-cell" }, formatDateTime(task.nextRunAt)),
+  },
+  {
+    title: t("scheduledTasks.enabled"),
+    key: "enabled",
+    width: 80,
+    render: (task) => h(NSwitch, {
+      value: task.enabled,
+      size: "small",
+      "onUpdate:value": (v: boolean) => handleToggle(task, v),
+    }),
+  },
+  {
+    title: t("scheduledTasks.actions"),
+    key: "actions",
+    width: 160,
+    render: (task) => h("div", { class: "task-actions" }, [
+      renderAction(t("scheduledTasks.runNow"), runIcon(), () => handleRun(task)),
+      renderAction(t("scheduledTasks.viewLogs"), logsIcon(), () => openLogs(task)),
+      renderAction(t("scheduledTasks.edit"), editIcon(), () => handleEdit(task)),
+      renderAction(t("scheduledTasks.delete"), deleteIcon(), () => { deleteTarget.value = task; }, true),
+    ]),
+  },
+]);
+
+// Logs for the currently-viewed task
+const logsTask = computed(() => store.tasks.find((t) => t.id === logsTaskId.value) ?? null);
+const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.value] ?? []) : []);
 </script>
 
 <template>
   <div class="tasks-view">
     <!-- Header -->
     <header class="tasks-header">
-      <div class="tasks-header-info">
+      <div class="tasks-header-text">
         <h1 class="tasks-title">{{ t('scheduledTasks.title') }}</h1>
         <p class="tasks-subtitle">{{ t('scheduledTasks.subtitle') }}</p>
       </div>
-      <div class="tasks-header-actions">
-        <NButton size="small" type="primary" @click="showCreate = true; editTask = null">
-          {{ t('scheduledTasks.create') }}
-        </NButton>
-      </div>
+      <NButton class="tasks-create-button" size="small" type="primary" @click="showCreate = true; editTask = null">
+        {{ t('scheduledTasks.create') }}
+      </NButton>
     </header>
 
-    <!-- Loading -->
-    <div v-if="store.loading" class="tasks-state">
-      <NSpin size="medium" />
-    </div>
-
-    <!-- Empty -->
-    <div v-else-if="store.tasks.length === 0" class="tasks-state">
-      <NEmpty :description="t('scheduledTasks.empty')">
-        <template #extra>
-          <span class="empty-hint">{{ t('scheduledTasks.emptyHint') }}</span>
-        </template>
-      </NEmpty>
-    </div>
-
-    <!-- Task list -->
-    <div v-else class="tasks-list">
-      <div v-for="task in store.tasks" :key="task.id" class="task-card">
-        <div class="task-card-main">
-          <!-- Left: info -->
-          <div class="task-info">
-            <div class="task-name-row">
-              <span class="task-name">{{ task.name }}</span>
-              <NTag size="tiny" :bordered="false" :type="typeTagType(task.taskType)">
-                {{ typeLabel(task.taskType) }}
-              </NTag>
-            </div>
-            <p v-if="task.description" class="task-description">{{ task.description }}</p>
-            <div class="task-meta">
-              <span class="task-cron">{{ cronToHuman(task.cronExpression) }}</span>
-              <span class="task-meta-sep">·</span>
-              <span class="task-time">{{ t('scheduledTasks.lastRun') }}: {{ timeAgo(task.lastRunAt) }}</span>
-              <span class="task-meta-sep">·</span>
-              <span class="task-time">{{ t('scheduledTasks.nextRun') }}: {{ formatDateTime(task.nextRunAt) }}</span>
-            </div>
-          </div>
-
-          <!-- Right: controls -->
-          <div class="task-controls">
-            <NSwitch
-              :value="task.enabled"
-              size="small"
-              @update:value="(v: boolean) => handleToggle(task.id, v)"
-            />
-            <div class="task-actions">
-              <NButton size="tiny" quaternary @click="handleRun(task.id)">
-                {{ t('scheduledTasks.runNow') }}
-              </NButton>
-              <NButton size="tiny" quaternary @click="toggleLogs(task.id)">
-                {{ t('scheduledTasks.viewLogs') }}
-              </NButton>
-              <NButton size="tiny" quaternary @click="handleEdit(task)">
-                {{ t('scheduledTasks.edit') }}
-              </NButton>
-              <NButton size="tiny" quaternary type="error" @click="deleteTarget = task.id">
-                {{ t('scheduledTasks.delete') }}
-              </NButton>
-            </div>
-          </div>
-        </div>
-
-        <!-- Expanded logs -->
-        <div v-if="expandedLogs.has(task.id)" class="task-logs">
-          <div class="logs-header">{{ t('scheduledTasks.logs') }}</div>
-          <div v-if="logsLoading.has(task.id)" class="logs-loading">
-            <NSpin size="small" />
-          </div>
-          <div v-else-if="!store.logs[task.id]?.length" class="logs-empty">
-            {{ t('scheduledTasks.noLogs') }}
-          </div>
-          <div v-else class="logs-list">
-            <div v-for="log in store.logs[task.id]" :key="log.id" class="log-item">
-              <span class="log-status" :class="logStatusClass(log.status)">
-                {{ logStatusIcon(log.status) }}
-              </span>
-              <span class="log-time">{{ formatDateTime(log.startedAt) }}</span>
-              <span class="log-output">{{ log.output || '—' }}</span>
-            </div>
-          </div>
-        </div>
+    <!-- Table body -->
+    <div class="tasks-body">
+      <div v-if="store.loading && !store.tasks.length" class="tasks-state">
+        <NSpin size="medium" />
       </div>
+      <div v-else-if="!store.tasks.length" class="tasks-state">
+        <NEmpty :description="t('scheduledTasks.empty')">
+          <template #extra>
+            <span class="empty-hint">{{ t('scheduledTasks.emptyHint') }}</span>
+          </template>
+        </NEmpty>
+      </div>
+      <NDataTable
+        v-else
+        class="task-data-table"
+        :columns="columns"
+        :data="pagedTasks"
+        size="small"
+        bordered
+        :single-line="false"
+        :scroll-x="1100"
+      />
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="store.tasks.length > 0" class="tasks-pagination">
+      <span class="pagination-info">
+        {{ t('scheduledTasks.rangeInfo', { start: rangeStart, end: rangeEnd, total }) }}
+      </span>
+      <NPagination
+        :page="page"
+        :page-size="pageSize"
+        :item-count="total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        show-quick-jumper
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
+      />
     </div>
 
     <!-- Create / Edit Dialog -->
@@ -236,241 +372,268 @@ function logStatusClass(status: string): string {
       @close="deleteTarget = null"
       @confirm="confirmDelete"
     />
+
+    <!-- Execution Logs Modal -->
+    <NModal
+      :show="logsTaskId !== null"
+      preset="card"
+      :title="logsTask ? `${t('scheduledTasks.logs')} — ${logsTask.name}` : t('scheduledTasks.logs')"
+      :style="{ width: '640px', maxWidth: '95vw' }"
+      :mask-closable="true"
+      @update:show="(v: boolean) => !v && closeLogs()"
+    >
+      <div v-if="logsLoading" class="logs-modal-loading">
+        <NSpin size="small" />
+      </div>
+      <div v-else-if="!currentLogs.length" class="logs-modal-empty">
+        <NEmpty :description="t('scheduledTasks.noLogs')" size="small" />
+      </div>
+      <div v-else class="logs-modal-list">
+        <div v-for="log in currentLogs" :key="log.id" class="log-modal-item">
+          <div class="log-modal-header">
+            <NTag size="tiny" :bordered="false" :type="logStatusType(log.status)">
+              {{ logStatusLabel(log.status) }}
+            </NTag>
+            <span class="log-modal-time">{{ formatDateTime(log.startedAt) }}</span>
+            <button
+              v-if="log.sessionId && logsTask?.projectId"
+              class="log-session-link"
+              @click="navigateToSession(logsTask!, log)"
+            >
+              {{ t('scheduledTasks.viewSession') }}
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <pre v-if="log.output" class="log-modal-output">{{ log.output }}</pre>
+        </div>
+      </div>
+    </NModal>
   </div>
 </template>
 
 <style scoped>
 .tasks-view {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
+  height: 100%;
 }
 
+/* ─── Header ─── */
 .tasks-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 32px 48px 24px;
-  border-bottom: 1px solid var(--border-color);
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 20px 28px 0;
+  flex-shrink: 0;
 }
-
-.tasks-header-info {
+.tasks-header-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-
 .tasks-title {
-  font-size: 24px;
-  font-weight: 700;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
 }
-
 .tasks-subtitle {
-  font-size: 13px;
-  color: var(--text-secondary);
   margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tasks-create-button {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
-.tasks-state {
+/* ─── Body ─── */
+.tasks-body {
   flex: 1;
+  overflow-y: auto;
+  padding: 16px 28px 12px;
+}
+.tasks-state {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 60px 0;
 }
-
 .empty-hint {
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.tasks-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px 48px;
+/* ─── Table overrides ─── */
+.task-data-table :deep(.n-data-table-th) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 12px;
+}
+.task-data-table :deep(.n-data-table-td) {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+/* Name cell with description subtitle */
+.task-data-table :deep(.task-name-cell) {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 2px;
 }
-
-.task-card {
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--background-panel);
-  transition: all var(--transition-fast);
-  overflow: hidden;
-}
-
-.task-card:hover {
-  border-color: var(--primary-color);
-  box-shadow: var(--shadow-md);
-}
-
-.task-card-main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 16px 20px;
-  gap: 16px;
-}
-
-.task-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-
-.task-name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.task-name {
-  font-size: 15px;
+.task-data-table :deep(.task-name-text) {
   font-weight: 600;
   color: var(--text-primary);
+}
+.task-data-table :deep(.task-desc) {
+  font-size: 11px;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 260px;
 }
 
-.task-description {
-  font-size: 13px;
+/* Project cell */
+.task-data-table :deep(.project-cell) {
   color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.task-cron {
+/* Cron cell */
+.task-data-table :deep(.cron-cell) {
   font-weight: 500;
   color: var(--primary-color);
 }
 
-.task-meta-sep {
-  color: var(--border-color);
-}
-
-.task-time {
+/* Time cell */
+.task-data-table :deep(.time-cell) {
   font-family: var(--font-mono);
   font-size: 11px;
-}
-
-.task-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.task-actions {
-  display: flex;
-  gap: 4px;
-}
-
-/* ─── Logs ─── */
-
-.task-logs {
-  border-top: 1px solid var(--border-color);
-  padding: 12px 20px;
-  background: var(--background-page);
-}
-
-.logs-header {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.logs-loading,
-.logs-empty {
-  padding: 12px 0;
-  text-align: center;
-  font-size: 12px;
   color: var(--text-muted);
 }
 
-.logs-list {
-  display: flex;
-  flex-direction: column;
+/* Action buttons */
+.task-data-table :deep(.task-actions) {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-  max-height: 200px;
-  overflow-y: auto;
+}
+.task-data-table :deep(.action-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  appearance: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 60ms ease, color 60ms ease;
+}
+.task-data-table :deep(.action-btn:hover) {
+  color: var(--text-primary);
+}
+.task-data-table :deep(.action-danger:hover) {
+  color: var(--rose);
 }
 
-.log-item {
+/* ─── Pagination ─── */
+.tasks-pagination {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 28px 16px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  gap: 12px;
+}
+.pagination-info {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
-.log-status {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+/* ─── Logs modal ─── */
+.logs-modal-loading,
+.logs-modal-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: 50%;
+  padding: 32px 0;
 }
 
-.log-status-success {
-  color: var(--success-color);
-  background: rgba(34, 197, 94, 0.1);
+.logs-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 480px;
+  overflow-y: auto;
 }
 
-.log-status-failed {
-  color: var(--danger-color);
-  background: rgba(239, 68, 68, 0.1);
+.log-modal-item {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  background: var(--background-page);
 }
 
-.log-status-running {
-  color: var(--primary-color);
-  background: rgba(0, 184, 148, 0.1);
-  animation: pulse 1.5s ease infinite;
+.log-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
-.log-time {
-  flex-shrink: 0;
+.log-modal-time {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-  min-width: 64px;
 }
 
-.log-output {
+.log-session-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--primary-color);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.log-session-link:hover {
+  opacity: 0.75;
+  text-decoration: underline;
+}
+
+.log-modal-output {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.4;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  max-height: 200px;
+  overflow-y: auto;
 }
 </style>

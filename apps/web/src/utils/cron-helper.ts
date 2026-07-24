@@ -1,3 +1,5 @@
+import { Cron } from "croner";
+
 /** Common cron presets with human-readable labels (Chinese). */
 export const cronPresets: Array<{ label: string; expression: string }> = [
   { label: "每 5 分钟", expression: "*/5 * * * *" },
@@ -108,4 +110,27 @@ export function formatDateTime(ts: number | null): string {
   const hour = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${month}-${day} ${hour}:${min}`;
+}
+
+/**
+ * Compute the next `count` execution times for a cron expression.
+ * Returns formatted date-time strings with weekday. Returns [] if invalid.
+ */
+export function getNextRuns(expr: string, count: number = 6): string[] {
+  try {
+    const cron = new Cron(expr);
+    const dates = cron.nextRuns(count);
+    const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    return dates.map((d) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      const wd = weekdays[d.getDay()];
+      return `${yyyy}-${mm}-${dd} 周${wd} ${hh}:${mi}`;
+    });
+  } catch {
+    return [];
+  }
 }

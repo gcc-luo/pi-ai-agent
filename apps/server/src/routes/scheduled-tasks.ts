@@ -15,11 +15,18 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       cronExpression: string;
       taskType: TaskType;
       payload?: string;
+      projectId?: string;
       enabled?: boolean;
     };
     if (!body?.name) return reply.code(400).send({ error: "name required" });
     if (!body?.cronExpression) return reply.code(400).send({ error: "cronExpression required" });
     if (!body?.taskType) return reply.code(400).send({ error: "taskType required" });
+
+    // Validate project if provided
+    if (body.projectId) {
+      const project = app.projects.findById(body.projectId);
+      if (!project) return reply.code(400).send({ error: "project not found" });
+    }
 
     const task = app.scheduledTasks.create({
       name: body.name,
@@ -27,6 +34,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       cronExpression: body.cronExpression,
       taskType: body.taskType,
       payload: body.payload,
+      projectId: body.projectId,
       enabled: body.enabled,
     });
 
@@ -53,8 +61,16 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       cronExpression?: string;
       taskType?: TaskType;
       payload?: string;
+      projectId?: string | null;
       enabled?: boolean;
     };
+
+    // Validate project if provided
+    if (body.projectId) {
+      const project = app.projects.findById(body.projectId);
+      if (!project) return reply.code(400).send({ error: "project not found" });
+    }
+
     const updated = app.scheduledTasks.update(req.params.id, body);
     if (!updated) return reply.code(404).send({ error: "not found" });
 

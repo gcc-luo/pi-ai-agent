@@ -38,6 +38,7 @@ import { ExpertRepository } from "./db/repositories/expert.js";
 import { expertsRoutes } from "./routes/experts.js";
 import { ScheduledTaskRepository, TaskLogRepository } from "./db/repositories/scheduled-task.js";
 import { TaskScheduler } from "./services/task-scheduler.js";
+import { TaskExecutor } from "./services/task-executor.js";
 import { scheduledTasksRoutes } from "./routes/scheduled-tasks.js";
 
 export async function buildConfiguredApp(config: Config) {
@@ -138,7 +139,9 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(expertsRoutes, { prefix: "/api/experts" });
 
   // Scheduled tasks
+  const taskExecutor = new TaskExecutor(sessions, projects, models, processManager, app.log);
   const taskScheduler = new TaskScheduler(scheduledTasks, taskLogs, app.log);
+  taskScheduler.setExecutor(taskExecutor);
   (app as any).taskScheduler = taskScheduler;
   await app.register(scheduledTasksRoutes, { prefix: "/api/scheduled-tasks" });
   app.addHook("onReady", async () => taskScheduler.start());

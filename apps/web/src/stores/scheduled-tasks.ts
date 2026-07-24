@@ -23,6 +23,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       cronExpression: string;
       taskType: TaskType;
       payload?: string;
+      projectId?: string;
       enabled?: boolean;
     }) {
       const task = await api.createScheduledTask(input);
@@ -35,6 +36,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       cronExpression?: string;
       taskType?: TaskType;
       payload?: string;
+      projectId?: string | null;
       enabled?: boolean;
     }) {
       const updated = await api.updateScheduledTask(id, patch);

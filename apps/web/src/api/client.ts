@@ -182,11 +182,11 @@ export const api = {
     request<ScheduledTaskDto[]>("GET", "/scheduled-tasks"),
   createScheduledTask: (data: {
     name: string; description?: string; cronExpression: string;
-    taskType: TaskType; payload?: string; enabled?: boolean;
+    taskType: TaskType; payload?: string; projectId?: string; enabled?: boolean;
   }) => request<ScheduledTaskDto>("POST", "/scheduled-tasks", data),
   updateScheduledTask: (id: string, data: {
     name?: string; description?: string; cronExpression?: string;
-    taskType?: TaskType; payload?: string; enabled?: boolean;
+    taskType?: TaskType; payload?: string; projectId?: string | null; enabled?: boolean;
   }) => request<ScheduledTaskDto>("PUT", `/scheduled-tasks/${id}`, data),
   deleteScheduledTask: (id: string) =>
     request<void>("DELETE", `/scheduled-tasks/${id}`),

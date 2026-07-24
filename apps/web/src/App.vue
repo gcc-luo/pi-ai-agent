@@ -355,7 +355,7 @@ function closePreview() {
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
       <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
-      <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" />
+      <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToSession" />
       <TrashView v-else-if="activeNav === 'trash'" />
     </div>
     </NMessageProvider>
