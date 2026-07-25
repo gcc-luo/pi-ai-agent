@@ -268,7 +268,7 @@ async function handleDelete() {
   }
 }
 
-defineExpose({ startCreate });
+defineExpose({ startCreate, refresh: load });
 </script>
 
 <template>

@@ -187,6 +187,12 @@ function startDeleteSession(s: SessionDto) {
           <span class="section-label">{{ t('sidebar.files') }}</span>
         </button>
         <div class="section-actions">
+          <button class="section-action" @click="fileTreeRef?.refresh()" :title="t('file.refresh')">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M11.5 7A4.5 4.5 0 1 1 10 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M10 1v3h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
