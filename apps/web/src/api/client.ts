@@ -49,6 +49,7 @@ export const api = {
   updateSessionExpert: (id: string, expertId: string | null) =>
     request<SessionDto>("PUT", `/sessions/${id}`, { expertId }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
+  activateOfficeSession: (id: string) => request<void>("POST", `/sessions/${id}/activate-office`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
   listSkills: () => request<SkillDto[]>("GET", "/skills"),
   importSkill: (data: { name: string; description: string; body: string }) =>

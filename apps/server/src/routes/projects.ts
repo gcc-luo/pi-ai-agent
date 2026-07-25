@@ -50,6 +50,9 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
       }
       app.sessionStates.delete(state.sessionId);
     }
+    for (const proc of app.tuiProcessManager.values()) {
+      if (proc.projectId === projectId) app.tuiProcessManager.stop(proc.sessionId);
+    }
     app.projects.delete(projectId);
     return reply.code(204).send();
   });

@@ -67,6 +67,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (body.kind === "project") {
+      const projectSessionIds = (app.db.prepare("SELECT id FROM sessions WHERE project_id = ?").all(body.id) as { id: string }[])
+        .map((session) => session.id);
       // Kill any running agent processes for sessions under this project
       for (const state of app.sessionStates.values()) {
         if (state.process.projectId !== body.id) continue;
@@ -75,6 +77,10 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         }
         app.sessionStates.delete(state.sessionId);
       }
+      for (const proc of app.tuiProcessManager.values()) {
+        if (proc.projectId === body.id) app.tuiProcessManager.stop(proc.sessionId);
+      }
+      for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(body.id);
     } else if (body.kind === "session") {
       // Kill running agent process for this session
@@ -83,6 +89,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(body.id);
       }
+      app.tuiProcessManager.stop(body.id);
+      app.tuiProcessManager.removeSessionHistory(body.id);
       app.sessions.destroyPermanently(body.id);
     } else {
       return reply.code(400).send({ error: "invalid kind" });
@@ -98,11 +106,17 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
     const deletedSessions = app.sessions.listDeleted();
 
     for (const p of deletedProjects) {
+      const projectSessionIds = (app.db.prepare("SELECT id FROM sessions WHERE project_id = ?").all(p.id) as { id: string }[])
+        .map((session) => session.id);
       for (const state of app.sessionStates.values()) {
         if (state.process.projectId !== p.id) continue;
         try { state.process.kill(); } catch {}
         app.sessionStates.delete(state.sessionId);
       }
+      for (const proc of app.tuiProcessManager.values()) {
+        if (proc.projectId === p.id) app.tuiProcessManager.stop(proc.sessionId);
+      }
+      for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(p.id);
     }
 
@@ -114,6 +128,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(s.id);
       }
+      app.tuiProcessManager.stop(s.id);
+      app.tuiProcessManager.removeSessionHistory(s.id);
       app.sessions.destroyPermanently(s.id);
     }
 

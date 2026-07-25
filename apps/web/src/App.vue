@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from 
 import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
-const CodingPanel = defineAsyncComponent(() => import("./components/CodingPanel.vue"));
+const TuiTerminalPanel = defineAsyncComponent(() => import("./components/TuiTerminalPanel.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
@@ -317,11 +317,9 @@ function closePreview() {
               <!-- Chat Area -->
               <div class="workspace-main">
                 <div class="workspace-chat">
-                  <CodingPanel
+                  <TuiTerminalPanel
                     v-if="modeStore.isCoding && selectedSessionId"
                     :session-id="selectedSessionId"
-                    :project-id="selectedProjectId!"
-                    @select-file="filePath = $event"
                   />
                   <ChatPanel
                     v-else-if="selectedSessionId"

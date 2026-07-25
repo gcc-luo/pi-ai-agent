@@ -6,6 +6,7 @@ import { SessionRepository } from "./db/repositories/session.js";
 import { MessageRepository } from "./db/repositories/message.js";
 import { ModelRepository } from "./db/repositories/model.js";
 import { ProcessManager } from "./agent/process-manager.js";
+import { TuiProcessManager } from "./agent/tui-process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
 import { SkillService } from "./agent/skill-service.js";
@@ -24,6 +25,7 @@ import { filesRoutes } from "./routes/files.js";
 import { configRoutes } from "./routes/config.js";
 import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
+import { terminalRoutes } from "./ws/terminal.js";
 import { fsRoutes } from "./routes/fs.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { skillStoreRoutes } from "./routes/skill-store.js";
@@ -108,8 +110,17 @@ export async function buildConfiguredApp(config: Config) {
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
     scheduledTasks, taskLogs, config,
   });
-  const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, logger: app.log });
+  const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, sessionRootDir: config.piSessionRootDir, logger: app.log });
   (app as any).processManager = processManager;
+  const tuiProcessManager = new TuiProcessManager({
+    command: config.piCommand,
+    args: config.piTuiArgs,
+    provider: config.piProvider,
+    model: config.piModel,
+    sessionRootDir: config.piSessionRootDir,
+    logger: app.log,
+  });
+  (app as any).tuiProcessManager = tuiProcessManager;
 
   const sweeper = new IdleSweeper({
     idleTimeoutMs: config.idleTimeoutMs,
@@ -118,10 +129,14 @@ export async function buildConfiguredApp(config: Config) {
     onSuspend: (id) => {
       const state = sessionStates.get(id);
       if (state) { state.process.kill(); sessionStates.delete(id); }
+      tuiProcessManager.stop(id);
       sessions.setStatus(id, "suspended");
     },
   });
-  app.addHook("onClose", async () => sweeper.stop());
+  app.addHook("onClose", async () => {
+    sweeper.stop();
+    await tuiProcessManager.shutdown();
+  });
 
   await app.register(projectsRoutes, { prefix: "/api/projects" });
   await app.register(sessionsRoutes, { prefix: "/api" });
@@ -158,6 +173,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(createOfficePdfRoutes(loService), { prefix: "/api" });
 
   await app.register(agentRoutes);
+  await app.register(terminalRoutes);
 
   return app;
 }

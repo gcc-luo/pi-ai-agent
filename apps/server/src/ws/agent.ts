@@ -80,6 +80,10 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         const project = app.projects.findById(session.projectId);
         if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
 
+        // A Web session has one canonical Pi JSONL timeline. Do not let RPC
+        // and TUI mutate it concurrently when the user changes presentation.
+        await app.tuiProcessManager.stopAndWait(session.id);
+
         const defaultModel = app.models.getDefault();
         app.log.info({ defaultModel: defaultModel ? `${defaultModel.provider}/${defaultModel.id} hasKey=${defaultModel.hasApiKey}` : "none" }, "resolving default model");
         const modelConfig = defaultModel ? {

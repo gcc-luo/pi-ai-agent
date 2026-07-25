@@ -358,6 +358,8 @@ async function loadMessages() {
 }
 
 onMounted(async () => {
+  // Make office mode the sole Pi writer before loading the canonical history.
+  try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
   await kbStore.loadAll();
@@ -365,6 +367,7 @@ onMounted(async () => {
 
 watch(() => props.sessionId, async () => {
   kbSearchByMessage.value = {};
+  try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
 });

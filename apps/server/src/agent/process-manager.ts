@@ -6,6 +6,7 @@ import path from "node:path";
 import { FastifyBaseLogger } from "fastify";
 import { ServerEvent } from "@pi-web-ui/shared";
 import { AgentProcess, SpawnOptions } from "./types.js";
+import { preparePiSession } from "./pi-session-store.js";
 
 type Spawner = (cmd: string, args: string[], opts: NodeSpawnOptions) => ChildProcess;
 
@@ -15,6 +16,7 @@ export interface ProcessManagerOptions {
   args: string[];
   provider?: string;
   model?: string;
+  sessionRootDir?: string;
   logger: FastifyBaseLogger;
 }
 
@@ -26,7 +28,7 @@ export interface ModelConfig {
   apiBaseUrl?: string | null;
 }
 
-const API_KEY_ENV_BY_PROVIDER: Record<string, string> = {
+export const API_KEY_ENV_BY_PROVIDER: Record<string, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   "ant-ling": "ANT_LING_API_KEY",
   openai: "OPENAI_API_KEY",
@@ -59,7 +61,7 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function createCustomModelExtension(config: { provider: string; model: string; apiBaseUrl: string; modelType?: string }): string {
+export function createCustomModelExtension(config: { provider: string; model: string; apiBaseUrl: string; modelType?: string }): string {
   const extensionPath = path.join(
     os.tmpdir(),
     `pi-web-ui-model-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
@@ -119,6 +121,7 @@ export class ProcessManager extends EventEmitter {
   private args: string[];
   private provider: string;
   private model: string;
+  private sessionRootDir: string;
   private log: FastifyBaseLogger;
 
   constructor(opts: ProcessManagerOptions) {
@@ -128,6 +131,7 @@ export class ProcessManager extends EventEmitter {
     this.args = opts.args;
     this.provider = opts.provider ?? "";
     this.model = opts.model ?? "";
+    this.sessionRootDir = opts.sessionRootDir ?? path.join(os.tmpdir(), "pi-web-ui-sessions");
     this.log = opts.logger;
   }
 
@@ -146,6 +150,7 @@ export class ProcessManager extends EventEmitter {
     }
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);
+    const piSession = preparePiSession(this.sessionRootDir, input.sessionId);
 
     const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
     if (cfg?.apiKey) {
@@ -161,9 +166,10 @@ export class ProcessManager extends EventEmitter {
     }
 
     const envKeys = Object.keys(env).filter(k => k.includes("API_KEY") || k.includes("BASE_URL") || k === "PI_RPC");
-    this.log.info({ command: this.command, args: [...this.args, ...extraArgs], envKeys }, "spawning agent process");
+    const args = [...this.args, ...extraArgs, ...piSession.args];
+    this.log.info({ command: this.command, args, envKeys }, "spawning agent process");
 
-    const child = this.spawn(this.command, [...this.args, ...extraArgs], {
+    const child = this.spawn(this.command, args, {
       cwd: input.workdir,
       stdio: ["pipe", "pipe", "pipe"],
       env,
@@ -228,6 +234,23 @@ export class ProcessManager extends EventEmitter {
   stop(sessionId: string): void {
     const p = this.procs.get(sessionId);
     if (p) p.kill();
+  }
+
+  async stopAndWait(sessionId: string, timeoutMs = 2_000): Promise<void> {
+    const proc = this.procs.get(sessionId);
+    if (!proc || proc.status === "suspended" || proc.status === "crashed") return;
+    await new Promise<void>((resolve) => {
+      let timer: NodeJS.Timeout | undefined;
+      const onExit = () => done();
+      const done = () => {
+        if (timer) clearTimeout(timer);
+        proc.off("exit", onExit);
+        resolve();
+      };
+      proc.on("exit", onExit);
+      timer = setTimeout(done, timeoutMs);
+      proc.kill();
+    });
   }
 
   async shutdown(): Promise<void> {

@@ -10,6 +10,8 @@ export interface Config {
   logFile: string;
   piCommand: string;
   piArgs: string[];
+  piTuiArgs: string[];
+  piSessionRootDir: string;
   idleTimeoutMs: number;
   suspendedTimeoutMs: number;
   noResponseTimeoutMs: number;
@@ -28,9 +30,22 @@ export interface Config {
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
 
+function withoutRpcMode(args: string[]): string[] {
+  const result: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--mode" && args[i + 1] === "rpc") {
+      i++;
+      continue;
+    }
+    result.push(args[i]!);
+  }
+  return result;
+}
+
 export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
   fs.mkdirSync(root, { recursive: true });
+  const piArgs = (process.env.PI_ARGS ?? "-y @earendil-works/pi-coding-agent --mode rpc").split(" ");
   return {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "127.0.0.1",
@@ -38,7 +53,13 @@ export function loadConfig(): Config {
     logLevel: process.env.LOG_LEVEL ?? "info",
     logFile: process.env.LOG_FILE ?? path.join(root, "logs", "server.log"),
     piCommand: process.env.PI_COMMAND ?? "npx",
-    piArgs: (process.env.PI_ARGS ?? "-y @earendil-works/pi-coding-agent --mode rpc").split(" "),
+    piArgs,
+    // The web terminal runs Pi's normal interactive interface, not its JSON-RPC mode.
+    // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
+    piTuiArgs: (process.env.PI_TUI_ARGS?.split(" ") ?? withoutRpcMode(piArgs)),
+    // One private Pi JSONL directory per Web UI session. Keep the original
+    // tui-sessions location so existing Coding conversations remain usable.
+    piSessionRootDir: process.env.PI_SESSION_ROOT_DIR ?? path.join(root, "tui-sessions"),
     piProvider: process.env.PI_PROVIDER ?? "",
     piModel: process.env.PI_MODEL ?? "",
     skillsDir: process.env.PI_SKILLS_DIR ?? path.join(os.homedir(), ".pi/agent/skills"),

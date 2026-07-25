@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { ProcessManager } from "../../src/agent/process-manager.js";
 
 class FakeProcess extends EventEmitter {
@@ -16,17 +19,35 @@ describe("ProcessManager", () => {
   let spawner: ReturnType<typeof vi.fn>;
   let manager: ProcessManager;
   let logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+  let sessionRootDir: string;
 
   beforeEach(() => {
     spawner = vi.fn((_cmd: string, _args: string[], _opts: object) => new FakeProcess()) as any;
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    manager = new ProcessManager({ spawn: spawner as any, command: "pi", args: ["--rpc"], logger: logger as any });
+    sessionRootDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-process-test-"));
+    manager = new ProcessManager({ spawn: spawner as any, command: "pi", args: ["--rpc"], sessionRootDir, logger: logger as any });
   });
+
+  afterEach(() => fs.rmSync(sessionRootDir, { recursive: true, force: true }));
 
   it("spawns a process on start", async () => {
     const p = await manager.start({ sessionId: "s1", projectId: "p1", workdir: "/tmp" });
     expect(p.sessionId).toBe("s1");
-    expect(spawner).toHaveBeenCalledWith("pi", ["--rpc"], expect.objectContaining({ cwd: "/tmp" }));
+    expect(spawner).toHaveBeenCalledWith("pi", [
+      "--rpc", "--session-dir", path.join(sessionRootDir, "s1"), "--name", "pi-web-ui:s1",
+    ], expect.objectContaining({ cwd: "/tmp" }));
+  });
+
+  it("continues the isolated Pi JSONL session when one already exists", async () => {
+    const sessionDir = path.join(sessionRootDir, "s2");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(path.join(sessionDir, "previous.jsonl"), "{\"type\":\"session\"}\n");
+
+    await manager.start({ sessionId: "s2", projectId: "p1", workdir: "/tmp" });
+
+    const [, args] = spawner.mock.calls[0]!;
+    expect(args).toEqual(expect.arrayContaining(["--session-dir", sessionDir, "--continue"]));
+    expect(args).not.toContain("--name");
   });
 
   it("returns the same process on get", async () => {

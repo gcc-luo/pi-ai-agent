@@ -5,6 +5,7 @@ import type { SessionRepository } from "../db/repositories/session.js";
 import type { MessageRepository } from "../db/repositories/message.js";
 import type { ModelRepository } from "../db/repositories/model.js";
 import type { ProcessManager } from "../agent/process-manager.js";
+import type { TuiProcessManager } from "../agent/tui-process-manager.js";
 import type { SessionStateStore } from "../agent/session-state.js";
 import type { SkillService } from "../agent/skill-service.js";
 import type { SkillStoreService } from "../skill-store/skill-store-service.js";
@@ -26,6 +27,7 @@ declare module "fastify" {
     messages: MessageRepository;
     models: ModelRepository;
     processManager: ProcessManager;
+    tuiProcessManager: TuiProcessManager;
     sessionStates: SessionStateStore;
     skills: SkillService;
     skillStore: SkillStoreService;

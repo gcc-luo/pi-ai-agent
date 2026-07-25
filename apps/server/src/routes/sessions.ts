@@ -1,5 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import { restorePiHistory } from "../agent/pi-history.js";
+import { syncPiTranscript } from "../agent/pi-transcript-sync.js";
+import { latestPiSessionFile } from "../agent/pi-session-store.js";
 
 export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { projectId: string } }>("/projects/:projectId/sessions", async (req, reply) => {
@@ -54,12 +56,36 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>("/sessions/:id/messages", async (req, reply) => {
     const s = app.sessions.findById(req.params.id);
     if (!s) return reply.code(404).send({ error: "not found" });
+    const piSessionDir = app.tuiProcessManager.sessionDirectory(s.id);
+    syncPiTranscript({
+      sessionId: s.id,
+      sessionDir: piSessionDir,
+      repository: app.messages,
+    });
     const messages = app.messages.listBySession(req.params.id);
     const project = app.projects.findById(s.projectId);
-    if (project) {
+    // Legacy sessions created before the shared Pi directory existed can use
+    // the old best-effort recovery once. New sessions always use the explicit
+    // per-Web-session JSONL above, never a guessed global Pi transcript.
+    if (project && !latestPiSessionFile(piSessionDir)) {
       restorePiHistory({ workdir: project.workdir, createdAt: s.createdAt, messages, repository: app.messages });
     }
     return app.messages.listBySession(req.params.id);
+  });
+
+  // The office panel is a renderer for the same Pi JSONL conversation as the
+  // TUI. Relinquish the interactive process before the office panel starts an
+  // RPC process, preventing concurrent writes to one transcript.
+  app.post<{ Params: { id: string } }>("/sessions/:id/activate-office", async (req, reply) => {
+    const s = app.sessions.findById(req.params.id);
+    if (!s) return reply.code(404).send({ error: "not found" });
+    await app.tuiProcessManager.stopAndWait(s.id);
+    syncPiTranscript({
+      sessionId: s.id,
+      sessionDir: app.tuiProcessManager.sessionDirectory(s.id),
+      repository: app.messages,
+    });
+    return reply.code(204).send();
   });
 
   app.delete<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
@@ -67,6 +93,7 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     if (!s) return reply.code(404).send({ error: "not found" });
     app.sessionStates.get(req.params.id)?.process.kill();
     app.sessionStates.delete(req.params.id);
+    app.tuiProcessManager.stop(req.params.id);
     app.sessions.delete(req.params.id);
     return reply.code(204).send();
   });
