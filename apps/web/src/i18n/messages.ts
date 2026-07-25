@@ -548,6 +548,18 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "Switch between Chinese and English",
     "settings.darkMode": "Dark mode",
     "settings.darkModeDesc": "Toggle light/dark theme",
+    "settings.workMode": "Work Mode",
+    "settings.workModeDesc": "Switch between office and coding interface",
+    "settings.modeOffice": "Office",
+    "settings.modeCoding": "Coding",
+
+    // Coding mode
+    "coding.thinking": "thinking...",
+    "coding.toolRunning": "running...",
+    "coding.toolDone": "done",
+    "coding.placeholder": "Send a message...",
+    "coding.send": "Send",
+    "coding.stop": "Stop",
 
     // Artifacts
     "artifact.preview": "Preview",
@@ -1091,6 +1103,18 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "切换中文 / English",
     "settings.darkMode": "深色模式",
     "settings.darkModeDesc": "切换亮色 / 暗色主题",
+    "settings.workMode": "工作模式",
+    "settings.workModeDesc": "切换日常办公与开发者 Coding 界面",
+    "settings.modeOffice": "办公",
+    "settings.modeCoding": "Coding",
+
+    // Coding 模式
+    "coding.thinking": "思考中...",
+    "coding.toolRunning": "执行中...",
+    "coding.toolDone": "完成",
+    "coding.placeholder": "输入消息...",
+    "coding.send": "发送",
+    "coding.stop": "停止",
 
     // 交付物
     "artifact.preview": "预览",

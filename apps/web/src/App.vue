@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from 
 import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
+const CodingPanel = defineAsyncComponent(() => import("./components/CodingPanel.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
@@ -20,6 +21,7 @@ import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
 import { useThemeStore } from "./stores/theme.js";
+import { useModeStore } from "./stores/mode.js";
 import { useI18n } from "./i18n/index.js";
 
 const projectStore = useProjectStore();
@@ -28,6 +30,7 @@ const connection = useConnectionStore();
 const agent = useAgentStore();
 const trashStore = useTrashStore();
 const themeStore = useThemeStore();
+const modeStore = useModeStore();
 const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
@@ -314,12 +317,23 @@ function closePreview() {
               <!-- Chat Area -->
               <div class="workspace-main">
                 <div class="workspace-chat">
-                  <ChatPanel v-if="selectedSessionId" :session-id="selectedSessionId" :project-id="selectedProjectId!" @select-file="filePath = $event" />
+                  <CodingPanel
+                    v-if="modeStore.isCoding && selectedSessionId"
+                    :session-id="selectedSessionId"
+                    :project-id="selectedProjectId!"
+                    @select-file="filePath = $event"
+                  />
+                  <ChatPanel
+                    v-else-if="selectedSessionId"
+                    :session-id="selectedSessionId"
+                    :project-id="selectedProjectId!"
+                    @select-file="filePath = $event"
+                  />
                 </div>
               </div>
 
-              <!-- Right preview panel (slides in) -->
-              <Transition name="preview-slide">
+              <!-- Right preview panel (slides in, office mode only) -->
+              <Transition name="preview-slide" v-if="!modeStore.isCoding">
                 <div v-if="showPreview" class="workspace-preview">
                   <div class="preview-header">
                     <span class="preview-title">{{ filePath?.split('/').pop() }}</span>
