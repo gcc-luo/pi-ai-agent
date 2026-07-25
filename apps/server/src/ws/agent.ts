@@ -6,6 +6,23 @@ import { ulid } from "../util/ulid.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
+// Global instruction appended to every user message so the agent knows to
+// declare delivered files via the <artifacts> protocol. Only injected on the
+// wire — the persisted user message remains the text the user actually wrote.
+const ARTIFACT_INSTRUCTION = `<global-instruction>
+当你创建或生成文件时，必须在回复末尾使用 <artifacts> 标签声明交付物。
+格式：
+<artifacts>
+[{"path": "相对路径", "name": "文件名", "mimeType": "MIME类型"}]
+</artifacts>
+
+规则：
+1. path 为相对于项目根目录的路径
+2. 仅声明实际已写入磁盘的文件
+3. 多个文件放在同一个 JSON 数组中
+4. 不要声明中间产物或临时文件
+</global-instruction>`;
+
 export function deriveDefaultTitle(content: string): string | null {
   const normalized = content.trim().replace(/\s+/g, " ");
   if (!normalized) return null;
@@ -256,6 +273,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             content = `<system-instruction>\n${expert.systemPrompt}\n</system-instruction>\n\n${content}`;
             console.log(`[WS Agent] expert system prompt injected: sessionId=${session.id} expertId=${expert.id} promptLen=${expert.systemPrompt.length}`);
           }
+        }
+
+        // Inject global artifact delivery instruction on every send
+        if (event.type === "send" && content) {
+          content = `${content}\n\n${ARTIFACT_INSTRUCTION}`;
         }
 
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);

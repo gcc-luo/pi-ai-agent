@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import type { FileContentDto, FileNodeDto } from "@pi-web-ui/shared";
+import type { ArtifactItem, ArtifactValidation, FileContentDto, FileNodeDto } from "@pi-web-ui/shared";
 
 // MIME types for the raw streaming endpoint. Only common previewable formats
 // are listed — anything else falls back to application/octet-stream, which the
@@ -183,4 +183,44 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(500).send({ error: e.message });
     }
   });
+
+  // Validate artifact files declared by the agent in <artifacts> blocks.
+  // Checks each file exists within the project workdir and returns its size.
+  app.post<{ Params: { projectId: string }; Body: { items?: ArtifactItem[] } }>(
+    "/files/:projectId/validate-artifacts",
+    async (req, reply) => {
+      const project = app.projects.findById(req.params.projectId);
+      if (!project) return reply.code(404).send({ error: "project not found" });
+
+      const items = req.body?.items ?? [];
+      if (!Array.isArray(items) || items.length === 0) return [];
+      // Cap at 50 items to prevent abuse
+      const capped = items.slice(0, 50);
+      const results: ArtifactValidation[] = [];
+
+      for (const item of capped) {
+        if (!item.path || !item.name) {
+          results.push({ path: item.path ?? "", exists: false, size: null, mimeType: item.mimeType ?? "application/octet-stream" });
+          continue;
+        }
+        const abs = resolveSafe(project.workdir, item.path);
+        if (!abs) {
+          results.push({ path: item.path, exists: false, size: null, mimeType: item.mimeType });
+          continue;
+        }
+        try {
+          const stat = await fs.stat(abs);
+          results.push({
+            path: item.path,
+            exists: stat.isFile(),
+            size: stat.isFile() ? stat.size : null,
+            mimeType: item.mimeType,
+          });
+        } catch {
+          results.push({ path: item.path, exists: false, size: null, mimeType: item.mimeType });
+        }
+      }
+      return results;
+    },
+  );
 };

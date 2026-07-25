@@ -10,6 +10,21 @@ import type { SessionDto } from "@pi-web-ui/shared";
 
 const TASK_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
+// Global instruction appended so the agent declares delivered files.
+const ARTIFACT_INSTRUCTION = `<global-instruction>
+当你创建或生成文件时，必须在回复末尾使用 <artifacts> 标签声明交付物。
+格式：
+<artifacts>
+[{"path": "相对路径", "name": "文件名", "mimeType": "MIME类型"}]
+</artifacts>
+
+规则：
+1. path 为相对于项目根目录的路径
+2. 仅声明实际已写入磁盘的文件
+3. 多个文件放在同一个 JSON 数组中
+4. 不要声明中间产物或临时文件
+</global-instruction>`;
+
 export class TaskExecutor {
   constructor(
     private sessions: SessionRepository,
@@ -138,8 +153,8 @@ export class TaskExecutor {
         this.logger.warn(`[TaskExecutor] agent stderr: ${line}`);
       });
 
-      // Send the prompt and persist the user message
-      bridge.send({ type: "send", sessionId: session.id, content: promptText });
+      // Send the prompt with artifact instruction (persisted message uses original text)
+      bridge.send({ type: "send", sessionId: session.id, content: `${promptText}\n\n${ARTIFACT_INSTRUCTION}` });
       this.messages.append({
         sessionId: session.id,
         role: "user",

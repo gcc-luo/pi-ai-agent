@@ -14,12 +14,15 @@ import ChatExpertPicker from "./ChatExpertPicker.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
-import type { MessagePart } from "@pi-web-ui/shared";
+import type { MessagePart, ArtifactItem, ArtifactValidation } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
+import { parseArtifacts } from "../utils/artifacts.js";
+import ArtifactCard from "./ArtifactCard.vue";
 
-const props = defineProps<{ sessionId: string }>();
+const props = defineProps<{ sessionId: string; projectId: string }>();
+const emit = defineEmits<{ (e: "select-file", path: string): void }>();
 const agent = useAgentStore();
 const { t } = useI18n();
 const skillStore = useSkillStore();
@@ -506,6 +509,9 @@ function handleKeySend(e: KeyboardEvent) {
   }
 }
 
+// Artifact validation cache (path → validation result)
+const artifactValidation = ref<Record<string, ArtifactValidation>>({});
+
 const allMessages = computed(() => {
   const persisted = persistedMessages.value.map((m) => ({
     id: m.id,
@@ -527,14 +533,54 @@ const allMessages = computed(() => {
   }));
   const all = [...persisted, ...live];
   // Show the AGENT header only on the first message of a consecutive assistant group.
-  return all.map((m, i) => ({
-    ...m,
-    showHeader: m.role !== "assistant" || all[i - 1]?.role !== "assistant",
-    kbSearch: kbSearchByMessage.value[m.id] ?? null,
-    // Build chunkMap from persisted metadata or live search state for citation rendering
-    chunkMap: buildChunkMap(m.id, m.metadata),
-  }));
+  return all.map((m, i) => {
+    // Extract <artifacts> blocks from assistant text parts
+    let artifacts: ArtifactItem[] = [];
+    let parts = m.parts;
+    if (m.role === "assistant") {
+      const newParts: MessagePart[] = [];
+      for (const p of parts) {
+        if (p.kind === "text") {
+          const parsed = parseArtifacts(p.text);
+          if (parsed.items.length) {
+            artifacts.push(...parsed.items);
+            if (parsed.text) newParts.push({ kind: "text", text: parsed.text });
+          } else {
+            newParts.push(p);
+          }
+        } else {
+          newParts.push(p);
+        }
+      }
+      parts = newParts;
+    }
+    return {
+      ...m,
+      parts,
+      artifacts,
+      showHeader: m.role !== "assistant" || all[i - 1]?.role !== "assistant",
+      kbSearch: kbSearchByMessage.value[m.id] ?? null,
+      // Build chunkMap from persisted metadata or live search state for citation rendering
+      chunkMap: buildChunkMap(m.id, m.metadata),
+    };
+  });
 });
+
+// Validate artifact files exist on disk
+watch(allMessages, async (msgs) => {
+  const items = msgs.flatMap((m) => m.artifacts);
+  if (!items.length) return;
+  const toValidate = items.filter((i) => !(i.path in artifactValidation.value));
+  if (!toValidate.length) return;
+  try {
+    const results = await api.validateArtifacts(props.projectId, toValidate);
+    for (const r of results) {
+      artifactValidation.value[r.path] = r;
+    }
+  } catch {
+    // Validation failure is non-fatal — cards still render with default state
+  }
+}, { deep: true });
 
 function buildChunkMap(
   msgId: string,
@@ -758,6 +804,18 @@ const pendingTipLabel = computed(() => {
               <pre class="tool-code">{{ formatJson(p.data) }}</pre>
             </details>
           </template>
+          <!-- Artifact cards (files delivered by the agent) -->
+          <div v-if="m.artifacts?.length" class="artifact-cards">
+            <ArtifactCard
+              v-for="a in m.artifacts"
+              :key="a.path"
+              :project-id="projectId"
+              :artifact="a"
+              :exists="artifactValidation[a.path]?.exists ?? true"
+              :size="artifactValidation[a.path]?.size ?? null"
+              @preview="(p) => emit('select-file', p)"
+            />
+          </div>
         </div>
         <!-- KB search call card (shown under user messages) -->
         <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
@@ -1299,6 +1357,16 @@ const pendingTipLabel = computed(() => {
 }
 .typing-dots span:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+/* ─── Artifact Cards ─── */
+
+.artifact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 420px;
 }
 
 /* ─── Message Content ─── */

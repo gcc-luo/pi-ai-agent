@@ -548,6 +548,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "Switch between Chinese and English",
     "settings.darkMode": "Dark mode",
     "settings.darkModeDesc": "Toggle light/dark theme",
+
+    // Artifacts
+    "artifact.preview": "Preview",
+    "artifact.download": "Download",
+    "artifact.fileNotFound": "File not found",
+    "artifact.artifacts": "{count} file(s) delivered",
   },
   zh: {
     "brand.sub": "Agent 工作台",
@@ -1085,5 +1091,11 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "切换中文 / English",
     "settings.darkMode": "深色模式",
     "settings.darkModeDesc": "切换亮色 / 暗色主题",
+
+    // 交付物
+    "artifact.preview": "预览",
+    "artifact.download": "下载",
+    "artifact.fileNotFound": "文件不存在",
+    "artifact.artifacts": "交付了 {count} 个文件",
   },
 };

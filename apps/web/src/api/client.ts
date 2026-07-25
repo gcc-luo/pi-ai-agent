@@ -3,6 +3,7 @@ import type {
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
   ScheduledTaskDto, TaskLogDto, TaskType,
+  ArtifactItem, ArtifactValidation,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -92,6 +93,8 @@ export const api = {
     `${BASE}/files/${projectId}/office-pdf?path=${encodeURIComponent(path)}`,
   checkOfficeAvailability: () =>
     request<{ available: boolean }>("GET", "/files/office-status"),
+  validateArtifacts: (projectId: string, items: ArtifactItem[]) =>
+    request<ArtifactValidation[]>("POST", `/files/${projectId}/validate-artifacts`, { items }),
 
   getConfig: () => request<ConfigDto>("GET", "/config"),
   updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),

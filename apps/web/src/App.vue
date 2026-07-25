@@ -314,7 +314,7 @@ function closePreview() {
               <!-- Chat Area -->
               <div class="workspace-main">
                 <div class="workspace-chat">
-                  <ChatPanel v-if="selectedSessionId" :session-id="selectedSessionId" />
+                  <ChatPanel v-if="selectedSessionId" :session-id="selectedSessionId" :project-id="selectedProjectId!" @select-file="filePath = $event" />
                 </div>
               </div>
 

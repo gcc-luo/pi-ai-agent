@@ -354,3 +354,24 @@ export interface TaskLogDto {
   startedAt: number;
   finishedAt: number | null;
 }
+
+// ─── Artifact Delivery ───
+
+/** A file declared by the agent in an <artifacts> block. */
+export interface ArtifactItem {
+  /** Relative path from the project workdir. */
+  path: string;
+  /** Display file name. */
+  name: string;
+  /** MIME type (e.g. "text/typescript", "image/png"). */
+  mimeType: string;
+}
+
+/** Backend validation result for a single artifact. */
+export interface ArtifactValidation {
+  path: string;
+  exists: boolean;
+  /** File size in bytes. Null when the file does not exist. */
+  size: number | null;
+  mimeType: string;
+}

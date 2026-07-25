@@ -13,7 +13,7 @@ describe("ChatPanel skill insertion", () => {
 
   function mountPanel() {
     return mount(ChatPanel, {
-      props: { sessionId: "s1" },
+      props: { sessionId: "s1", projectId: "p1" },
       global: {
         stubs: {
           Modal: { template: '<div v-if="show"><slot/></div>', props: ["show"] },
