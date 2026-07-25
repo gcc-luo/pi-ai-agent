@@ -333,6 +333,10 @@ export interface ScheduledTaskDto {
   payload: string;
   /** Project where prompt tasks create sessions. Null for reminder tasks. */
   projectId: string | null;
+  /** When true, each execution creates a new session. When false (default), reuse the same session. */
+  createNewSession: boolean;
+  /** Persistent session ID for reuse mode. Set after first execution when createNewSession is false. */
+  sessionId: string | null;
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number | null;

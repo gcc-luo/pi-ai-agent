@@ -16,6 +16,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       taskType: TaskType;
       payload?: string;
       projectId?: string;
+      createNewSession?: boolean;
       enabled?: boolean;
     };
     if (!body?.name) return reply.code(400).send({ error: "name required" });
@@ -35,6 +36,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       taskType: body.taskType,
       payload: body.payload,
       projectId: body.projectId,
+      createNewSession: body.createNewSession,
       enabled: body.enabled,
     });
 
@@ -62,6 +64,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       taskType?: TaskType;
       payload?: string;
       projectId?: string | null;
+      createNewSession?: boolean;
       enabled?: boolean;
     };
 

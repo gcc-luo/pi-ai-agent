@@ -139,7 +139,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(expertsRoutes, { prefix: "/api/experts" });
 
   // Scheduled tasks
-  const taskExecutor = new TaskExecutor(sessions, projects, models, processManager, app.log);
+  const taskExecutor = new TaskExecutor(sessions, projects, models, messages, scheduledTasks, processManager, app.log);
   const taskScheduler = new TaskScheduler(scheduledTasks, taskLogs, app.log);
   taskScheduler.setExecutor(taskExecutor);
   (app as any).taskScheduler = taskScheduler;

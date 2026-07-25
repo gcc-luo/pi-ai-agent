@@ -496,6 +496,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "scheduledTasks.rangeInfo": "Showing {start}–{end} of {total}",
     "scheduledTasks.required": "Required",
     "scheduledTasks.invalidCron": "Invalid cron expression",
+    "scheduledTasks.createNewSession": "Create new session each run",
+    "scheduledTasks.reuseSessionHint": "When off, all executions share one conversation for context continuity.",
 
     // Cron Picker
     "cronPicker.minute": "Minute",
@@ -1031,6 +1033,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "scheduledTasks.rangeInfo": "显示第 {start}–{end} 条，共 {total} 条",
     "scheduledTasks.required": "此项为必填",
     "scheduledTasks.invalidCron": "Cron 表达式格式不正确",
+    "scheduledTasks.createNewSession": "每次执行新建会话",
+    "scheduledTasks.reuseSessionHint": "关闭后所有执行共享同一对话，便于跟踪上下文。",
 
     // Cron 可视化选择器
     "cronPicker.minute": "分钟",

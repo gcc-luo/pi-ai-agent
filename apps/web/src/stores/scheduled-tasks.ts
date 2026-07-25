@@ -24,6 +24,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       taskType: TaskType;
       payload?: string;
       projectId?: string;
+      createNewSession?: boolean;
       enabled?: boolean;
     }) {
       const task = await api.createScheduledTask(input);
@@ -37,6 +38,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       taskType?: TaskType;
       payload?: string;
       projectId?: string | null;
+      createNewSession?: boolean;
       enabled?: boolean;
     }) {
       const updated = await api.updateScheduledTask(id, patch);

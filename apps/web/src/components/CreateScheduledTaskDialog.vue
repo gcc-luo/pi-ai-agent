@@ -21,6 +21,7 @@ const emit = defineEmits<{
     taskType: TaskType;
     payload: string;
     projectId?: string;
+    createNewSession?: boolean;
     enabled: boolean;
   }): void;
 }>();
@@ -35,6 +36,7 @@ const taskType = ref<TaskType>("prompt");
 const promptText = ref("");
 const reminderText = ref("");
 const projectId = ref<string | null>(null);
+const createNewSession = ref(false);
 const enabled = ref(true);
 const showCronPicker = ref(false);
 
@@ -55,6 +57,7 @@ watch(() => props.show, (visible) => {
     cronExpression.value = props.task.cronExpression;
     taskType.value = props.task.taskType;
     projectId.value = props.task.projectId;
+    createNewSession.value = props.task.createNewSession;
     enabled.value = props.task.enabled;
     try {
       const p = JSON.parse(props.task.payload || "{}");
@@ -73,6 +76,7 @@ watch(() => props.show, (visible) => {
     promptText.value = "";
     reminderText.value = "";
     projectId.value = null;
+    createNewSession.value = false;
     enabled.value = true;
   }
   // Always reset touched state when dialog opens
@@ -130,6 +134,7 @@ function handleSubmit() {
     taskType: taskType.value,
     payload,
     projectId: taskType.value === "prompt" ? (projectId.value ?? undefined) : undefined,
+    createNewSession: taskType.value === "prompt" ? createNewSession.value : undefined,
     enabled: enabled.value,
   });
 }
@@ -239,6 +244,25 @@ function handleSubmit() {
           />
           <span v-if="projectError" class="field-error">{{ t('scheduledTasks.required') }}</span>
         </div>
+      </div>
+
+      <!-- Create New Session (prompt tasks only) -->
+      <div v-if="taskType === 'prompt'" class="form-field form-field-row">
+        <label class="form-label">
+          {{ t('scheduledTasks.createNewSession') }}
+          <NTooltip placement="top" :delay="200">
+            <template #trigger>
+              <span class="label-help" aria-label="info">
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M7 6.3v3.2M7 4v.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </template>
+            {{ t('scheduledTasks.reuseSessionHint') }}
+          </NTooltip>
+        </label>
+        <NSwitch v-model:value="createNewSession" />
       </div>
 
       <!-- Payload -->

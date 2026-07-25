@@ -12,6 +12,8 @@ type TaskRow = {
   task_type: TaskType;
   payload: string;
   project_id: string | null;
+  create_new_session: number;
+  session_id: string | null;
   enabled: number;
   last_run_at: number | null;
   next_run_at: number | null;
@@ -38,6 +40,8 @@ function taskToDto(r: TaskRow): ScheduledTaskDto {
     taskType: r.task_type,
     payload: r.payload,
     projectId: r.project_id,
+    createNewSession: r.create_new_session === 1,
+    sessionId: r.session_id,
     enabled: r.enabled === 1,
     lastRunAt: r.last_run_at,
     nextRunAt: r.next_run_at,
@@ -93,6 +97,7 @@ export class ScheduledTaskRepository {
     taskType: TaskType;
     payload?: string;
     projectId?: string;
+    createNewSession?: boolean;
     enabled?: boolean;
   }): ScheduledTaskDto {
     const id = ulid();
@@ -100,15 +105,16 @@ export class ScheduledTaskRepository {
     const description = input.description ?? "";
     const payload = input.payload ?? "{}";
     const projectId = input.projectId ?? null;
+    const createNewSession = input.createNewSession ? 1 : 0;
     const enabled = input.enabled !== false ? 1 : 0;
 
     this.db
       .prepare(
         `INSERT INTO scheduled_tasks
-          (id, name, description, cron_expression, task_type, payload, project_id, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, name, description, cron_expression, task_type, payload, project_id, create_new_session, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name, description, input.cronExpression, input.taskType, payload, projectId, enabled, now, now);
+      .run(id, input.name, description, input.cronExpression, input.taskType, payload, projectId, createNewSession, enabled, now, now);
 
     return {
       id,
@@ -118,6 +124,8 @@ export class ScheduledTaskRepository {
       taskType: input.taskType,
       payload,
       projectId,
+      createNewSession: createNewSession === 1,
+      sessionId: null,
       enabled: enabled === 1,
       lastRunAt: null,
       nextRunAt: null,
@@ -135,6 +143,7 @@ export class ScheduledTaskRepository {
       taskType: TaskType;
       payload: string;
       projectId: string | null;
+      createNewSession: boolean;
       enabled: boolean;
     }>,
   ): ScheduledTaskDto | null {
@@ -147,16 +156,17 @@ export class ScheduledTaskRepository {
     const taskType = patch.taskType ?? cur.taskType;
     const payload = patch.payload ?? cur.payload;
     const projectId = patch.projectId !== undefined ? patch.projectId : cur.projectId;
+    const createNewSession = patch.createNewSession !== undefined ? (patch.createNewSession ? 1 : 0) : cur.createNewSession ? 1 : 0;
     const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : cur.enabled ? 1 : 0;
     const now = Date.now();
 
     this.db
       .prepare(
         `UPDATE scheduled_tasks
-         SET name = ?, description = ?, cron_expression = ?, task_type = ?, payload = ?, project_id = ?, enabled = ?, updated_at = ?
+         SET name = ?, description = ?, cron_expression = ?, task_type = ?, payload = ?, project_id = ?, create_new_session = ?, enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, description, cronExpression, taskType, payload, projectId, enabled, now, id);
+      .run(name, description, cronExpression, taskType, payload, projectId, createNewSession, enabled, now, id);
 
     return {
       ...cur,
@@ -166,6 +176,7 @@ export class ScheduledTaskRepository {
       taskType,
       payload,
       projectId,
+      createNewSession: createNewSession === 1,
       enabled: enabled === 1,
       updatedAt: now,
     };
@@ -185,6 +196,12 @@ export class ScheduledTaskRepository {
     this.db
       .prepare("UPDATE scheduled_tasks SET next_run_at = ? WHERE id = ?")
       .run(nextRunAt, id);
+  }
+
+  setSessionId(id: string, sessionId: string): void {
+    this.db
+      .prepare("UPDATE scheduled_tasks SET session_id = ?, updated_at = ? WHERE id = ?")
+      .run(sessionId, Date.now(), id);
   }
 
   delete(id: string): boolean {

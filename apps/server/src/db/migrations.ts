@@ -234,6 +234,13 @@ const MIGRATIONS = [
       CREATE INDEX idx_task_logs_session ON task_logs(session_id);
     `,
   },
+  {
+    name: "014_task_session_reuse",
+    sql: `
+      ALTER TABLE scheduled_tasks ADD COLUMN create_new_session INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE scheduled_tasks ADD COLUMN session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -124,7 +124,8 @@ function handleEdit(task: ScheduledTaskDto) {
 
 async function handleSubmit(data: {
   name: string; description: string; cronExpression: string;
-  taskType: string; payload: string; projectId?: string; enabled: boolean;
+  taskType: string; payload: string; projectId?: string;
+  createNewSession?: boolean; enabled: boolean;
 }) {
   try {
     if (editTask.value) {

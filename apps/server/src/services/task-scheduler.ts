@@ -125,6 +125,8 @@ export class TaskScheduler {
               taskName: task.name,
               projectId: task.projectId,
               promptText,
+              taskId: task.id,
+              createNewSession: task.createNewSession,
             });
             sessionId = result.sessionId;
             output = result.response

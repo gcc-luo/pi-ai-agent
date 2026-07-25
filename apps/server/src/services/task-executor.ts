@@ -2,8 +2,11 @@ import type { FastifyBaseLogger } from "fastify";
 import type { SessionRepository } from "../db/repositories/session.js";
 import type { ProjectRepository } from "../db/repositories/project.js";
 import type { ModelRepository } from "../db/repositories/model.js";
+import type { MessageRepository } from "../db/repositories/message.js";
+import type { ScheduledTaskRepository } from "../db/repositories/scheduled-task.js";
 import type { ProcessManager } from "../agent/process-manager.js";
 import { RpcBridge } from "../agent/rpc-bridge.js";
+import type { SessionDto } from "@pi-web-ui/shared";
 
 const TASK_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
 
@@ -12,12 +15,14 @@ export class TaskExecutor {
     private sessions: SessionRepository,
     private projects: ProjectRepository,
     private models: ModelRepository,
+    private messages: MessageRepository,
+    private scheduledTasks: ScheduledTaskRepository,
     private processManager: ProcessManager,
     private logger: FastifyBaseLogger,
   ) {}
 
   /**
-   * Execute a prompt task: create a session, send the prompt to the agent,
+   * Execute a prompt task: create or reuse a session, send the prompt to the agent,
    * and return the AI response. The session remains available for the user
    * to view the full conversation in the chat view.
    */
@@ -25,8 +30,10 @@ export class TaskExecutor {
     taskName: string;
     projectId: string;
     promptText: string;
+    taskId: string;
+    createNewSession: boolean;
   }): Promise<{ sessionId: string; response: string }> {
-    const { taskName, projectId, promptText } = params;
+    const { taskName, projectId, promptText, taskId, createNewSession } = params;
 
     // Verify project exists
     const project = this.projects.findById(projectId);
@@ -34,11 +41,30 @@ export class TaskExecutor {
       throw new Error(`Project ${projectId} not found`);
     }
 
-    // Create a new session for this execution
-    const session = this.sessions.create({
-      projectId,
-      title: `[定时任务] ${taskName}`,
-    });
+    // Determine whether to create a new session or reuse
+    const task = this.scheduledTasks.findById(taskId);
+    let session!: SessionDto;
+    let isNewSession = true;
+
+    if (!createNewSession && task?.sessionId) {
+      // Try to reuse existing session
+      const existing = this.sessions.findById(task.sessionId);
+      if (existing) {
+        session = existing;
+        isNewSession = false;
+        this.logger.info(`[TaskExecutor] reusing session ${session.id} for task "${taskName}"`);
+      } else {
+        this.logger.warn(`[TaskExecutor] session ${task.sessionId} not found, creating new one`);
+      }
+    }
+
+    if (isNewSession) {
+      session = this.sessions.create({
+        projectId,
+        title: `[定时任务] ${taskName}`,
+      });
+      this.logger.info(`[TaskExecutor] created new session ${session.id} for task "${taskName}"`);
+    }
 
     // Resolve model config
     const defaultModel = this.models.getDefault();
@@ -75,9 +101,17 @@ export class TaskExecutor {
       bridge.onEvent((e) => {
         if (settled) return;
 
-        // Capture response text from message_end events
+        // Persist assistant message on message_end
         if (e.type === "message_end" && e.content) {
           responseText = e.content;
+          this.messages.append({
+            sessionId: session.id,
+            role: "assistant",
+            content: e.content,
+            metadata: e.metadata ?? undefined,
+            createdAt: e.timestamp,
+          });
+          this.logger.debug(`[TaskExecutor] persisted assistant message for session ${session.id}`);
         }
 
         // Agent finished processing
@@ -104,9 +138,22 @@ export class TaskExecutor {
         this.logger.warn(`[TaskExecutor] agent stderr: ${line}`);
       });
 
-      // Send the prompt
+      // Send the prompt and persist the user message
       bridge.send({ type: "send", sessionId: session.id, content: promptText });
+      this.messages.append({
+        sessionId: session.id,
+        role: "user",
+        content: promptText,
+        metadata: { source: "scheduled-task" },
+      });
+      this.logger.debug(`[TaskExecutor] persisted user message for session ${session.id}`);
     });
+
+    // Persist session_id on the task for future reuse (reuse mode, first execution)
+    if (isNewSession && !createNewSession) {
+      this.scheduledTasks.setSessionId(taskId, session.id);
+      this.logger.info(`[TaskExecutor] saved session_id ${session.id} on task ${taskId} for reuse`);
+    }
 
     return { sessionId: session.id, response };
   }
