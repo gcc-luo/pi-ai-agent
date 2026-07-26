@@ -88,7 +88,7 @@ export const api = {
     request<{ from: string; to: string }>("PUT", `/files/${projectId}/rename`, { from, to }),
   deleteFile: (projectId: string, path: string) =>
     request<void>("DELETE", `/files/${projectId}/delete?path=${encodeURIComponent(path)}`),
-  openFile: (projectId: string, path: string, action: "reveal" | "openWith") =>
+  openFile: (projectId: string, path: string, action: "reveal" | "open") =>
     request<{ ok: boolean; error?: string }>("POST", `/files/${projectId}/open`, { path, action }),
 
   // Office → PDF via LibreOffice

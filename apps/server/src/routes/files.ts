@@ -185,17 +185,17 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  // Open a file in the OS file manager or trigger the "Open With..." picker.
+  // Reveal a file in the OS file manager or open it with the OS default app.
   // The spawn is detached and unref'd so the HTTP response returns immediately
   // while the OS dialog may still be blocking the child process.
-  app.post<{ Params: { projectId: string }; Body: { path?: string; action?: "reveal" | "openWith" } }>(
+  app.post<{ Params: { projectId: string }; Body: { path?: string; action?: "reveal" | "open" } }>(
     "/files/:projectId/open",
     async (req, reply) => {
       const project = app.projects.findById(req.params.projectId);
       if (!project) return reply.code(404).send({ error: "project not found" });
       const rel = req.body?.path;
       const action = req.body?.action;
-      if (!rel || (action !== "reveal" && action !== "openWith")) {
+      if (!rel || (action !== "reveal" && action !== "open")) {
         return reply.code(400).send({ ok: false, error: "invalid path or action" });
       }
       const abs = resolveSafe(project.workdir, rel);
@@ -219,25 +219,19 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
               break;
           }
         } else {
-          // action === "openWith"
+          // action === "open"
           switch (process.platform) {
-            case "darwin": {
-              const escaped = abs.replace(/"/g, '\\"');
-              const script =
-                `set chosenApp to choose application\n` +
-                `do shell script "open -a \\"" & (POSIX path of (chosenApp as alias)) & "\\" \\"${escaped}\\""`;
-              spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
+            case "darwin":
+              spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
               break;
-            }
             case "win32":
               spawn(
-                "rundll32.exe",
-                ["shell32.dll,OpenAs_RunDLL", abs.replace(/\//g, "\\")],
+                "cmd.exe",
+                ["/c", "start", "", abs.replace(/\//g, "\\")],
                 { detached: true, stdio: "ignore" },
               ).unref();
               break;
             default:
-              app.log.warn("openWith: no standard picker on this platform, falling back to xdg-open");
               spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
               break;
           }

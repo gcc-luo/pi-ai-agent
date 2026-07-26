@@ -89,9 +89,6 @@ function toTree(nodes: FileNodeDto[]): TreeOption[] {
           },
         }, [deleteIcon]),
       ]),
-    nodeProps: () => ({
-      onContextmenu: (e: MouseEvent) => onContextMenu(n, e),
-    }),
     children: n.children ? toTree(n.children) : undefined,
   }));
 }
@@ -103,13 +100,26 @@ const ctxMenu = ref<{ show: boolean; x: number; y: number; path: string }>({
 
 const ctxMenuOptions = [
   { label: t("file.revealInFolder"), key: "reveal" },
-  { label: t("file.openWith"), key: "openWith" },
+  { label: t("file.open"), key: "open" },
 ];
 
 function onContextMenu(node: FileNodeDto, e: MouseEvent) {
   if (node.type !== "file") return;
   e.preventDefault();
+  selectedKeys.value = [node.path];
+  selectedNode.value = node;
   ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, path: node.path };
+}
+
+// NTree reads nodeProps from its own prop, not from individual TreeOption
+// objects. Keeping this mapping here makes right-click work for every row.
+function nodeProps({ option }: { option: TreeOption }) {
+  return {
+    onContextmenu: (e: MouseEvent) => {
+      if (!option.isLeaf || typeof option.key !== "string") return;
+      onContextMenu({ name: String(option.label), path: option.key, type: "file" }, e);
+    },
+  };
 }
 
 async function onCtxMenuSelect(key: string) {
@@ -117,7 +127,7 @@ async function onCtxMenuSelect(key: string) {
   ctxMenu.value = { ...ctxMenu.value, show: false };
   if (!p) return;
   try {
-    await api.openFile(props.projectId, p, key as "reveal" | "openWith");
+    await api.openFile(props.projectId, p, key as "reveal" | "open");
   } catch (err: any) {
     alert(t("file.openError") + ": " + (err?.message ?? String(err)));
   }
@@ -316,6 +326,7 @@ defineExpose({ startCreate, refresh: load });
     <NTree
       :data="treeData"
       :selected-keys="selectedKeys"
+      :node-props="nodeProps"
       block-line
       selectable
       :indent="16"
@@ -433,9 +444,18 @@ defineExpose({ startCreate, refresh: load });
   font-family: var(--font-mono);
   font-size: 12px;
   padding: 2px 0;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.file-tree :deep(.n-tree-node-content:hover) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: translateX(1px);
 }
 
 .file-tree :deep(.n-tree-node--selected .n-tree-node-content) {
+  background: var(--accent-dim);
   color: var(--accent);
 }
 
