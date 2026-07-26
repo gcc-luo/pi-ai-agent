@@ -44,8 +44,11 @@ import { TaskExecutor } from "./services/task-executor.js";
 import { scheduledTasksRoutes } from "./routes/scheduled-tasks.js";
 import { ChannelRepository } from "./db/repositories/channel.js";
 import { channelsRoutes } from "./routes/channels.js";
-import { rebuildAdapters } from "./channels/registry.js";
+import { getRegistry, rebuildAdapters, startChannelListeners } from "./channels/registry.js";
 import { getWeChatWorker } from "./channels/wechat-worker.js";
+import { WeChatAgentService } from "./channels/wechat-agent-service.js";
+import { ChannelAgentService } from "./channels/channel-agent-service.js";
+import { ChannelConversationRepository } from "./db/repositories/channel-conversation.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -75,6 +78,7 @@ export async function buildConfiguredApp(config: Config) {
   const scheduledTasks = new ScheduledTaskRepository(db);
   const taskLogs = new TaskLogRepository(db);
   const channels = new ChannelRepository(db);
+  const channelConversations = new ChannelConversationRepository(db);
 
   // Seed preset experts (idempotent — adds only presets not yet present).
   experts.seedPresets([
@@ -113,7 +117,7 @@ export async function buildConfiguredApp(config: Config) {
   const app = await buildApp(config, {
     db, projects, sessions, messages, models, sessionStates, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
-    scheduledTasks, taskLogs, channels, config,
+    scheduledTasks, taskLogs, channels, channelConversations, config,
   });
   const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, sessionRootDir: config.piSessionRootDir, logger: app.log });
   (app as any).processManager = processManager;
@@ -126,6 +130,26 @@ export async function buildConfiguredApp(config: Config) {
     logger: app.log,
   });
   (app as any).tuiProcessManager = tuiProcessManager;
+  const wechatAgentService = new WeChatAgentService(
+    channels, channelConversations, projects, sessions, messages, models, processManager, app.log,
+  );
+  getWeChatWorker().setInboundHandler((input) => wechatAgentService.reply(input.userId, input.text));
+  const channelAgentService = new ChannelAgentService(
+    channels, channelConversations, projects, sessions, messages, models, processManager, app.log,
+  );
+  getRegistry().setLogger((event, data, level) => {
+    const logger = level?.toLowerCase() === "error" ? app.log.error
+      : level?.toLowerCase() === "warn" ? app.log.warn
+        : level?.toLowerCase() === "debug" ? app.log.debug
+          : app.log.info;
+    logger.call(app.log, { channelEvent: event, ...data }, "channel adapter event");
+  });
+  getRegistry().setOnIncoming((message) => channelAgentService.reply({
+    channelId: message.adapter,
+    sender: message.sender,
+    text: message.text,
+    metadata: message.metadata,
+  }));
 
   const sweeper = new IdleSweeper({
     idleTimeoutMs: config.idleTimeoutMs,
@@ -168,9 +192,10 @@ export async function buildConfiguredApp(config: Config) {
   // Rebuild channel adapters from persisted configs so test/send works
   // immediately after restart without a re-save.
   await rebuildAdapters(channels.list());
+  await startChannelListeners();
 
-  // Lazy-init WeChat worker — if cached creds exist in the session dir,
-  // login() resumes without a QR scan. Non-blocking; never await on startup.
+  // Resume WeChat only when cached credentials exist. A new QR login must be
+  // initiated from the visible UI, otherwise there is no place to show it.
   void getWeChatWorker().ensureStarted().catch((err) => {
     console.error("[wechat] failed to auto-resume:", err);
   });

@@ -18,6 +18,7 @@ import type { ExpertRepository } from "../db/repositories/expert.js";
 import type { ScheduledTaskRepository, TaskLogRepository } from "../db/repositories/scheduled-task.js";
 import type { TaskScheduler } from "../services/task-scheduler.js";
 import type { ChannelRepository } from "../db/repositories/channel.js";
+import type { ChannelConversationRepository } from "../db/repositories/channel-conversation.js";
 import type { Config } from "../config.js";
 
 declare module "fastify" {
@@ -42,6 +43,7 @@ declare module "fastify" {
     taskLogs: TaskLogRepository;
     taskScheduler: TaskScheduler;
     channels: ChannelRepository;
+    channelConversations: ChannelConversationRepository;
     config: Config;
   }
 }

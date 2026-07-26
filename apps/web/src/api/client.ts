@@ -232,6 +232,7 @@ export const api = {
       error?: string;
     }>("GET", "/channels/wechat/status"),
   wechatLogout: () => request<{ ok: boolean }>("POST", "/channels/wechat/logout"),
+  wechatConversations: () => request<{ userId: string; sessionId: string; title: string | null; updatedAt: number }[]>("GET", "/channels/wechat/conversations"),
   wechatTest: (userId: string, text?: string) =>
     request<{ ok: boolean; error?: string }>("POST", "/channels/wechat/test", { userId, text }),
 };

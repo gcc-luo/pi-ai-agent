@@ -44,6 +44,9 @@ const loginCallbacks: QrLoginCallbacks = {
 let bot: WeChatBot | null = null;
 let loginState: WeChatLoginState = { state: "idle" };
 let startPromise: Promise<void> | null = null;
+let qrLoginPromise: Promise<void> | null = null;
+let loginAttempt = 0;
+let inboundHandler: ((input: { userId: string; text: string }) => Promise<string>) | null = null;
 
 function ensureBot(): WeChatBot {
   if (bot) return bot;
@@ -52,12 +55,25 @@ function ensureBot(): WeChatBot {
     storage: "file",
     storageDir: SESSION_DIR,
     logLevel: "info",
-    loginCallbacks,
   });
-  // Empty inbound handler — we don't process inbound messages this iteration.
-  // The SDK still caches context_token automatically; send() relies on it.
-  bot.onMessage((msg) => {
-    log.debug({ from: msg.userId, text: msg.text?.slice(0, 50) }, "wechat inbound (ignored)");
+  bot.onMessage(async (msg) => {
+    const text = msg.text?.trim();
+    log.debug({ from: msg.userId, text: text?.slice(0, 50) }, "wechat inbound");
+    if (!text) {
+      await bot?.reply(msg, "目前仅支持文本消息。");
+      return;
+    }
+    if (!inboundHandler) {
+      await bot?.reply(msg, "微信频道尚未配置处理项目，请先在 Pi 中完成频道配置。");
+      return;
+    }
+    try {
+      const response = await inboundHandler({ userId: msg.userId, text });
+      await bot?.reply(msg, response);
+    } catch (error: any) {
+      log.error({ err: error?.message ?? String(error), userId: msg.userId }, "wechat inbound handling failed");
+      await bot?.reply(msg, "抱歉，处理消息时出现错误，请稍后重试。");
+    }
   });
   return bot;
 }
@@ -67,12 +83,17 @@ async function ensureStarted(): Promise<void> {
   const b = ensureBot();
   if (b.isRunning) return;
   if (startPromise) return startPromise;
+
+  // Do not start a headless QR flow at server boot. It cannot render a QR for
+  // the user and would race a later explicit “scan to login” request.
+  if (!(await b.storage.has("credentials"))) return;
+
   startPromise = (async () => {
     try {
       // login() resolves immediately if cached creds are valid, otherwise
       // waits for QR scan + confirm. start() begins the long-poll loop
       // required for send() to work.
-      const creds = await b.login();
+      const creds = await b.login({ callbacks: loginCallbacks });
       loginState = { state: "logged_in", userId: creds.userId };
       log.info({ userId: creds.userId }, "wechat logged in");
       await b.start();
@@ -87,33 +108,49 @@ async function ensureStarted(): Promise<void> {
 }
 
 /** Force a fresh QR login flow, ignoring cached creds. */
-async function startLogin(): Promise<void> {
+function startLogin(): void {
   const b = ensureBot();
+  if (qrLoginPromise) return;
+  const attempt = ++loginAttempt;
+  loginState = { state: "idle" };
   // Don't await — the QR flow blocks until scan. The state machine in
   // loginCallbacks reflects progress for the UI to poll.
-  b.login({ force: true }).then((creds: Credentials) => {
-    loginState = { state: "logged_in", userId: creds.userId };
-    log.info({ userId: creds.userId }, "wechat logged in via qr");
-    return b.start();
-  }).catch((err: any) => {
-    loginState = { state: "error", error: err?.message ?? String(err) };
-    log.error({ err: err?.message ?? String(err) }, "wechat qr login failed");
-  });
+  qrLoginPromise = b.login({ force: true, callbacks: loginCallbacks })
+    .then(async (creds: Credentials) => {
+      if (attempt !== loginAttempt || bot !== b) return;
+      loginState = { state: "logged_in", userId: creds.userId };
+      log.info({ userId: creds.userId }, "wechat logged in via qr");
+      await b.start();
+    })
+    .catch((err: any) => {
+      if (attempt !== loginAttempt || bot !== b) return;
+      loginState = { state: "error", error: err?.message ?? String(err) };
+      log.error({ err: err?.message ?? String(err) }, "wechat qr login failed");
+    })
+    .finally(() => {
+      if (attempt === loginAttempt) qrLoginPromise = null;
+    });
 }
 
 /** Stop and reset the bot. */
 function stop(): void {
+  loginAttempt++;
   if (bot) {
     try { bot.stop(); } catch { /* best-effort */ }
   }
   bot = null;
   startPromise = null;
+  qrLoginPromise = null;
   loginState = { state: "idle" };
 }
 
 /** Current login state, including the QR data URL for rendering. */
 function getStatus(): WeChatLoginState {
   return loginState;
+}
+
+function setInboundHandler(handler: ((input: { userId: string; text: string }) => Promise<string>) | null): void {
+  inboundHandler = handler;
 }
 
 /** Send a test message to a user by wxid. User must have messaged the bot first. */
@@ -140,6 +177,7 @@ export const weChatWorker = {
   startLogin,
   stop,
   getStatus,
+  setInboundHandler,
   sendTest,
 };
 

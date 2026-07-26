@@ -1,15 +1,35 @@
 import { FastifyPluginAsync } from "fastify";
 import type { ChannelType } from "@pi-web-ui/shared";
 import { CHANNEL_DESCRIPTORS } from "../channels/descriptors.js";
-import { getRegistry, rebuildAdapters, sendToChannel } from "../channels/registry.js";
+import { getRegistry, rebuildAdapters, sendToChannel, startChannelListeners } from "../channels/registry.js";
 import { getWeChatWorker } from "../channels/wechat-worker.js";
 
 export const channelsRoutes: FastifyPluginAsync = async (app) => {
+  async function refreshAdapters() {
+    await rebuildAdapters(app.channels.list());
+    // Connecting the vendor long connection may take a few seconds. Saving a
+    // configuration should stay responsive; connection failures are retained
+    // in the registry status and adapter logs.
+    void startChannelListeners().catch((error) => {
+      app.log.error({ err: error }, "failed to start channel listeners after configuration update");
+    });
+  }
   // Static channel descriptors (card metadata + config schema)
   app.get("/descriptors", async () => CHANNEL_DESCRIPTORS);
 
   // List persisted channel configs
   app.get("/configs", async () => app.channels.list());
+
+  // Sender-to-session bindings for the two long-connection enterprise bots.
+  app.get<{ Params: { id: string } }>("/configs/:id/conversations", async (req, reply) => {
+    const config = app.channels.findById(req.params.id);
+    if (!config) return reply.code(404).send({ error: "not found" });
+    return app.channelConversations.list(config.id).flatMap((binding) => {
+      const session = app.sessions.findById(binding.sessionId);
+      if (!session) return [];
+      return [{ userId: binding.userId, sessionId: binding.sessionId, title: session.title, updatedAt: binding.updatedAt }];
+    });
+  });
 
   // Create a new channel config
   app.post("/configs", async (req, reply) => {
@@ -29,7 +49,7 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
       enabled: body.enabled,
       config: body.config,
     });
-    await rebuildAdapters(app.channels.list());
+    await refreshAdapters();
     return reply.code(201).send(created);
   });
 
@@ -42,7 +62,7 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
     };
     const updated = app.channels.update(req.params.id, body);
     if (!updated) return reply.code(404).send({ error: "not found" });
-    await rebuildAdapters(app.channels.list());
+    await refreshAdapters();
     return updated;
   });
 
@@ -51,7 +71,7 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
     const existing = app.channels.findById(req.params.id);
     if (!existing) return reply.code(404).send({ error: "not found" });
     app.channels.delete(req.params.id);
-    await rebuildAdapters(app.channels.list());
+    await refreshAdapters();
     return reply.code(204).send();
   });
 
@@ -87,6 +107,18 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
   app.post("/wechat/logout", async () => {
     getWeChatWorker().stop();
     return { ok: true };
+  });
+
+  // Each wxid is intentionally isolated in its own Pi conversation. The
+  // drawer shows these bindings so operators can understand the routing.
+  app.get("/wechat/conversations", async () => {
+    const config = app.channels.list().find((channel) => channel.type === "wechat");
+    if (!config) return [];
+    return app.channelConversations.list(config.id).flatMap((binding) => {
+      const session = app.sessions.findById(binding.sessionId);
+      if (!session) return [];
+      return [{ userId: binding.userId, sessionId: binding.sessionId, title: session.title, updatedAt: binding.updatedAt }];
+    });
   });
 
   app.post("/wechat/test", async (req, reply) => {

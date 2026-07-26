@@ -9,6 +9,7 @@ export const CHANNEL_DESCRIPTORS: ChannelDescriptor[] = [
     description: "通过钉钉智能机器人 Stream 长连接推送消息到指定会话",
     available: true,
     configSchema: [
+      { kind: "string", key: "projectId", label: "处理项目", required: true, placeholder: "请选择消息处理项目" },
       { kind: "string", key: "clientId", label: "Client ID (AppKey)", required: true, placeholder: "dingXXXX" },
       { kind: "string", key: "clientSecret", label: "Client Secret (AppSecret)", required: true, secret: true },
       { kind: "string", key: "robotCode", label: "Robot Code (默认同 Client ID)", placeholder: "可选,留空则同 Client ID" },
@@ -18,10 +19,11 @@ export const CHANNEL_DESCRIPTORS: ChannelDescriptor[] = [
     type: "wecom",
     label: "企业微信",
     icon: "🏢",
-    description: "通过企业微信群机器人推送消息",
+    description: "通过企业微信智能机器人长连接接收消息并回复",
     available: true,
     configSchema: [
-      { kind: "string", key: "botId", label: "Bot ID", required: true, placeholder: "企业微信群机器人 ID" },
+      { kind: "string", key: "projectId", label: "处理项目", required: true, placeholder: "请选择消息处理项目" },
+      { kind: "string", key: "botId", label: "Bot ID", required: true, placeholder: "企业微信智能机器人 Bot ID" },
       { kind: "string", key: "secret", label: "Secret", required: true, secret: true },
     ],
   },

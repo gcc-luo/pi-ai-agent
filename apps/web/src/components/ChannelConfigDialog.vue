@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from "vue";
-import { NModal, NInput, NSwitch, useMessage } from "naive-ui";
-import type { ChannelConfigDto, ChannelConfigField, ChannelDescriptor } from "@pi-web-ui/shared";
+import { NModal, NInput, NSelect, NSwitch, useMessage } from "naive-ui";
+import type { ChannelConfigDto, ChannelConfigField, ChannelDescriptor, ProjectDto } from "@pi-web-ui/shared";
 import { useChannelStore } from "../stores/channel.js";
 import { useI18n } from "../i18n/index.js";
+import { api } from "../api/client.js";
 
 const props = defineProps<{
   show: boolean;
@@ -24,6 +25,8 @@ const formValues = ref<Record<string, string | boolean>>({});
 const phase = ref<"idle" | "saving" | "error">("idle");
 const errorMessage = ref("");
 const nameInput = ref<InstanceType<typeof NInput> | null>(null);
+const projects = ref<ProjectDto[]>([]);
+const projectOptions = computed(() => projects.value.map((project) => ({ label: project.name, value: project.id })));
 
 const isEdit = computed(() => !!props.existing);
 
@@ -32,8 +35,21 @@ function fieldPlaceholder(field: ChannelConfigField): string | undefined {
   if (field.secret && isEdit.value && props.existing) {
     return t("channel.secretKeepPlaceholder");
   }
-  return field.placeholder;
+  const key = `channel.${props.descriptor?.type}.field.${field.key}.placeholder`;
+  const translated = t(key);
+  return translated === key ? field.placeholder : translated;
 }
+
+function fieldLabel(field: ChannelConfigField): string {
+  const key = `channel.${props.descriptor?.type}.field.${field.key}`;
+  const translated = t(key);
+  return translated === key ? field.label : translated;
+}
+
+const descriptorLabel = computed(() => {
+  if (!props.descriptor) return "";
+  return t(`channel.${props.descriptor.type}.label`);
+});
 
 function initialValue(field: ChannelConfigField): string | boolean {
   if (field.kind === "boolean") {
@@ -49,6 +65,7 @@ watch(
   () => props.show,
   (visible) => {
     if (!visible || !props.descriptor) return;
+    void api.listProjects().then((items) => { projects.value = items; }).catch(() => { projects.value = []; });
     name.value = props.existing?.name ?? "";
     formValues.value = {};
     for (const field of props.descriptor.configSchema) {
@@ -70,7 +87,7 @@ function requiredMissing(): string | null {
     if (typeof v !== "string" || v.trim() === "") {
       // On edit, secret fields may be left blank to keep the existing value.
       if (field.secret && isEdit.value) continue;
-      return field.label;
+      return fieldLabel(field);
     }
   }
   return null;
@@ -122,7 +139,7 @@ async function handleSave() {
     emit("saved");
     emit("update:show", false);
   } catch (e: any) {
-    errorMessage.value = e?.message ?? "Save failed";
+    errorMessage.value = e?.message ?? t("channel.saveFailed");
     phase.value = "error";
     message.error(errorMessage.value);
   }
@@ -135,7 +152,7 @@ async function handleSave() {
       <div class="dialog-header">
         <h3 class="dialog-title">
           {{ isEdit ? t('channel.edit') : t('channel.configure') }}
-          <span class="dialog-subtitle" v-if="descriptor">{{ descriptor.label }}</span>
+          <span class="dialog-subtitle" v-if="descriptor">{{ descriptorLabel }}</span>
         </h3>
         <button class="dialog-close" @click="emit('update:show', false)" :disabled="phase === 'saving'">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -158,12 +175,24 @@ async function handleSave() {
 
         <template v-for="field in descriptor?.configSchema ?? []" :key="field.key">
           <label v-if="field.kind === 'boolean'" class="field">
-            <span class="label">{{ field.label }}</span>
+            <span class="label">{{ fieldLabel(field) }}</span>
             <NSwitch v-model:value="formValues[field.key] as boolean" />
+          </label>
+          <label v-else-if="field.key === 'projectId'" class="field">
+            <span class="label">
+              {{ fieldLabel(field) }}
+              <span v-if="field.required" class="required">*</span>
+            </span>
+            <NSelect
+              v-model:value="formValues[field.key] as string"
+              size="small"
+              :options="projectOptions"
+              :placeholder="fieldPlaceholder(field)"
+            />
           </label>
           <label v-else-if="field.kind === 'text'" class="field">
             <span class="label">
-              {{ field.label }}
+              {{ fieldLabel(field) }}
               <span v-if="field.required" class="required">*</span>
             </span>
             <NInput
@@ -176,7 +205,7 @@ async function handleSave() {
           </label>
           <label v-else class="field">
             <span class="label">
-              {{ field.label }}
+              {{ fieldLabel(field) }}
               <span v-if="field.required" class="required">*</span>
             </span>
             <NInput

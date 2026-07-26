@@ -255,6 +255,36 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    name: "016_wechat_conversations",
+    sql: `
+      CREATE TABLE wechat_conversations (
+        channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, user_id)
+      );
+      CREATE INDEX idx_wechat_conversations_session ON wechat_conversations(session_id);
+    `,
+  },
+  {
+    // Generalizes the earlier WeChat-only mapping so enterprise channels can
+    // persist one Pi conversation per sender too.
+    name: "017_channel_conversations",
+    sql: `
+      CREATE TABLE channel_conversations (
+        channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (channel_id, user_id)
+      );
+      CREATE INDEX idx_channel_conversations_session ON channel_conversations(session_id);
+      INSERT OR IGNORE INTO channel_conversations (channel_id, user_id, session_id, updated_at)
+      SELECT channel_id, user_id, session_id, updated_at FROM wechat_conversations;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

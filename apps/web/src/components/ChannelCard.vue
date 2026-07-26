@@ -4,6 +4,7 @@ import { NButton, NSwitch, NTag } from "naive-ui";
 import type { ChannelConfigDto, ChannelDescriptor } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
+import ChannelBrandIcon from "./ChannelBrandIcon.vue";
 
 const props = defineProps<{
   descriptor: ChannelDescriptor;
@@ -16,9 +17,7 @@ const emit = defineEmits<{
   (e: "delete", payload: { descriptor: ChannelDescriptor; config: ChannelConfigDto }): void;
   (e: "toggle-enabled", payload: { descriptor: ChannelDescriptor; config: ChannelConfigDto; enabled: boolean }): void;
   (e: "test", payload: { descriptor: ChannelDescriptor; config: ChannelConfigDto }): void;
-  (e: "wechat-login"): void;
-  (e: "wechat-test"): void;
-  (e: "wechat-logout"): void;
+  (e: "wechat-configure"): void;
 }>();
 
 const { t } = useI18n();
@@ -38,6 +37,9 @@ const wechatStatus = ref<WeChatStatus>({ state: "idle" });
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const isWeChat = computed(() => props.descriptor.type === "wechat");
+const channelLabel = computed(() => t(`channel.${props.descriptor.type}.label`));
+const channelDescription = computed(() => t(`channel.${props.descriptor.type}.description`));
+const supportsTest = computed(() => props.descriptor.type !== "dingtalk");
 
 async function refreshWeChat() {
   if (!isWeChat.value) return;
@@ -60,11 +62,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="channel-card" :class="{ unavailable: !descriptor.available }">
+  <div
+    class="channel-card"
+    :class="{ unavailable: !descriptor.available, interactive: isWeChat }"
+    :role="isWeChat ? 'button' : undefined"
+    :tabindex="isWeChat ? 0 : undefined"
+    @click="isWeChat && emit('wechat-configure')"
+    @keydown.enter="isWeChat && emit('wechat-configure')"
+  >
     <div class="card-header">
-      <span class="channel-icon">{{ descriptor.icon }}</span>
+      <ChannelBrandIcon :type="descriptor.type" :fallback="descriptor.icon" :label="channelLabel" />
       <div class="card-titles">
-        <span class="channel-name">{{ descriptor.label }}</span>
+        <span class="channel-name">{{ channelLabel }}</span>
         <NTag v-if="!descriptor.available" size="tiny" :bordered="false" type="warning">
           {{ t('channel.comingSoon') }}
         </NTag>
@@ -91,7 +100,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <p class="channel-description">{{ descriptor.description }}</p>
+    <p class="channel-description">{{ channelDescription }}</p>
 
     <div class="card-actions">
       <template v-if="!descriptor.available">
@@ -99,11 +108,7 @@ onUnmounted(() => {
       </template>
       <template v-else-if="isWeChat">
         <div class="wechat-state">
-          <template v-if="wechatStatus.state === 'awaiting_scan' && wechatStatus.qrDataUrl">
-            <img class="wechat-qr" :src="wechatStatus.qrDataUrl" alt="WeChat QR" />
-            <span class="wechat-hint">{{ t('channel.wechat.scanning') }}</span>
-          </template>
-          <template v-else-if="wechatStatus.state === 'scanned'">
+          <template v-if="wechatStatus.state === 'scanned'">
             <span class="wechat-hint">{{ t('channel.wechat.scanToConfirm') }}</span>
           </template>
           <template v-else-if="wechatStatus.state === 'logged_in'">
@@ -117,13 +122,7 @@ onUnmounted(() => {
           </template>
         </div>
         <div class="action-buttons">
-          <NButton v-if="wechatStatus.state !== 'logged_in'" size="tiny" type="primary" @click="emit('wechat-login')">
-            {{ t('channel.wechat.scanLogin') }}
-          </NButton>
-          <template v-else>
-            <NButton size="tiny" quaternary @click="emit('wechat-test')">{{ t('channel.test') }}</NButton>
-            <NButton size="tiny" quaternary type="error" @click="emit('wechat-logout')">{{ t('channel.wechat.logout') }}</NButton>
-          </template>
+          <NButton size="tiny" type="primary" @click.stop="emit('wechat-configure')">{{ t('channel.configure') }}</NButton>
         </div>
       </template>
       <template v-else-if="!hasConfig">
@@ -141,7 +140,7 @@ onUnmounted(() => {
           />
         </div>
         <div class="action-buttons">
-          <NButton size="tiny" quaternary @click="emit('test', { descriptor, config: props.config! })">
+          <NButton v-if="supportsTest" size="tiny" quaternary @click="emit('test', { descriptor, config: props.config! })">
             {{ t('channel.test') }}
           </NButton>
           <NButton size="tiny" quaternary @click="emit('edit', { descriptor, config: props.config! })">
@@ -171,6 +170,8 @@ onUnmounted(() => {
   border-color: var(--primary-color);
   box-shadow: var(--shadow-md);
 }
+.channel-card.interactive { cursor: pointer; }
+.channel-card.interactive:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .channel-card.unavailable {
   opacity: 0.85;
 }
@@ -179,12 +180,6 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-}
-
-.channel-icon {
-  font-size: 28px;
-  line-height: 1;
-  flex-shrink: 0;
 }
 
 .card-titles {

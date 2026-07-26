@@ -74,7 +74,7 @@ async function handleSend() {
           <NInput
             v-model:value="text"
             size="small"
-            :placeholder="'Pi 频道测试消息 ✅'"
+            :placeholder="t('channel.wechat.testDefaultText')"
           />
         </label>
         <p class="hint">{{ t('channel.wechat.consentHint') }}</p>

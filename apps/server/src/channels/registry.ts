@@ -21,10 +21,9 @@ export function getRegistry(): ChannelRegistry {
   return ChannelRegistryHolder.get();
 }
 
-// Rebuild the in-memory registry from persisted DB rows. Called on server
-// startup and whenever a config is created/updated/deleted. Adapters are
-// loaded with eventMode 'off' so no long-lived stream/websocket connection
-// is opened — this iteration is outgoing-only.
+// Rebuild the in-memory registry from persisted DB rows. Enterprise channels
+// start their native long connections only after a processing project has been
+// selected; incomplete legacy configs remain available for outgoing tests.
 export async function rebuildAdapters(configs: ChannelConfigDto[]): Promise<void> {
   const reg = getRegistry();
   try {
@@ -41,11 +40,14 @@ export async function rebuildAdapters(configs: ChannelConfigDto[]): Promise<void
   }
   for (const cfg of configs) {
     if (!cfg.enabled) continue;
+    // Personal WeChat uses its own QR worker and inbound Pi bridge rather than
+    // the generic webhook adapter registry.
+    if (cfg.type === "wechat") continue;
+    const hasProject = typeof cfg.config.projectId === "string" && cfg.config.projectId.trim() !== "";
     const adapterConfig = {
       ...cfg.config,
       type: cfg.type,
-      // Force outgoing-only mode — we don't run startListening().
-      eventMode: "off",
+      eventMode: hasProject ? (cfg.type === "dingtalk" ? "stream" : "websocket") : "off",
     };
     try {
       await reg.loadAdapter(cfg.id, adapterConfig as any, process.cwd());
@@ -59,10 +61,16 @@ export async function rebuildAdapters(configs: ChannelConfigDto[]): Promise<void
   }
 }
 
+/** Starts long connections after their adapters and incoming handler exist. */
+export async function startChannelListeners(): Promise<void> {
+  await getRegistry().startListening();
+}
+
 export async function sendToChannel(
   channelId: string,
   text: string,
   recipient?: string,
+  metadata?: Record<string, unknown>,
 ): Promise<ChannelTestResult> {
   const reg = getRegistry();
   const adapter = reg.getAdapter(channelId);
@@ -77,6 +85,7 @@ export async function sendToChannel(
       adapter: channelId,
       recipient: recipient ?? "default",
       text,
+      ...(metadata ? { metadata } : {}),
     });
     return result;
   } catch (err: any) {
