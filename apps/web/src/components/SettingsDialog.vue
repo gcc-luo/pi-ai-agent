@@ -2,14 +2,12 @@
 import { NModal, NSwitch } from "naive-ui";
 import { useI18n } from "../i18n/index.js";
 import { useThemeStore } from "../stores/theme.js";
-import { useModeStore } from "../stores/mode.js";
 
 defineProps<{ show: boolean }>();
 defineEmits<{ (e: "close"): void }>();
 
 const { t, currentLocale, toggleLocale } = useI18n();
 const themeStore = useThemeStore();
-const modeStore = useModeStore();
 </script>
 
 <template>
@@ -43,24 +41,6 @@ const modeStore = useModeStore();
           <NSwitch :value="themeStore.isDark" @update:value="themeStore.toggle()" />
         </div>
 
-        <div class="setting-row">
-          <div class="setting-info">
-            <span class="setting-label">{{ t('settings.workMode') }}</span>
-            <span class="setting-desc">{{ t('settings.workModeDesc') }}</span>
-          </div>
-          <div class="mode-switch">
-            <button
-              class="mode-btn"
-              :class="{ active: !modeStore.isCoding }"
-              @click="modeStore.set('office')"
-            >{{ t('settings.modeOffice') }}</button>
-            <button
-              class="mode-btn"
-              :class="{ active: modeStore.isCoding }"
-              @click="modeStore.set('coding')"
-            >{{ t('settings.modeCoding') }}</button>
-          </div>
-        </div>
       </div>
     </div>
   </NModal>
@@ -163,34 +143,4 @@ const modeStore = useModeStore();
   color: var(--accent);
 }
 
-.mode-switch {
-  display: flex;
-  gap: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.mode-btn {
-  padding: 6px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-.mode-btn:first-child {
-  border-right: 1px solid var(--border-default);
-}
-.mode-btn:hover {
-  color: var(--text-primary);
-}
-.mode-btn.active {
-  background: var(--accent, var(--primary-color));
-  color: #fff;
-}
 </style>

@@ -305,6 +305,20 @@ function closePreview() {
                   class="model-select"
                   @update:value="agent.switchModel($event)"
                 />
+                <div class="workspace-mode-switch" role="group" :aria-label="t('settings.workMode')">
+                  <button
+                    type="button"
+                    class="workspace-mode-btn"
+                    :class="{ active: !modeStore.isCoding }"
+                    @click="modeStore.set('office')"
+                  >{{ t('settings.modeOffice') }}</button>
+                  <button
+                    type="button"
+                    class="workspace-mode-btn"
+                    :class="{ active: modeStore.isCoding }"
+                    @click="modeStore.set('coding')"
+                  >{{ t('settings.modeCoding') }}</button>
+                </div>
                 <span class="connection-status" :class="connection.status">
                   <span class="conn-dot" />
                   {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
@@ -448,6 +462,32 @@ function closePreview() {
 .model-select :deep(.n-base-selection-input) {
   background: transparent;
 }
+
+.workspace-mode-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.workspace-mode-btn {
+  min-width: 52px;
+  padding: 5px 9px;
+  border: 0;
+  border-right: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.workspace-mode-btn:last-child { border-right: 0; }
+.workspace-mode-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.workspace-mode-btn.active { background: var(--accent); color: #fff; }
 
 .connection-status {
   display: flex;
