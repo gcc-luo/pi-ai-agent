@@ -181,7 +181,8 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 28px 0;
+  padding: 32px 48px 24px;
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 .kb-header-text {
@@ -191,20 +192,19 @@ function formatTime(ts: number): string {
 }
 .kb-title {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 .kb-subtitle {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 /* ─── Toolbar ─── */
 .kb-toolbar {
-  padding: 16px 28px 0;
+  padding: 16px 48px 0;
   flex-shrink: 0;
 }
 .kb-search-input {
@@ -215,7 +215,7 @@ function formatTime(ts: number): string {
 .kb-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 28px 24px;
+  padding: 16px 48px 24px;
 }
 .kb-state {
   display: flex;

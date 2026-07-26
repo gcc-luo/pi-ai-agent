@@ -430,7 +430,8 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
   align-items: center;
   width: 100%;
   box-sizing: border-box;
-  padding: 20px 28px 0;
+  padding: 32px 48px 24px;
+  border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 .tasks-header-text {
@@ -440,15 +441,14 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 }
 .tasks-title {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 .tasks-subtitle {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 .tasks-create-button {
   margin-left: auto;
@@ -459,7 +459,7 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 .tasks-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 28px 12px;
+  padding: 16px 48px 12px;
 }
 .tasks-state {
   display: flex;

@@ -330,7 +330,7 @@ watch(activeTab, (tab) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 20px 28px 0;
+  padding: 32px 48px 0;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-deep);
   flex-shrink: 0;
@@ -338,15 +338,14 @@ watch(activeTab, (tab) => {
 .ss-header-text { display: flex; flex-direction: column; gap: 4px; }
 .ss-title {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 .ss-subtitle {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 .ss-tabs {
   margin-top: 4px;

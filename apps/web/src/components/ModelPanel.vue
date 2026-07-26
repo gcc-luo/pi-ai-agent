@@ -254,7 +254,7 @@ function setDefault(id: string) {
   flex-direction: column;
   background: var(--bg-surface);
   overflow-y: auto;
-  padding: 28px 32px;
+  padding: 32px 48px;
 }
 
 .model-header {
@@ -269,11 +269,10 @@ function setDefault(id: string) {
 }
 
 .model-title {
-  font-family: var(--font-mono);
-  font-size: 20px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .add-btn {
