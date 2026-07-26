@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, h, nextTick } from "vue";
-import { NTree, NModal, NInput, NRadioGroup, NRadio } from "naive-ui";
+import { NTree, NModal, NInput, NRadioGroup, NRadio, NDropdown } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import { useAgentStore } from "../stores/agent.js";
@@ -89,8 +89,38 @@ function toTree(nodes: FileNodeDto[]): TreeOption[] {
           },
         }, [deleteIcon]),
       ]),
+    nodeProps: () => ({
+      onContextmenu: (e: MouseEvent) => onContextMenu(n, e),
+    }),
     children: n.children ? toTree(n.children) : undefined,
   }));
+}
+
+// ─── Context menu: Reveal in Folder / Open With... ───
+const ctxMenu = ref<{ show: boolean; x: number; y: number; path: string }>({
+  show: false, x: 0, y: 0, path: "",
+});
+
+const ctxMenuOptions = [
+  { label: t("file.revealInFolder"), key: "reveal" },
+  { label: t("file.openWith"), key: "openWith" },
+];
+
+function onContextMenu(node: FileNodeDto, e: MouseEvent) {
+  if (node.type !== "file") return;
+  e.preventDefault();
+  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, path: node.path };
+}
+
+async function onCtxMenuSelect(key: string) {
+  const p = ctxMenu.value.path;
+  ctxMenu.value = { ...ctxMenu.value, show: false };
+  if (!p) return;
+  try {
+    await api.openFile(props.projectId, p, key as "reveal" | "openWith");
+  } catch (err: any) {
+    alert(t("file.openError") + ": " + (err?.message ?? String(err)));
+  }
 }
 
 async function load() {
@@ -273,6 +303,16 @@ defineExpose({ startCreate, refresh: load });
 
 <template>
   <div class="file-tree">
+    <NDropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :show="ctxMenu.show"
+      :options="ctxMenuOptions"
+      @select="onCtxMenuSelect"
+      @clickoutside="() => { ctxMenu.show = false; }"
+    />
     <NTree
       :data="treeData"
       :selected-keys="selectedKeys"

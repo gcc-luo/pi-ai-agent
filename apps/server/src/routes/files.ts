@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import type { ArtifactItem, ArtifactValidation, FileContentDto, FileNodeDto } from "@pi-web-ui/shared";
 
 // MIME types for the raw streaming endpoint. Only common previewable formats
@@ -183,6 +184,70 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(500).send({ error: e.message });
     }
   });
+
+  // Open a file in the OS file manager or trigger the "Open With..." picker.
+  // The spawn is detached and unref'd so the HTTP response returns immediately
+  // while the OS dialog may still be blocking the child process.
+  app.post<{ Params: { projectId: string }; Body: { path?: string; action?: "reveal" | "openWith" } }>(
+    "/files/:projectId/open",
+    async (req, reply) => {
+      const project = app.projects.findById(req.params.projectId);
+      if (!project) return reply.code(404).send({ error: "project not found" });
+      const rel = req.body?.path;
+      const action = req.body?.action;
+      if (!rel || (action !== "reveal" && action !== "openWith")) {
+        return reply.code(400).send({ ok: false, error: "invalid path or action" });
+      }
+      const abs = resolveSafe(project.workdir, rel);
+      if (!abs) return reply.code(400).send({ ok: false, error: "bad path" });
+
+      try {
+        if (action === "reveal") {
+          switch (process.platform) {
+            case "darwin":
+              spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
+              break;
+            case "win32":
+              spawn(
+                "explorer.exe",
+                ["/select," + abs.replace(/\//g, "\\")],
+                { detached: true, stdio: "ignore" },
+              ).unref();
+              break;
+            default:
+              spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
+              break;
+          }
+        } else {
+          // action === "openWith"
+          switch (process.platform) {
+            case "darwin": {
+              const escaped = abs.replace(/"/g, '\\"');
+              const script =
+                `set chosenApp to choose application\n` +
+                `do shell script "open -a \\"" & (POSIX path of (chosenApp as alias)) & "\\" \\"${escaped}\\""`;
+              spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
+              break;
+            }
+            case "win32":
+              spawn(
+                "rundll32.exe",
+                ["shell32.dll,OpenAs_RunDLL", abs.replace(/\//g, "\\")],
+                { detached: true, stdio: "ignore" },
+              ).unref();
+              break;
+            default:
+              app.log.warn("openWith: no standard picker on this platform, falling back to xdg-open");
+              spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
+              break;
+          }
+        }
+        return { ok: true };
+      } catch (e: any) {
+        return reply.code(500).send({ ok: false, error: e.message });
+      }
+    },
+  );
 
   // Validate artifact files declared by the agent in <artifacts> blocks.
   // Checks each file exists within the project workdir and returns its size.

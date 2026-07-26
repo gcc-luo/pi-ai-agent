@@ -226,6 +226,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     // File actions
     "file.new": "New file",
     "file.refresh": "Refresh",
+    "file.revealInFolder": "Reveal in Folder",
+    "file.openWith": "Open With...",
+    "file.openError": "Failed to open file",
     "file.renameTitle": "Rename File",
     "file.renameLabel": "New name",
     "file.renamePlaceholder": "New name...",
@@ -782,6 +785,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     // 文件操作
     "file.new": "新建",
     "file.refresh": "刷新",
+    "file.revealInFolder": "在文件夹中显示",
+    "file.openWith": "打开方式...",
+    "file.openError": "打开文件失败",
     "file.renameTitle": "重命名文件",
     "file.renameLabel": "新名称",
     "file.renamePlaceholder": "新文件名...",
