@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { NButton, NSpin, NEmpty, useMessage } from "naive-ui";
+import { NInput, NSpin, NEmpty, useMessage } from "naive-ui";
 import { useChannelStore } from "../stores/channel.js";
 import { useI18n } from "../i18n/index.js";
-import { api } from "../api/client.js";
 import type { ChannelConfigDto, ChannelDescriptor } from "@pi-web-ui/shared";
 import ChannelCard from "./ChannelCard.vue";
 import ChannelConfigDialog from "./ChannelConfigDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
-import WeChatLoginDialog from "./WeChatLoginDialog.vue";
-import WeChatTestDialog from "./WeChatTestDialog.vue";
+import WeChatChannelDrawer from "./WeChatChannelDrawer.vue";
 
 const store = useChannelStore();
 const { t } = useI18n();
@@ -20,8 +18,7 @@ const configDescriptor = ref<ChannelDescriptor | null>(null);
 const configExisting = ref<ChannelConfigDto | null>(null);
 const deleteTarget = ref<ChannelConfigDto | null>(null);
 const testingId = ref<string | null>(null);
-const showWeChatLogin = ref(false);
-const showWeChatTest = ref(false);
+const showWeChatDrawer = ref(false);
 
 onMounted(() => store.loadAll());
 
@@ -48,7 +45,7 @@ async function confirmDelete() {
     await store.remove(id);
     message.success(t("file.deleted"));
   } catch (e: any) {
-    message.error(e?.message ?? "Delete failed");
+    message.error(e?.message ?? t("channel.deleteFailed"));
   } finally {
     deleteTarget.value = null;
   }
@@ -58,7 +55,7 @@ async function handleToggle(payload: { descriptor: ChannelDescriptor; config: Ch
   try {
     await store.update(payload.config.id, { enabled: payload.enabled });
   } catch (e: any) {
-    message.error(e?.message ?? "Update failed");
+    message.error(e?.message ?? t("channel.updateFailed"));
     await store.loadAll();
   }
 }
@@ -79,28 +76,33 @@ async function handleTest(payload: { descriptor: ChannelDescriptor; config: Chan
   }
 }
 
-function handleWeChatLogin() {
-  showWeChatLogin.value = true;
-}
-
-function handleWeChatTest() {
-  showWeChatTest.value = true;
-}
-
-async function handleWeChatLogout() {
-  try {
-    await api.wechatLogout();
-    message.success(t("channel.wechat.loggedOut"));
-  } catch (e: any) {
-    message.error(e?.message ?? t("channel.wechat.loginFailed"));
-  }
-}
-
 // The wechat card derives its state from the worker, not the configs DB.
 // No DB row is auto-created for it — the descriptor alone drives its presence.
-const cards = computed(() =>
+const allCards = computed(() =>
   store.descriptors.map((d) => ({ descriptor: d, config: store.configFor(d.type) })),
 );
+
+const searchQuery = ref("");
+
+// Fuzzy match by channel label, type key, or user-set config name.
+function matchesQuery(label: string, type: string, configName: string | undefined, q: string): boolean {
+  if (!q) return true;
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  if (label.toLowerCase().includes(needle)) return true;
+  if (type.toLowerCase().includes(needle)) return true;
+  if (configName && configName.toLowerCase().includes(needle)) return true;
+  return false;
+}
+
+const cards = computed(() => {
+  const q = searchQuery.value;
+  return allCards.value.filter((item) =>
+    matchesQuery(item.descriptor.label, item.descriptor.type, item.config?.name, q),
+  );
+});
+
+const wechatConfig = computed(() => store.configFor("wechat"));
 </script>
 
 <template>
@@ -111,17 +113,28 @@ const cards = computed(() =>
         <p class="channel-subtitle">{{ t('channel.subtitle') }}</p>
       </div>
       <div class="channel-header-actions">
-        <NButton size="small" quaternary :loading="store.loading" @click="store.loadAll()">
-          {{ t('file.refresh') }}
-        </NButton>
+        <NInput
+          v-model:value="searchQuery"
+          size="small"
+          clearable
+          :placeholder="t('channel.search')"
+          class="channel-search"
+        />
       </div>
     </header>
 
     <div v-if="store.loading" class="channel-state">
       <NSpin size="medium" />
     </div>
-    <div v-else-if="cards.length === 0" class="channel-state">
+    <div v-else-if="allCards.length === 0" class="channel-state">
       <NEmpty :description="t('channel.noConfig')" />
+    </div>
+    <div v-else-if="cards.length === 0" class="channel-state">
+      <NEmpty>
+        <template #default>
+          {{ t('channel.noResults', { query: searchQuery }) }}
+        </template>
+      </NEmpty>
     </div>
     <div v-else class="channel-grid">
       <ChannelCard
@@ -134,9 +147,7 @@ const cards = computed(() =>
         @delete="requestDelete"
         @toggle-enabled="handleToggle"
         @test="handleTest"
-        @wechat-login="handleWeChatLogin"
-        @wechat-test="handleWeChatTest"
-        @wechat-logout="handleWeChatLogout"
+        @wechat-configure="showWeChatDrawer = true"
       />
     </div>
 
@@ -159,14 +170,11 @@ const cards = computed(() =>
       @confirm="confirmDelete"
     />
 
-    <WeChatLoginDialog
-      :show="showWeChatLogin"
-      @update:show="showWeChatLogin = $event"
-    />
-
-    <WeChatTestDialog
-      :show="showWeChatTest"
-      @update:show="showWeChatTest = $event"
+    <WeChatChannelDrawer
+      :show="showWeChatDrawer"
+      :config="wechatConfig"
+      @update:show="showWeChatDrawer = $event"
+      @saved="store.loadAll()"
     />
   </div>
 </template>
@@ -213,6 +221,10 @@ const cards = computed(() =>
   gap: 8px;
 }
 
+.channel-search {
+  width: 240px;
+}
+
 .channel-state {
   flex: 1;
   display: flex;
@@ -226,8 +238,21 @@ const cards = computed(() =>
   overflow-y: auto;
   padding: 24px 48px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   align-content: start;
+}
+
+@media (max-width: 1500px) {
+  .channel-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1120px) {
+  .channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .channel-header { padding: 24px; }
+  .channel-grid { grid-template-columns: 1fr; padding: 16px 24px; }
 }
 </style>
