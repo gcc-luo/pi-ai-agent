@@ -375,3 +375,38 @@ export interface ArtifactValidation {
   size: number | null;
   mimeType: string;
 }
+
+// ─── Channels ───
+
+export type ChannelType = "dingtalk" | "wecom" | "wechat";
+
+export type ChannelConfigField =
+  | { kind: "string"; key: string; label: string; required?: boolean; placeholder?: string; secret?: boolean }
+  | { kind: "text"; key: string; label: string; required?: boolean; placeholder?: string; secret?: boolean }
+  | { kind: "boolean"; key: string; label: string };
+
+export interface ChannelDescriptor {
+  type: ChannelType;
+  label: string;
+  /** Emoji or short text shown next to the label on the card. */
+  icon: string;
+  description: string;
+  /** false marks the channel as a placeholder (no config flow yet). */
+  available: boolean;
+  configSchema: ChannelConfigField[];
+}
+
+export interface ChannelConfigDto {
+  id: string;
+  type: ChannelType;
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ChannelTestResult {
+  ok: boolean;
+  error?: string;
+}

@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@amaster.ai/pi-channels": "0.1.6",
     "@fastify/cors": "11.3.0",
     "@fastify/multipart": "10.1.0",
     "@fastify/websocket": "11.3.0",

@@ -42,6 +42,9 @@ import { ScheduledTaskRepository, TaskLogRepository } from "./db/repositories/sc
 import { TaskScheduler } from "./services/task-scheduler.js";
 import { TaskExecutor } from "./services/task-executor.js";
 import { scheduledTasksRoutes } from "./routes/scheduled-tasks.js";
+import { ChannelRepository } from "./db/repositories/channel.js";
+import { channelsRoutes } from "./routes/channels.js";
+import { rebuildAdapters } from "./channels/registry.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -70,6 +73,7 @@ export async function buildConfiguredApp(config: Config) {
   const experts = new ExpertRepository(db);
   const scheduledTasks = new ScheduledTaskRepository(db);
   const taskLogs = new TaskLogRepository(db);
+  const channels = new ChannelRepository(db);
 
   // Seed preset experts (idempotent — adds only presets not yet present).
   experts.seedPresets([
@@ -108,7 +112,7 @@ export async function buildConfiguredApp(config: Config) {
   const app = await buildApp(config, {
     db, projects, sessions, messages, models, sessionStates, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
-    scheduledTasks, taskLogs, config,
+    scheduledTasks, taskLogs, channels, config,
   });
   const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, sessionRootDir: config.piSessionRootDir, logger: app.log });
   (app as any).processManager = processManager;
@@ -136,6 +140,12 @@ export async function buildConfiguredApp(config: Config) {
   app.addHook("onClose", async () => {
     sweeper.stop();
     await tuiProcessManager.shutdown();
+    try {
+      const { getRegistry } = await import("./channels/registry.js");
+      await getRegistry().stopAll();
+    } catch {
+      // best-effort shutdown
+    }
   });
 
   await app.register(projectsRoutes, { prefix: "/api/projects" });
@@ -152,6 +162,11 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
+  await app.register(channelsRoutes, { prefix: "/api/channels" });
+
+  // Rebuild channel adapters from persisted configs so test/send works
+  // immediately after restart without a re-save.
+  await rebuildAdapters(channels.list());
 
   // Scheduled tasks
   const taskExecutor = new TaskExecutor(sessions, projects, models, messages, scheduledTasks, processManager, app.log);

@@ -241,6 +241,20 @@ const MIGRATIONS = [
       ALTER TABLE scheduled_tasks ADD COLUMN session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
     `,
   },
+  {
+    name: "015_channels",
+    sql: `
+      CREATE TABLE channels (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        config TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

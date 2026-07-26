@@ -4,6 +4,7 @@ import type {
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
   ScheduledTaskDto, TaskLogDto, TaskType,
   ArtifactItem, ArtifactValidation,
+  ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -204,4 +205,18 @@ export const api = {
     request<TaskLogDto[]>("GET", `/scheduled-tasks/${id}/logs${limit ? `?limit=${limit}` : ""}`),
   runScheduledTask: (id: string) =>
     request<{ message: string }>("POST", `/scheduled-tasks/${id}/run`),
+
+  // ─── Channels ───
+  listChannelDescriptors: () =>
+    request<ChannelDescriptor[]>("GET", "/channels/descriptors"),
+  listChannelConfigs: () =>
+    request<ChannelConfigDto[]>("GET", "/channels/configs"),
+  createChannelConfig: (data: { type: ChannelType; name: string; enabled?: boolean; config: Record<string, unknown> }) =>
+    request<ChannelConfigDto>("POST", "/channels/configs", data),
+  updateChannelConfig: (id: string, patch: { name?: string; enabled?: boolean; config?: Record<string, unknown> }) =>
+    request<ChannelConfigDto>("PUT", `/channels/configs/${id}`, patch),
+  deleteChannelConfig: (id: string) =>
+    request<void>("DELETE", `/channels/configs/${id}`),
+  testChannelConfig: (id: string, payload: { text?: string; recipient?: string }) =>
+    request<ChannelTestResult>("POST", `/channels/configs/${id}/test`, payload),
 };
