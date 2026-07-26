@@ -17,6 +17,7 @@
     "@fastify/multipart": "10.1.0",
     "@fastify/websocket": "11.3.0",
     "@pi-web-ui/shared": "workspace:*",
+    "@wechatbot/wechatbot": "2.2.0",
     "adm-zip": "0.6.0",
     "better-sqlite3": "12.4.1",
     "croner": "10.0.1",
@@ -28,6 +29,7 @@
     "nodejieba": "3.5.8",
     "pino": "9.3.2",
     "pino-pretty": "11.2.2",
+    "qrcode": "1.5.4",
     "ulid": "2.3.0",
     "unpdf": "1.6.2"
   },
@@ -35,6 +37,7 @@
     "@types/adm-zip": "0.5.8",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "20.14.10",
+    "@types/qrcode": "1.5.6",
     "@types/ws": "8.5.10",
     "tsx": "4.16.2",
     "typescript": "5.5.4",

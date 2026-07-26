@@ -45,6 +45,7 @@ import { scheduledTasksRoutes } from "./routes/scheduled-tasks.js";
 import { ChannelRepository } from "./db/repositories/channel.js";
 import { channelsRoutes } from "./routes/channels.js";
 import { rebuildAdapters } from "./channels/registry.js";
+import { getWeChatWorker } from "./channels/wechat-worker.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -167,6 +168,12 @@ export async function buildConfiguredApp(config: Config) {
   // Rebuild channel adapters from persisted configs so test/send works
   // immediately after restart without a re-save.
   await rebuildAdapters(channels.list());
+
+  // Lazy-init WeChat worker — if cached creds exist in the session dir,
+  // login() resumes without a QR scan. Non-blocking; never await on startup.
+  void getWeChatWorker().ensureStarted().catch((err) => {
+    console.error("[wechat] failed to auto-resume:", err);
+  });
 
   // Scheduled tasks
   const taskExecutor = new TaskExecutor(sessions, projects, models, messages, scheduledTasks, processManager, app.log);

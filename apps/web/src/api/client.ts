@@ -219,4 +219,19 @@ export const api = {
     request<void>("DELETE", `/channels/configs/${id}`),
   testChannelConfig: (id: string, payload: { text?: string; recipient?: string }) =>
     request<ChannelTestResult>("POST", `/channels/configs/${id}/test`, payload),
+
+  // ─── WeChat channel (QR login flow) ───
+  wechatStartLogin: () => request<{ ok: boolean }>("POST", "/channels/wechat/login"),
+  wechatStatus: () =>
+    request<{
+      state: "idle" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
+      qrUrl?: string;
+      qrDataUrl?: string;
+      userId?: string;
+      lastQrUrl?: string;
+      error?: string;
+    }>("GET", "/channels/wechat/status"),
+  wechatLogout: () => request<{ ok: boolean }>("POST", "/channels/wechat/logout"),
+  wechatTest: (userId: string, text?: string) =>
+    request<{ ok: boolean; error?: string }>("POST", "/channels/wechat/test", { userId, text }),
 };

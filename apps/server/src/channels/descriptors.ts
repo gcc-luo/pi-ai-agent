@@ -29,8 +29,8 @@ export const CHANNEL_DESCRIPTORS: ChannelDescriptor[] = [
     type: "wechat",
     label: "微信",
     icon: "💚",
-    description: "需独立 SDK (@wechatbot/wechatbot),架构为扫码登录长驻进程,后续按需扩展",
-    available: false,
+    description: "通过 @wechatbot/wechatbot SDK 扫码登录个人微信号,推送到已给 bot 发过消息的用户",
+    available: true,
     configSchema: [],
   },
 ];

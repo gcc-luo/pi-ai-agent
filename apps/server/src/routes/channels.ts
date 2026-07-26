@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import type { ChannelType } from "@pi-web-ui/shared";
 import { CHANNEL_DESCRIPTORS } from "../channels/descriptors.js";
 import { getRegistry, rebuildAdapters, sendToChannel } from "../channels/registry.js";
+import { getWeChatWorker } from "../channels/wechat-worker.js";
 
 export const channelsRoutes: FastifyPluginAsync = async (app) => {
   // Static channel descriptors (card metadata + config schema)
@@ -71,5 +72,29 @@ export const channelsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/status", async () => {
     const reg = getRegistry();
     return { adapters: reg.list(), errors: reg.getErrors() };
+  });
+
+  // ─── WeChat channel (QR login flow, separate from webhook-style configs) ───
+  app.post("/wechat/login", async () => {
+    await getWeChatWorker().startLogin();
+    return { ok: true };
+  });
+
+  app.get("/wechat/status", async () => {
+    return getWeChatWorker().getStatus();
+  });
+
+  app.post("/wechat/logout", async () => {
+    getWeChatWorker().stop();
+    return { ok: true };
+  });
+
+  app.post("/wechat/test", async (req, reply) => {
+    const { userId, text } = (req.body as { userId?: string; text?: string }) ?? {};
+    if (!userId) {
+      reply.code(400);
+      return { ok: false, error: "userId (wxid) is required" };
+    }
+    return await getWeChatWorker().sendTest(userId, text ?? "Pi 频道测试消息 ✅");
   });
 };

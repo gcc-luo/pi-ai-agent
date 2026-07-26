@@ -3,10 +3,13 @@ import { computed, onMounted, ref } from "vue";
 import { NButton, NSpin, NEmpty, useMessage } from "naive-ui";
 import { useChannelStore } from "../stores/channel.js";
 import { useI18n } from "../i18n/index.js";
+import { api } from "../api/client.js";
 import type { ChannelConfigDto, ChannelDescriptor } from "@pi-web-ui/shared";
 import ChannelCard from "./ChannelCard.vue";
 import ChannelConfigDialog from "./ChannelConfigDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import WeChatLoginDialog from "./WeChatLoginDialog.vue";
+import WeChatTestDialog from "./WeChatTestDialog.vue";
 
 const store = useChannelStore();
 const { t } = useI18n();
@@ -17,6 +20,8 @@ const configDescriptor = ref<ChannelDescriptor | null>(null);
 const configExisting = ref<ChannelConfigDto | null>(null);
 const deleteTarget = ref<ChannelConfigDto | null>(null);
 const testingId = ref<string | null>(null);
+const showWeChatLogin = ref(false);
+const showWeChatTest = ref(false);
 
 onMounted(() => store.loadAll());
 
@@ -74,8 +79,25 @@ async function handleTest(payload: { descriptor: ChannelDescriptor; config: Chan
   }
 }
 
-// Hide wechat from the grid? No — show it as a placeholder, the descriptor
-// already carries available:false which the card renders as "coming soon".
+function handleWeChatLogin() {
+  showWeChatLogin.value = true;
+}
+
+function handleWeChatTest() {
+  showWeChatTest.value = true;
+}
+
+async function handleWeChatLogout() {
+  try {
+    await api.wechatLogout();
+    message.success(t("channel.wechat.loggedOut"));
+  } catch (e: any) {
+    message.error(e?.message ?? t("channel.wechat.loginFailed"));
+  }
+}
+
+// The wechat card derives its state from the worker, not the configs DB.
+// No DB row is auto-created for it — the descriptor alone drives its presence.
 const cards = computed(() =>
   store.descriptors.map((d) => ({ descriptor: d, config: store.configFor(d.type) })),
 );
@@ -112,6 +134,9 @@ const cards = computed(() =>
         @delete="requestDelete"
         @toggle-enabled="handleToggle"
         @test="handleTest"
+        @wechat-login="handleWeChatLogin"
+        @wechat-test="handleWeChatTest"
+        @wechat-logout="handleWeChatLogout"
       />
     </div>
 
@@ -132,6 +157,16 @@ const cards = computed(() =>
       :danger="true"
       @close="deleteTarget = null"
       @confirm="confirmDelete"
+    />
+
+    <WeChatLoginDialog
+      :show="showWeChatLogin"
+      @update:show="showWeChatLogin = $event"
+    />
+
+    <WeChatTestDialog
+      :show="showWeChatTest"
+      @update:show="showWeChatTest = $event"
     />
   </div>
 </template>
