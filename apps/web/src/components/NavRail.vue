@@ -94,9 +94,9 @@ const showSettings = ref(false);
         @click="$emit('navigate', 'channels')"
       >
         <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M3 4h7a4 4 0 014 4v0a4 4 0 01-4 4H6l-3 3V4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-          <path d="M6.5 8h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          <path d="M14 4.5l1.5-.8v3.6l-1.5-.8" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          <rect x="4.25" y="1.5" width="9.5" height="15" rx="2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M6.8 7.1l1.7 1.6-1.7 1.6M10 10.3h1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 13.7h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
         <span class="nav-label">{{ t('nav.channels') }}</span>
       </button>

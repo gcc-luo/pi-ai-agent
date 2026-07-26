@@ -8,6 +8,7 @@ import ChannelCard from "./ChannelCard.vue";
 import ChannelConfigDialog from "./ChannelConfigDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import WeChatChannelDrawer from "./WeChatChannelDrawer.vue";
+import DingTalkChannelDrawer from "./DingTalkChannelDrawer.vue";
 
 const store = useChannelStore();
 const { t } = useI18n();
@@ -19,6 +20,7 @@ const configExisting = ref<ChannelConfigDto | null>(null);
 const deleteTarget = ref<ChannelConfigDto | null>(null);
 const testingId = ref<string | null>(null);
 const showWeChatDrawer = ref(false);
+const showDingTalkDrawer = ref(false);
 
 onMounted(() => store.loadAll());
 
@@ -103,6 +105,7 @@ const cards = computed(() => {
 });
 
 const wechatConfig = computed(() => store.configFor("wechat"));
+const dingtalkConfig = computed(() => store.configFor("dingtalk"));
 </script>
 
 <template>
@@ -148,6 +151,7 @@ const wechatConfig = computed(() => store.configFor("wechat"));
         @toggle-enabled="handleToggle"
         @test="handleTest"
         @wechat-configure="showWeChatDrawer = true"
+        @dingtalk-configure="showDingTalkDrawer = true"
       />
     </div>
 
@@ -174,6 +178,12 @@ const wechatConfig = computed(() => store.configFor("wechat"));
       :show="showWeChatDrawer"
       :config="wechatConfig"
       @update:show="showWeChatDrawer = $event"
+      @saved="store.loadAll()"
+    />
+    <DingTalkChannelDrawer
+      :show="showDingTalkDrawer"
+      :config="dingtalkConfig"
+      @update:show="showDingTalkDrawer = $event"
       @saved="store.loadAll()"
     />
   </div>

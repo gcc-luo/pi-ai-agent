@@ -18,6 +18,7 @@ const emit = defineEmits<{
   (e: "toggle-enabled", payload: { descriptor: ChannelDescriptor; config: ChannelConfigDto; enabled: boolean }): void;
   (e: "test", payload: { descriptor: ChannelDescriptor; config: ChannelConfigDto }): void;
   (e: "wechat-configure"): void;
+  (e: "dingtalk-configure"): void;
 }>();
 
 const { t } = useI18n();
@@ -37,6 +38,7 @@ const wechatStatus = ref<WeChatStatus>({ state: "idle" });
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const isWeChat = computed(() => props.descriptor.type === "wechat");
+const isDingTalk = computed(() => props.descriptor.type === "dingtalk");
 const channelLabel = computed(() => t(`channel.${props.descriptor.type}.label`));
 const channelDescription = computed(() => t(`channel.${props.descriptor.type}.description`));
 const supportsTest = computed(() => props.descriptor.type !== "dingtalk");
@@ -64,11 +66,11 @@ onUnmounted(() => {
 <template>
   <div
     class="channel-card"
-    :class="{ unavailable: !descriptor.available, interactive: isWeChat }"
-    :role="isWeChat ? 'button' : undefined"
-    :tabindex="isWeChat ? 0 : undefined"
-    @click="isWeChat && emit('wechat-configure')"
-    @keydown.enter="isWeChat && emit('wechat-configure')"
+    :class="{ unavailable: !descriptor.available, interactive: isWeChat || isDingTalk }"
+    :role="isWeChat || isDingTalk ? 'button' : undefined"
+    :tabindex="isWeChat || isDingTalk ? 0 : undefined"
+    @click="isWeChat ? emit('wechat-configure') : isDingTalk && emit('dingtalk-configure')"
+    @keydown.enter="isWeChat ? emit('wechat-configure') : isDingTalk && emit('dingtalk-configure')"
   >
     <div class="card-header">
       <ChannelBrandIcon :type="descriptor.type" :fallback="descriptor.icon" :label="channelLabel" />
@@ -104,7 +106,7 @@ onUnmounted(() => {
 
     <div class="card-actions">
       <template v-if="!descriptor.available">
-        <NButton size="small" disabled>{{ t('channel.configure') }}</NButton>
+        <NButton size="small" class="channel-primary-action" disabled>{{ t('channel.configure') }}</NButton>
       </template>
       <template v-else-if="isWeChat">
         <div class="wechat-state">
@@ -122,11 +124,17 @@ onUnmounted(() => {
           </template>
         </div>
         <div class="action-buttons">
-          <NButton size="tiny" type="primary" @click.stop="emit('wechat-configure')">{{ t('channel.configure') }}</NButton>
+          <NButton size="small" type="primary" class="channel-primary-action" @click.stop="emit('wechat-configure')">{{ t('channel.configure') }}</NButton>
+        </div>
+      </template>
+      <template v-else-if="isDingTalk">
+        <span class="wechat-hint">{{ hasConfig ? (isEnabled ? t('channel.enabled') : t('channel.disabled')) : t('channel.notConfigured') }}</span>
+        <div class="action-buttons">
+          <NButton size="small" type="primary" class="channel-primary-action" @click.stop="emit('dingtalk-configure')">{{ t('channel.configure') }}</NButton>
         </div>
       </template>
       <template v-else-if="!hasConfig">
-        <NButton size="small" type="primary" @click="emit('configure', descriptor)">
+        <NButton size="small" type="primary" class="channel-primary-action" @click="emit('configure', descriptor)">
           {{ t('channel.createFirst') }}
         </NButton>
       </template>
@@ -232,6 +240,13 @@ onUnmounted(() => {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+:deep(.channel-primary-action) {
+  min-width: 92px;
+  height: 32px;
+  border-radius: 8px;
+  font-weight: 600;
 }
 
 .wechat-state {
