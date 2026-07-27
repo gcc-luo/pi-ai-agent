@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { NButton, NDrawer, NSelect, NSpin, NSwitch, useMessage } from "naive-ui";
 import type { ChannelConfigDto, ProjectDto } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
@@ -62,12 +62,15 @@ async function loadDrawer() {
     const [projectList, conversationList] = await Promise.all([api.listProjects(), api.wechatConversations()]);
     projects.value = projectList;
     conversations.value = conversationList;
-    projectId.value = extractProjectId(props.config);
     enabled.value = props.config?.enabled ?? true;
     await refresh();
   } finally {
     loading.value = false;
   }
+  // Set projectId AFTER the NSelect has rendered with options,
+  // otherwise Naive UI may display the raw value instead of the label.
+  await nextTick();
+  projectId.value = extractProjectId(props.config);
 }
 
 async function startLogin() {
