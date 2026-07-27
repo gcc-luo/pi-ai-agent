@@ -36,7 +36,7 @@ export class ChannelConversationRepository {
   list(channelId: string): ChannelConversation[] {
     return (this.db.prepare(
       "SELECT channel_id, user_id, session_id, updated_at FROM channel_conversations WHERE channel_id = ? ORDER BY updated_at DESC",
-    ).all() as { channel_id: string; user_id: string; session_id: string; updated_at: number }[])
+    ).all(channelId) as { channel_id: string; user_id: string; session_id: string; updated_at: number }[])
       .map((row) => ({ channelId: row.channel_id, userId: row.user_id, sessionId: row.session_id, updatedAt: row.updated_at }));
   }
 }

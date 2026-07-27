@@ -160,6 +160,7 @@ onUnmounted(stopPolling);
           <NDropdown
             :options="projectDropdownOptions"
             :value="projectId"
+            width="trigger"
             trigger="click"
             @select="onProjectSelect"
           >

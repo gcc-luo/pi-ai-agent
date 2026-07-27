@@ -99,6 +99,7 @@ watch(() => props.show, (visible) => { if (visible) void load(); });
           <NDropdown
             :options="projectDropdownOptions"
             :value="projectId"
+            width="trigger"
             trigger="click"
             @select="onProjectSelect"
           >
