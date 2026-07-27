@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from "vue";
-import { NButton, NDrawer, NSelect, NSpin, NSwitch, useMessage } from "naive-ui";
+import { NButton, NDrawer, NDropdown, NSpin, NSwitch, useMessage } from "naive-ui";
 import type { ChannelConfigDto, ProjectDto } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
 import { useChannelStore } from "../stores/channel.js";
@@ -32,12 +32,21 @@ const projectOptions = computed(() =>
   projects.value.map((p) => ({ label: p.name, value: p.id })),
 );
 
-/** Resolved project name for display; falls back to ID if not found. */
+/** Resolved project name for display. */
 const selectedProjectName = computed(() => {
   if (!projectId.value) return null;
   const p = projects.value.find((p) => p.id === projectId.value);
-  return p ? p.name : projectId.value;
+  return p?.name ?? null;
 });
+
+/** Dropdown options for project picker. */
+const projectDropdownOptions = computed(() =>
+  projects.value.map((p) => ({ label: p.name, key: p.id })),
+);
+
+function onProjectSelect(key: string) {
+  projectId.value = key;
+}
 const isLoggedIn = computed(() => status.value.state === "logged_in");
 const statusLabel = computed(() => {
   if (status.value.state === "requesting") return t("channel.wechat.requesting");
@@ -148,12 +157,16 @@ onUnmounted(stopPolling);
             <h3>{{ t('channel.wechat.project') }}</h3>
             <NSwitch :value="enabled" @update:value="(value: boolean) => enabled = value" />
           </div>
-          <NSelect
-            :key="selectedProjectName ?? '__none__'"
-            v-model:value="projectId"
-            :options="projectOptions"
-            :placeholder="t('channel.wechat.projectPlaceholder')"
-          />
+          <NDropdown
+            :options="projectDropdownOptions"
+            :value="projectId"
+            trigger="click"
+            @select="onProjectSelect"
+          >
+            <NButton block class="project-picker-btn">
+              {{ selectedProjectName ?? t('channel.wechat.projectPlaceholder') }}
+            </NButton>
+          </NDropdown>
           <p class="hint">{{ t('channel.wechat.projectHint') }}</p>
         </section>
 
@@ -207,6 +220,7 @@ onUnmounted(stopPolling);
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .section-heading h3 { color: var(--text-primary); font-size: 13px; }
 .hint, .status-text { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.project-picker-btn { justify-content: flex-start !important; font-weight: 500; }
 .qr-section { text-align: center; }
 .qr-section .section-heading { text-align: left; }
 .qr-area { width: 196px; height: 196px; margin: 12px auto 0; display: grid; place-items: center; border-radius: var(--radius-sm); background: #fff; }

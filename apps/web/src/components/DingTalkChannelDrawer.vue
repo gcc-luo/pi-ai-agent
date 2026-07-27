@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { NButton, NDrawer, NInput, NSelect, NSwitch, useMessage } from "naive-ui";
+import { NButton, NDrawer, NDropdown, NInput, NSwitch, useMessage } from "naive-ui";
 import type { ChannelConfigDto, ProjectDto } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
 import { useChannelStore } from "../stores/channel.js";
@@ -26,8 +26,16 @@ const projectOptions = computed(() => projects.value.map((project) => ({ label: 
 const selectedProjectName = computed(() => {
   if (!projectId.value) return null;
   const p = projects.value.find((p) => p.id === projectId.value);
-  return p ? p.name : projectId.value;
+  return p?.name ?? null;
 });
+
+const projectDropdownOptions = computed(() =>
+  projects.value.map((p) => ({ label: p.name, key: p.id })),
+);
+
+function onProjectSelect(key: string) {
+  projectId.value = key;
+}
 
 async function load() {
   const config = props.config;
@@ -88,7 +96,16 @@ watch(() => props.show, (visible) => { if (visible) void load(); });
             <h3>{{ t('channel.dingtalk.field.projectId') }}</h3>
             <NSwitch :value="enabled" @update:value="(value: boolean) => enabled = value" />
           </div>
-          <NSelect :key="selectedProjectName ?? '__none__'" v-model:value="projectId" :options="projectOptions" :placeholder="t('channel.dingtalk.field.projectId.placeholder')" />
+          <NDropdown
+            :options="projectDropdownOptions"
+            :value="projectId"
+            trigger="click"
+            @select="onProjectSelect"
+          >
+            <NButton block class="project-picker-btn">
+              {{ selectedProjectName ?? t('channel.dingtalk.field.projectId.placeholder') }}
+            </NButton>
+          </NDropdown>
           <p class="hint">{{ t('channel.dingtalk.projectHint') }}</p>
         </section>
 
@@ -136,5 +153,6 @@ watch(() => props.show, (visible) => { if (visible) void load(); });
 .field { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .field span { color: var(--text-faint); font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
 .hint { margin: 8px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.project-picker-btn { justify-content: flex-start !important; font-weight: 500; }
 .drawer-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px; border-top: 1px solid var(--border-default); }
 </style>
