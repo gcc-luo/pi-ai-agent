@@ -29,7 +29,15 @@ const saving = ref(false);
 const loading = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-const projectOptions = computed(() => projects.value.map((project) => ({ label: project.name, value: project.id })));
+const projectOptions = computed(() => {
+  const opts = projects.value.map((p) => ({ label: p.name, value: p.id }));
+  // If a projectId is stored but missing from the project list, show its ID
+  // so the user can see something instead of a blank field.
+  if (projectId.value && !opts.some((o) => o.value === projectId.value)) {
+    opts.unshift({ label: projectId.value, value: projectId.value });
+  }
+  return opts;
+});
 const isLoggedIn = computed(() => status.value.state === "logged_in");
 const statusLabel = computed(() => {
   if (status.value.state === "requesting") return t("channel.wechat.requesting");
@@ -54,7 +62,7 @@ async function loadDrawer() {
     const [projectList, conversationList] = await Promise.all([api.listProjects(), api.wechatConversations()]);
     projects.value = projectList;
     conversations.value = conversationList;
-    projectId.value = typeof props.config?.config.projectId === "string" ? props.config.config.projectId : null;
+    projectId.value = extractProjectId(props.config);
     enabled.value = props.config?.enabled ?? true;
     await refresh();
   } finally {
@@ -98,6 +106,20 @@ async function save() {
     saving.value = false;
   }
 }
+
+/** Extract projectId from config, handling various data shapes. */
+function extractProjectId(config: typeof props.config): string | null {
+  if (!config) return null;
+  const raw = config.config?.projectId;
+  if (typeof raw === "string" && raw.length > 0) return raw;
+  return null;
+}
+
+// Sync projectId whenever the config prop changes (covers late store loads).
+watch(() => props.config, (cfg) => {
+  const id = extractProjectId(cfg);
+  if (id) projectId.value = id;
+}, { deep: true });
 
 watch(() => props.show, (visible) => {
   stopPolling();
