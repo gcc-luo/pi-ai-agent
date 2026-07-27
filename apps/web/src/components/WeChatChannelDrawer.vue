@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { NButton, NDrawer, NSelect, NSpin, NSwitch, useMessage } from "naive-ui";
 import type { ChannelConfigDto, ProjectDto } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
@@ -26,18 +26,11 @@ const enabled = ref(true);
 const status = ref<WeChatStatus>({ state: "idle" });
 const conversations = ref<Conversation[]>([]);
 const saving = ref(false);
-const loading = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-const projectOptions = computed(() => {
-  const opts = projects.value.map((p) => ({ label: p.name, value: p.id }));
-  // If a projectId is stored but missing from the project list, show its ID
-  // so the user can see something instead of a blank field.
-  if (projectId.value && !opts.some((o) => o.value === projectId.value)) {
-    opts.unshift({ label: projectId.value, value: projectId.value });
-  }
-  return opts;
-});
+const projectOptions = computed(() =>
+  projects.value.map((p) => ({ label: p.name, value: p.id })),
+);
 const isLoggedIn = computed(() => status.value.state === "logged_in");
 const statusLabel = computed(() => {
   if (status.value.state === "requesting") return t("channel.wechat.requesting");
@@ -57,20 +50,17 @@ async function refresh() {
 }
 
 async function loadDrawer() {
-  loading.value = true;
+  // Set projectId first (same pattern as DingTalkChannelDrawer).
+  projectId.value = extractProjectId(props.config);
+  enabled.value = props.config?.enabled ?? true;
   try {
     const [projectList, conversationList] = await Promise.all([api.listProjects(), api.wechatConversations()]);
     projects.value = projectList;
     conversations.value = conversationList;
-    enabled.value = props.config?.enabled ?? true;
     await refresh();
-  } finally {
-    loading.value = false;
+  } catch {
+    // ignore transient errors during load
   }
-  // Set projectId AFTER the NSelect has rendered with options,
-  // otherwise Naive UI may display the raw value instead of the label.
-  await nextTick();
-  projectId.value = extractProjectId(props.config);
 }
 
 async function startLogin() {
@@ -145,8 +135,7 @@ onUnmounted(stopPolling);
         <button class="drawer-close" type="button" @click="emit('update:show', false)">×</button>
       </header>
 
-      <div v-if="loading" class="drawer-loading"><NSpin size="medium" /></div>
-      <div v-else class="drawer-body">
+      <div class="drawer-body">
         <section class="drawer-section">
           <div class="section-heading">
             <h3>{{ t('channel.wechat.project') }}</h3>
@@ -206,7 +195,6 @@ onUnmounted(stopPolling);
 .drawer-header p { margin-top: 6px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .drawer-close { border: 0; background: transparent; color: var(--text-muted); font-size: 28px; line-height: 1; cursor: pointer; }
 .drawer-body { flex: 1; overflow: auto; padding: 22px 28px; display: flex; flex-direction: column; gap: 18px; }
-.drawer-loading { flex: 1; display: grid; place-items: center; }
 .drawer-section { padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .section-heading h3 { color: var(--text-primary); font-size: 13px; }
