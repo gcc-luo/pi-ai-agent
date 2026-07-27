@@ -14,6 +14,7 @@ const SESSION_DIR = process.env.WECHATBOT_STORAGE_DIR
 
 export type WeChatLoginState =
   | { state: "idle" }
+  | { state: "requesting" }
   | { state: "awaiting_scan"; qrUrl: string; qrDataUrl: string }
   | { state: "scanned" }
   | { state: "logged_in"; userId: string }
@@ -21,12 +22,16 @@ export type WeChatLoginState =
   | { state: "error"; error: string };
 
 // Callbacks fired asynchronously during login(); mutate loginState in place.
+// Guarded by loginAttempt so stale callbacks from a cancelled login are ignored.
 const loginCallbacks: QrLoginCallbacks = {
   onQrUrl: (url) => {
+    const attempt = loginAttempt;
     QRCode.toDataURL(url).then((dataUrl) => {
+      if (attempt !== loginAttempt) return;
       loginState = { state: "awaiting_scan", qrUrl: url, qrDataUrl: dataUrl };
       log.info("wechat qr ready, awaiting scan");
     }).catch((err) => {
+      if (attempt !== loginAttempt) return;
       log.error({ err: (err as Error).message }, "failed to render qr");
       loginState = { state: "error", error: "qr render failed" };
     });
@@ -110,9 +115,11 @@ async function ensureStarted(): Promise<void> {
 /** Force a fresh QR login flow, ignoring cached creds. */
 function startLogin(): void {
   const b = ensureBot();
-  if (qrLoginPromise) return;
+  // Cancel any in-flight login so a new click always takes effect.
   const attempt = ++loginAttempt;
-  loginState = { state: "idle" };
+  qrLoginPromise = null;
+  loginState = { state: "requesting" };
+  log.info("wechat: requesting QR code from WeChat servers...");
   // Don't await — the QR flow blocks until scan. The state machine in
   // loginCallbacks reflects progress for the UI to poll.
   qrLoginPromise = b.login({ force: true, callbacks: loginCallbacks })

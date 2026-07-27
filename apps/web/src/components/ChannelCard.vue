@@ -28,7 +28,7 @@ const isEnabled = computed(() => props.config?.enabled === true);
 
 // WeChat card polls the worker status while mounted.
 type WeChatStatus = {
-  state: "idle" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
+  state: "idle" | "requesting" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
   qrDataUrl?: string;
   userId?: string;
   error?: string;
@@ -85,6 +85,9 @@ onUnmounted(() => {
           </NTag>
           <NTag v-else-if="wechatStatus.state === 'error'" size="tiny" :bordered="false" type="error">
             {{ t('channel.wechat.loginFailed') }}
+          </NTag>
+          <NTag v-else-if="wechatStatus.state === 'requesting'" size="tiny" :bordered="false" type="warning">
+            {{ t('channel.wechat.requesting') }}
           </NTag>
           <NTag v-else-if="wechatStatus.state === 'awaiting_scan' || wechatStatus.state === 'scanned' || wechatStatus.state === 'expired'" size="tiny" :bordered="false" type="info">
             {{ t('channel.wechat.scanning') }}

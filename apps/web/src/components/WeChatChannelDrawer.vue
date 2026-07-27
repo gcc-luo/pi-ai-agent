@@ -10,7 +10,7 @@ const props = defineProps<{ show: boolean; config: ChannelConfigDto | null }>();
 const emit = defineEmits<{ (e: "update:show", value: boolean): void; (e: "saved"): void }>();
 
 type WeChatStatus = {
-  state: "idle" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
+  state: "idle" | "requesting" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
   qrDataUrl?: string;
   userId?: string;
   error?: string;
@@ -32,6 +32,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 const projectOptions = computed(() => projects.value.map((project) => ({ label: project.name, value: project.id })));
 const isLoggedIn = computed(() => status.value.state === "logged_in");
 const statusLabel = computed(() => {
+  if (status.value.state === "requesting") return t("channel.wechat.requesting");
   if (status.value.state === "scanned") return t("channel.wechat.scanToConfirm");
   if (status.value.state === "logged_in") return t("channel.wechat.loggedIn");
   if (status.value.state === "error") return status.value.error || t("channel.wechat.loginFailed");
@@ -138,6 +139,10 @@ onUnmounted(stopPolling);
           <div class="section-heading"><h3>{{ t('channel.wechat.scanLogin') }}</h3></div>
           <div class="qr-area">
             <img v-if="status.qrDataUrl" :src="status.qrDataUrl" class="qr-image" alt="WeChat QR" />
+            <div v-else-if="status.state === 'requesting' || status.state === 'idle'" class="qr-requesting">
+              <NSpin size="medium" />
+              <span class="qr-requesting-text">{{ t('channel.wechat.requesting') }}</span>
+            </div>
             <NSpin v-else-if="status.state !== 'error' && !isLoggedIn" size="medium" />
             <span v-else-if="isLoggedIn" class="logged-in">{{ status.userId }}</span>
             <span v-else class="login-error">{{ status.error || t('channel.wechat.loginFailed') }}</span>
@@ -186,6 +191,8 @@ onUnmounted(stopPolling);
 .qr-area { width: 196px; height: 196px; margin: 12px auto 0; display: grid; place-items: center; border-radius: var(--radius-sm); background: #fff; }
 .qr-image { width: 184px; height: 184px; object-fit: contain; }
 .logged-in { color: #0f9d74; font-family: var(--font-mono); font-size: 12px; word-break: break-all; padding: 12px; }
+.qr-requesting { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.qr-requesting-text { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
 .login-error, .status-text.error { color: var(--rose); }
 .drawer-actions { margin-top: 12px; }
 .conversation-row { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-top: 1px solid var(--border-subtle); }

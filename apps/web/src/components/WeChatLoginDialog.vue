@@ -14,7 +14,7 @@ const { t } = useI18n();
 const message = useMessage();
 
 type Status = {
-  state: "idle" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
+  state: "idle" | "requesting" | "awaiting_scan" | "scanned" | "logged_in" | "expired" | "error";
   qrDataUrl?: string;
   userId?: string;
   error?: string;
@@ -71,7 +71,8 @@ onUnmounted(() => {
 
 const statusText = (s: Status["state"]): string => {
   switch (s) {
-    case "idle": return t("channel.wechat.scanning");
+    case "idle": return t("channel.wechat.requesting");
+    case "requesting": return t("channel.wechat.requesting");
     case "awaiting_scan": return t("channel.wechat.scanning");
     case "scanned": return t("channel.wechat.scanToConfirm");
     case "logged_in": return t("channel.wechat.loggedIn");
@@ -95,8 +96,12 @@ const statusText = (s: Status["state"]): string => {
 
       <div class="dialog-body">
         <div class="qr-area">
-          <NSpin v-if="!status.qrDataUrl && status.state !== 'error'" size="medium" />
-          <img v-else-if="status.qrDataUrl" class="qr-img" :src="status.qrDataUrl" alt="WeChat QR" />
+          <img v-if="status.qrDataUrl" class="qr-img" :src="status.qrDataUrl" alt="WeChat QR" />
+          <div v-else-if="status.state === 'requesting' || status.state === 'idle'" class="qr-requesting">
+            <NSpin size="medium" />
+            <span class="qr-requesting-text">{{ t('channel.wechat.requesting') }}</span>
+          </div>
+          <NSpin v-else-if="status.state !== 'error'" size="medium" />
           <div v-else class="qr-error">{{ status.error || t('channel.wechat.loginFailed') }}</div>
         </div>
         <p class="status-text">{{ statusText(status.state) }}</p>
@@ -177,6 +182,8 @@ const statusText = (s: Status["state"]): string => {
   object-fit: contain;
 }
 
+.qr-requesting { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.qr-requesting-text { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
 .qr-error {
   font-size: 12px;
   color: var(--rose);
