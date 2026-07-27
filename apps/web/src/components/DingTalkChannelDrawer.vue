@@ -23,6 +23,12 @@ const saving = ref(false);
 
 const projectOptions = computed(() => projects.value.map((project) => ({ label: project.name, value: project.id })));
 
+const selectedProjectName = computed(() => {
+  if (!projectId.value) return null;
+  const p = projects.value.find((p) => p.id === projectId.value);
+  return p ? p.name : projectId.value;
+});
+
 async function load() {
   const config = props.config;
   name.value = config?.name ?? t("channel.dingtalk.label");
@@ -82,7 +88,7 @@ watch(() => props.show, (visible) => { if (visible) void load(); });
             <h3>{{ t('channel.dingtalk.field.projectId') }}</h3>
             <NSwitch :value="enabled" @update:value="(value: boolean) => enabled = value" />
           </div>
-          <NSelect v-model:value="projectId" :options="projectOptions" :placeholder="t('channel.dingtalk.field.projectId.placeholder')" />
+          <NSelect :key="selectedProjectName ?? '__none__'" v-model:value="projectId" :options="projectOptions" :placeholder="t('channel.dingtalk.field.projectId.placeholder')" />
           <p class="hint">{{ t('channel.dingtalk.projectHint') }}</p>
         </section>
 

@@ -31,6 +31,13 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 const projectOptions = computed(() =>
   projects.value.map((p) => ({ label: p.name, value: p.id })),
 );
+
+/** Resolved project name for display; falls back to ID if not found. */
+const selectedProjectName = computed(() => {
+  if (!projectId.value) return null;
+  const p = projects.value.find((p) => p.id === projectId.value);
+  return p ? p.name : projectId.value;
+});
 const isLoggedIn = computed(() => status.value.state === "logged_in");
 const statusLabel = computed(() => {
   if (status.value.state === "requesting") return t("channel.wechat.requesting");
@@ -142,6 +149,7 @@ onUnmounted(stopPolling);
             <NSwitch :value="enabled" @update:value="(value: boolean) => enabled = value" />
           </div>
           <NSelect
+            :key="selectedProjectName ?? '__none__'"
             v-model:value="projectId"
             :options="projectOptions"
             :placeholder="t('channel.wechat.projectPlaceholder')"

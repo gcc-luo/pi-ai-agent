@@ -97,10 +97,15 @@ function matchesQuery(label: string, type: string, configName: string | undefine
   return false;
 }
 
+// TODO: 企业微信（wecom）卡片暂时隐藏，后续开放时移除此过滤
+const HIDDEN_CHANNELS = new Set(["wecom"]);
+
 const cards = computed(() => {
   const q = searchQuery.value;
-  return allCards.value.filter((item) =>
-    matchesQuery(item.descriptor.label, item.descriptor.type, item.config?.name, q),
+  return allCards.value.filter(
+    (item) =>
+      !HIDDEN_CHANNELS.has(item.descriptor.type) &&
+      matchesQuery(item.descriptor.label, item.descriptor.type, item.config?.name, q),
   );
 });
 
