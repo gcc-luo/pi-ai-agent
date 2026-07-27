@@ -33,7 +33,7 @@ const loginCallbacks: QrLoginCallbacks = {
     }).catch((err) => {
       if (attempt !== loginAttempt) return;
       log.error({ err: (err as Error).message }, "failed to render qr");
-      loginState = { state: "error", error: "qr render failed" };
+      loginState = { state: "error", error: "二维码生成失败，请稍后重试" };
     });
   },
   onScanned: () => {
@@ -41,7 +41,7 @@ const loginCallbacks: QrLoginCallbacks = {
     log.info("wechat qr scanned, awaiting confirm");
   },
   onExpired: () => {
-    loginState = { state: "expired" };
+    loginState = { state: "error", error: "二维码已过期，请点击重新扫码登录" };
     log.info("wechat qr expired");
   },
 };
@@ -103,13 +103,35 @@ async function ensureStarted(): Promise<void> {
       log.info({ userId: creds.userId }, "wechat logged in");
       await b.start();
     } catch (err: any) {
-      loginState = { state: "error", error: err?.message ?? String(err) };
-      log.error({ err: err?.message ?? String(err) }, "wechat login failed");
+      const raw = err?.message ?? String(err);
+      loginState = { state: "error", error: localizeError(raw) };
+      log.error({ err: raw }, "wechat login failed");
     } finally {
       startPromise = null;
     }
   })();
   return startPromise;
+}
+
+/** Map known SDK error messages to user-friendly Chinese text. */
+function localizeError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("timeout") || lower.includes("aborted")) {
+    return "获取二维码超时，请检查网络连接后重试";
+  }
+  if (lower.includes("network") || lower.includes("fetch") || lower.includes("econnrefused") || lower.includes("enotfound")) {
+    return "网络连接失败，无法访问微信服务器，请检查网络";
+  }
+  if (lower.includes("expired")) {
+    return "二维码已过期，请重新扫码";
+  }
+  if (lower.includes("auth") || lower.includes("unauthorized")) {
+    return "微信认证失败，请重新登录";
+  }
+  if (lower.includes("qr render")) {
+    return "二维码生成失败，请稍后重试";
+  }
+  return raw;
 }
 
 /** Force a fresh QR login flow, ignoring cached creds. */
@@ -131,8 +153,9 @@ function startLogin(): void {
     })
     .catch((err: any) => {
       if (attempt !== loginAttempt || bot !== b) return;
-      loginState = { state: "error", error: err?.message ?? String(err) };
-      log.error({ err: err?.message ?? String(err) }, "wechat qr login failed");
+      const raw = err?.message ?? String(err);
+      loginState = { state: "error", error: localizeError(raw) };
+      log.error({ err: raw }, "wechat qr login failed");
     })
     .finally(() => {
       if (attempt === loginAttempt) qrLoginPromise = null;
