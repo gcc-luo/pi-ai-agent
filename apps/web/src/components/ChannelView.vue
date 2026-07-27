@@ -248,17 +248,9 @@ const dingtalkConfig = computed(() => store.configFor("dingtalk"));
   overflow-y: auto;
   padding: 24px 48px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   align-content: start;
-}
-
-@media (max-width: 1500px) {
-  .channel-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
-@media (max-width: 1120px) {
-  .channel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
