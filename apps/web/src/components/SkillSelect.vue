@@ -127,9 +127,7 @@ async function confirmUninstall() {
   flex-shrink: 0;
 }
 .skill-trigger:hover {
-  border-color: var(--accent);
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .skill-picker-body {

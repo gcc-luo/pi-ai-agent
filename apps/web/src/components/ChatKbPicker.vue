@@ -147,9 +147,7 @@ function getSearchableFiles(kbId: string) {
   flex-shrink: 0;
 }
 .kb-picker-trigger:hover {
-  border-color: var(--accent);
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 .kb-badge {
   position: absolute;

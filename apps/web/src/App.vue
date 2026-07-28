@@ -306,6 +306,7 @@ function closePreview() {
                   class="model-select"
                   @update:value="agent.switchModel($event)"
                 />
+                <!-- Mode switch temporarily hidden
                 <div class="workspace-mode-switch" role="group" :aria-label="t('settings.workMode')">
                   <button
                     type="button"
@@ -320,6 +321,7 @@ function closePreview() {
                     @click="modeStore.set('coding')"
                   >{{ t('settings.modeCoding') }}</button>
                 </div>
+                -->
                 <span class="connection-status" :class="connection.status">
                   <span class="conn-dot" />
                   {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}

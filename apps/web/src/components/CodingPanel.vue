@@ -1099,9 +1099,7 @@ function onContentClick(e: MouseEvent) {
   flex-shrink: 0;
 }
 .term-tool-btn:hover {
-  border-color: var(--accent);
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 /* ─── Input row ─── */

@@ -128,9 +128,7 @@ async function clearExpert() {
   flex-shrink: 0;
 }
 .expert-picker-trigger:hover, .expert-picker-trigger.active {
-  border-color: var(--accent);
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 .expert-trigger-icon { font-size: 14px; line-height: 1; }
 .expert-picker-body { display: flex; flex-direction: column; gap: 7px; }

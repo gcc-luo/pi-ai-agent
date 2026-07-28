@@ -1796,9 +1796,7 @@ const pendingTipLabel = computed(() => {
   flex-shrink: 0;
 }
 .tool-btn:hover {
-  border-color: var(--accent);
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .token-usage {
