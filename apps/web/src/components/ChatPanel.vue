@@ -713,14 +713,7 @@ const pendingTipLabel = computed(() => {
         </div>
         <div v-else-if="m.showHeader" class="msg-avatar-row">
           <div class="msg-avatar assistant" aria-hidden="true">
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="1.1" r="0.9" fill="currentColor" />
-              <line x1="6" y1="2" x2="6" y2="3.1" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-              <rect x="2.2" y="3.1" width="7.6" height="6.2" rx="1.6" stroke="currentColor" stroke-width="1.1" fill="none" />
-              <circle cx="4.3" cy="6.2" r="0.95" fill="currentColor" />
-              <circle cx="7.7" cy="6.2" r="0.95" fill="currentColor" />
-              <line x1="4.8" y1="8.4" x2="7.2" y2="8.4" stroke="currentColor" stroke-width="0.9" stroke-linecap="round" />
-            </svg>
+            <img src="/panda-agent-avatar-22px.svg" alt="PI Agent" />
           </div>
           <span class="msg-avatar-label">PI Agent</span>
           <span v-if="m.streaming" class="typing-dots">
@@ -1308,11 +1301,16 @@ const pendingTipLabel = computed(() => {
   white-space: nowrap;
 }
 
-/* Fixed agent avatar — a teal disc with the diamond glyph, floating above the body */
+/* Fixed agent avatar — a native 22px panda SVG, floating above the body */
 .msg-avatar.assistant {
-  background: linear-gradient(135deg, #2ee7c0 0%, #00c49e 100%);
-  box-shadow: 0 2px 8px rgba(0, 196, 158, 0.35);
-  color: #04211b;
+  background: #ddf7e7;
+  box-shadow: 0 2px 8px rgba(105, 180, 130, 0.3);
+}
+
+.msg-avatar.assistant img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ─── Message Time (below the body, role-aligned) ─── */

@@ -1,0 +1,48 @@
+<svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="face" x1="6" y1="4" x2="16" y2="19" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9E9EC"/>
+    </linearGradient>
+    <linearGradient id="black" x1="7" y1="3" x2="15" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34343A"/>
+      <stop offset="1" stop-color="#09090B"/>
+    </linearGradient>
+    <radialGradient id="cheek">
+      <stop stop-color="#FFB7BD"/>
+      <stop offset="1" stop-color="#FF8F9B"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ears -->
+  <circle cx="5.4" cy="5.1" r="3.1" fill="url(#black)"/>
+  <circle cx="16.6" cy="5.1" r="3.1" fill="url(#black)"/>
+  <circle cx="4.7" cy="4.3" r="0.8" fill="#FFFFFF" fill-opacity="0.25"/>
+  <circle cx="15.9" cy="4.3" r="0.8" fill="#FFFFFF" fill-opacity="0.25"/>
+
+  <!-- face -->
+  <path d="M3.2 10.1C3.2 5.95 6.35 3.5 11 3.5C15.65 3.5 18.8 5.95 18.8 10.1V12.8C18.8 17.15 15.55 19.5 11 19.5C6.45 19.5 3.2 17.15 3.2 12.8V10.1Z"
+        fill="url(#face)" stroke="#18181B" stroke-width="0.8"/>
+
+  <!-- eye patches -->
+  <ellipse cx="7.4" cy="10.1" rx="2.35" ry="2.75" transform="rotate(20 7.4 10.1)" fill="url(#black)"/>
+  <ellipse cx="14.6" cy="10.1" rx="2.35" ry="2.75" transform="rotate(-20 14.6 10.1)" fill="url(#black)"/>
+
+  <!-- eyes -->
+  <circle cx="7.7" cy="9.9" r="1.05" fill="#3B2419"/>
+  <circle cx="14.3" cy="9.9" r="1.05" fill="#3B2419"/>
+  <circle cx="8.05" cy="9.55" r="0.38" fill="white"/>
+  <circle cx="14.65" cy="9.55" r="0.38" fill="white"/>
+
+  <!-- cheeks -->
+  <ellipse cx="5.7" cy="13.6" rx="1.35" ry="0.95" fill="url(#cheek)" fill-opacity="0.85"/>
+  <ellipse cx="16.3" cy="13.6" rx="1.35" ry="0.95" fill="url(#cheek)" fill-opacity="0.85"/>
+
+  <!-- nose -->
+  <path d="M9.9 12.25C9.9 11.75 10.35 11.45 11 11.45C11.65 11.45 12.1 11.75 12.1 12.25C12.1 12.8 11.55 13.15 11 13.15C10.45 13.15 9.9 12.8 9.9 12.25Z" fill="#0B0B0D"/>
+  <ellipse cx="10.65" cy="11.9" rx="0.35" ry="0.18" fill="white" fill-opacity="0.75"/>
+
+  <!-- mouth -->
+  <path d="M11 13.1V13.65M11 13.65C10.7 14.25 10.2 14.45 9.75 14.05M11 13.65C11.3 14.25 11.8 14.45 12.25 14.05"
+        stroke="#0B0B0D" stroke-width="0.65" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
