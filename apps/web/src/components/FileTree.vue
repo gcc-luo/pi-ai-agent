@@ -100,7 +100,9 @@ const ctxMenu = ref<{ show: boolean; x: number; y: number; path: string }>({
 
 const ctxMenuOptions = [
   { label: t("file.revealInFolder"), key: "reveal" },
-  { label: t("file.openWith"), key: "open" },
+  { type: "divider", key: "d1" },
+  { label: t("file.open"), key: "open-file" },
+  { label: t("file.openWith"), key: "open-with" },
 ];
 
 function onContextMenu(node: FileNodeDto, e: MouseEvent) {
@@ -127,7 +129,7 @@ async function onCtxMenuSelect(key: string) {
   ctxMenu.value = { ...ctxMenu.value, show: false };
   if (!p) return;
   try {
-    await api.openFile(props.projectId, p, key as "reveal" | "open");
+    await api.openFile(props.projectId, p, key as "reveal" | "open-file" | "open-with");
   } catch (err: any) {
     alert(t("file.openError") + ": " + (err?.message ?? String(err)));
   }

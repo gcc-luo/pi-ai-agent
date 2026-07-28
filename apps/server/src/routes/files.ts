@@ -188,54 +188,68 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
   // Reveal a file in the OS file manager or open it with the OS default app.
   // The spawn is detached and unref'd so the HTTP response returns immediately
   // while the OS dialog may still be blocking the child process.
-  app.post<{ Params: { projectId: string }; Body: { path?: string; action?: "reveal" | "open" } }>(
-    "/files/:projectId/open",
-    async (req, reply) => {
+  app.post<{
+    Params: { projectId: string };
+    Body: { path?: string; action?: "reveal" | "open-file" | "open-with" };
+  }>("/files/:projectId/open", async (req, reply) => {
       const project = app.projects.findById(req.params.projectId);
       if (!project) return reply.code(404).send({ error: "project not found" });
       const rel = req.body?.path;
       const action = req.body?.action;
-      if (!rel || (action !== "reveal" && action !== "open")) {
+      const validActions = new Set(["reveal", "open-file", "open-with"]);
+      if (!rel || !action || !validActions.has(action)) {
         return reply.code(400).send({ ok: false, error: "invalid path or action" });
       }
       const abs = resolveSafe(project.workdir, rel);
       if (!abs) return reply.code(400).send({ ok: false, error: "bad path" });
+      const winPath = abs.replace(/\//g, "\\");
 
       try {
-        if (action === "reveal") {
-          switch (process.platform) {
-            case "darwin":
-              spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
-              break;
-            case "win32":
-              spawn(
-                "explorer.exe",
-                ["/select," + abs.replace(/\//g, "\\")],
-                { detached: true, stdio: "ignore" },
-              ).unref();
-              break;
-            default:
-              spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
-              break;
-          }
-        } else {
-          // action === "open" — invoke the OS "Open With" dialog so the user
-          // can pick an application rather than launching the default directly.
-          switch (process.platform) {
-            case "darwin":
-              spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
-              break;
-            case "win32":
-              spawn(
-                "rundll32.exe",
-                ["shell32.dll,OpenAs_RunDLL", abs.replace(/\//g, "\\")],
-                { detached: true, stdio: "ignore" },
-              ).unref();
-              break;
-            default:
-              spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
-              break;
-          }
+        switch (action) {
+          // ── Reveal in file manager ──
+          case "reveal":
+            switch (process.platform) {
+              case "darwin":
+                spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
+                break;
+              case "win32":
+                spawn("explorer.exe", ["/select," + winPath], { detached: true, stdio: "ignore" }).unref();
+                break;
+              default:
+                spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
+                break;
+            }
+            break;
+
+          // ── Open with default application ──
+          case "open-file":
+            switch (process.platform) {
+              case "darwin":
+                spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
+                break;
+              case "win32":
+                spawn("cmd.exe", ["/c", "start", "", winPath], { detached: true, stdio: "ignore" }).unref();
+                break;
+              default:
+                spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
+                break;
+            }
+            break;
+
+          // ── Open With… (system application picker) ──
+          case "open-with":
+            switch (process.platform) {
+              case "darwin":
+                spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
+                break;
+              case "win32":
+                spawn("rundll32.exe", ["shell32.dll,OpenAs_RunDLL", winPath], { detached: true, stdio: "ignore" }).unref();
+                break;
+              default:
+                spawn("xdg-open", [abs], { detached: true, stdio: "ignore" }).unref();
+                break;
+            }
+            break;
         }
         return { ok: true };
       } catch (e: any) {
