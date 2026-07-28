@@ -54,6 +54,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     // File viewer
     "viewer.selectFile": "Select a file to view",
     "viewer.unsupportedHint": "Preview not available for this file type.",
+    "viewer.officeUnsupportedHint": "This file format is not supported for preview. Please open it with a desktop Office application (e.g. Microsoft Office, WPS).",
     "viewer.download": "Download",
     "viewer.tooLarge": "File too large to preview",
     "viewer.fetchFailed": "Failed to load file",
@@ -698,6 +699,7 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "viewer.selectFile": "选择一个文件查看",
     "viewer.unsupportedHint": "此文件类型暂不支持预览。",
+    "viewer.officeUnsupportedHint": "暂不支持此文件格式预览，请使用桌面 Office 工具（如 Microsoft Office、WPS）打开本文件。",
     "viewer.download": "下载",
     "viewer.tooLarge": "文件过大，无法预览",
     "viewer.fetchFailed": "加载失败",

@@ -219,15 +219,16 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
               break;
           }
         } else {
-          // action === "open"
+          // action === "open" — invoke the OS "Open With" dialog so the user
+          // can pick an application rather than launching the default directly.
           switch (process.platform) {
             case "darwin":
               spawn("open", [abs], { detached: true, stdio: "ignore" }).unref();
               break;
             case "win32":
               spawn(
-                "cmd.exe",
-                ["/c", "start", "", abs.replace(/\//g, "\\")],
+                "rundll32.exe",
+                ["shell32.dll,OpenAs_RunDLL", abs.replace(/\//g, "\\")],
                 { detached: true, stdio: "ignore" },
               ).unref();
               break;

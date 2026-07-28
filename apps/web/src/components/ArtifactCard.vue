@@ -33,7 +33,8 @@ const iconKind = computed(() => {
     case "video": return "video";
     case "audio": return "audio";
     case "pdf": return "pdf";
-    case "office": return "office";
+    case "docx": return "office";
+    case "xlsx": return "office";
     case "markdown": return "markdown";
     case "text": return "code";
     default: return "file";

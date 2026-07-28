@@ -10,7 +10,8 @@ import ImagePreview from "./file-preview/ImagePreview.vue";
 import VideoPreview from "./file-preview/VideoPreview.vue";
 import AudioPreview from "./file-preview/AudioPreview.vue";
 import PdfPreview from "./file-preview/PdfPreview.vue";
-import OfficePreview from "./file-preview/OfficePreview.vue";
+import DocxPreview from "./file-preview/DocxPreview.vue";
+import XlsxPreview from "./file-preview/XlsxPreview.vue";
 import UnsupportedPreview from "./file-preview/UnsupportedPreview.vue";
 
 const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
@@ -34,6 +35,15 @@ const kind = computed(() => (props.path ? filePreviewKind(fileName.value ?? "") 
 const rawUrl = computed(() =>
   props.path ? api.rawFileUrl(props.projectId, props.path) : "",
 );
+
+/** Some unsupported formats get a specific hint explaining why. */
+const OFFICE_UNSUPPORTED_EXTS = new Set(["pptx", "ppt", "doc", "odt", "ods", "odp", "rtf"]);
+const unsupportedReason = computed(() => {
+  if (!fileName.value) return undefined;
+  const ext = fileName.value.split(".").pop()?.toLowerCase() ?? "";
+  if (OFFICE_UNSUPPORTED_EXTS.has(ext)) return t("viewer.officeUnsupportedHint");
+  return undefined;
+});
 
 watch(
   () => [props.projectId, props.path],
@@ -107,11 +117,13 @@ watch(
     <VideoPreview v-else-if="kind === 'video'" :url="rawUrl" />
     <AudioPreview v-else-if="kind === 'audio'" :url="rawUrl" />
     <PdfPreview v-else-if="kind === 'pdf'" :url="rawUrl" />
-    <OfficePreview v-else-if="kind === 'office'" :project-id="projectId" :path="path!" />
+    <DocxPreview v-else-if="kind === 'docx'" :project-id="projectId" :path="path!" />
+    <XlsxPreview v-else-if="kind === 'xlsx'" :project-id="projectId" :path="path!" />
     <UnsupportedPreview
       v-else
       :path="path!"
       :url="rawUrl"
+      :reason="unsupportedReason"
     />
   </div>
 </template>

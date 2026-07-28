@@ -100,7 +100,7 @@ const ctxMenu = ref<{ show: boolean; x: number; y: number; path: string }>({
 
 const ctxMenuOptions = [
   { label: t("file.revealInFolder"), key: "reveal" },
-  { label: t("file.open"), key: "open" },
+  { label: t("file.openWith"), key: "open" },
 ];
 
 function onContextMenu(node: FileNodeDto, e: MouseEvent) {
