@@ -501,7 +501,10 @@ function removeSkill(name: string) {
   selectedSkills.value = selectedSkills.value.filter((n) => n !== name);
 }
 
+const isComposing = ref(false);
+
 function handleKeySend(e: KeyboardEvent) {
+  if (e.isComposing || isComposing.value) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     if (isBusy.value) {
@@ -936,6 +939,8 @@ const pendingTipLabel = computed(() => {
           :autosize="{ minRows: 3, maxRows: 5 }"
           :placeholder="t('chat.placeholder')"
           @keydown="handleKeySend"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
           @paste="handlePaste"
           class="composer-input"
         />

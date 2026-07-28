@@ -318,7 +318,13 @@ function send() {
   nextTick(scrollToBottom);
 }
 
+/** Track IME composition state — Enter during composition confirms the
+ *  candidate, not the message. */
+const isComposing = ref(false);
+
 function handleKeySend(e: KeyboardEvent) {
+  // Ignore Enter while IME is composing (e.g. confirming a Chinese character).
+  if (e.isComposing || isComposing.value) return;
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     if (isBusy.value) {
@@ -584,6 +590,8 @@ function onContentClick(e: MouseEvent) {
           :autosize="{ minRows: 2, maxRows: 6 }"
           :placeholder="t('coding.placeholder')"
           @keydown="handleKeySend"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
           @paste="handlePaste"
           class="term-input"
         />

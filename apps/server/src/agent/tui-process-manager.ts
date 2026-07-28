@@ -48,14 +48,42 @@ function dimensions(cols: number, rows: number) {
   };
 }
 
-function resolveExecutable(command: string, searchPath: string | undefined): string {
-  if (path.isAbsolute(command) || command.includes(path.sep)) return command;
-  for (const directory of (searchPath ?? "").split(path.delimiter)) {
+function resolveExecutable(command: string, searchPath: string | undefined, platform: NodeJS.Platform): string {
+  const candidates = platform === "win32" && !path.extname(command)
+    ? [".exe", ".com", ".bat", ".cmd"].map((extension) => `${command}${extension}`)
+    : [command];
+  const hasPath = path.isAbsolute(command) || command.includes(path.sep) || (platform === "win32" && command.includes("/"));
+  if (hasPath) return candidates.find((candidate) => fs.existsSync(candidate)) ?? command;
+
+  const delimiter = platform === "win32" ? ";" : ":";
+  for (const directory of (searchPath ?? "").split(delimiter)) {
     if (!directory) continue;
-    const candidate = path.join(directory, command);
-    if (fs.existsSync(candidate)) return candidate;
+    for (const candidate of candidates) {
+      const resolved = path.join(directory, candidate);
+      if (fs.existsSync(resolved)) return resolved;
+    }
   }
   return command;
+}
+
+export function resolveTuiLaunch(
+  command: string,
+  args: string[],
+  options: { platform?: NodeJS.Platform; searchPath?: string; comSpec?: string } = {},
+): { command: string; args: string[] } {
+  const platform = options.platform ?? process.platform;
+  const executable = resolveExecutable(command, options.searchPath, platform);
+  if (platform !== "win32" || [".exe", ".com"].includes(path.extname(executable).toLowerCase())) {
+    return { command: executable, args };
+  }
+
+  // node-pty calls CreateProcess directly, which cannot execute .cmd/.bat
+  // shims or Unix-style extensionless launchers such as npm's `npx`. Let
+  // cmd.exe resolve the configured command instead, as Node's shell mode does.
+  return {
+    command: options.comSpec ?? process.env.ComSpec ?? "cmd.exe",
+    args: ["/d", "/s", "/c", executable, ...args],
+  };
 }
 
 function redactSensitiveTerminalOutput(data: string, apiKey?: string | null): string {
@@ -116,7 +144,7 @@ export class TuiProcessManager {
     }
 
     const size = dimensions(input.cols, input.rows);
-    const command = resolveExecutable(this.options.command, env.PATH);
+    const launch = resolveTuiLaunch(this.options.command, args, { searchPath: env.PATH });
     const proc = new EventEmitter() as unknown as TuiProcess;
     let outputHistory = "";
     const emitOutput = (data: string) => {
@@ -143,7 +171,7 @@ export class TuiProcessManager {
     };
 
     try {
-      const terminal = pty.spawn(command, args, {
+      const terminal = pty.spawn(launch.command, launch.args, {
         name: process.platform === "win32" ? "xterm" : "xterm-256color",
         cols: size.cols,
         rows: size.rows,
@@ -172,7 +200,7 @@ export class TuiProcessManager {
       // this fallback, using COLUMNS and LINES as its initial dimensions.
       if (process.platform !== "darwin") throw error;
       const fallbackEnv = { ...env, TERM: "xterm-256color", COLUMNS: String(size.cols), LINES: String(size.rows) };
-      const child = spawn("/usr/bin/script", ["-q", "/dev/null", command, ...args], {
+      const child = spawn("/usr/bin/script", ["-q", "/dev/null", launch.command, ...launch.args], {
         cwd: input.workdir,
         env: fallbackEnv,
         stdio: ["pipe", "pipe", "pipe"],
@@ -200,7 +228,7 @@ export class TuiProcessManager {
       this.options.logger.warn({ err: error, sessionId: input.sessionId }, "node-pty unavailable; using script PTY fallback");
     }
     this.procs.set(input.sessionId, proc);
-    this.options.logger.info({ sessionId: input.sessionId, pid: proc.pid, command, args }, "spawned Pi TUI process");
+    this.options.logger.info({ sessionId: input.sessionId, pid: proc.pid, command: launch.command, args: launch.args }, "spawned Pi TUI process");
     return proc;
   }
 
