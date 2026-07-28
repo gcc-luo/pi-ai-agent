@@ -33,19 +33,18 @@ const providerLabels: Record<string, string> = {
   anthropic: "Anthropic",
 };
 
-const modelTypeOptions = [
-  { label: "text", value: "text" },
-  { label: "multimodal", value: "multimodal" },
-  { label: "embedding", value: "embedding" },
-];
-
-const modelTypeLabels: Record<string, string> = {
-  text: "Text",
-  multimodal: "Multimodal",
-  embedding: "Embedding",
-};
-
 const modelTypeOrder = ["text", "multimodal", "embedding"];
+
+// Locale-aware labels — re-render when language switches.
+const modelTypeLabels = computed<Record<string, string>>(() => ({
+  text: t("model.typeText"),
+  multimodal: t("model.typeMultimodal"),
+  embedding: t("model.typeEmbedding"),
+}));
+
+const modelTypeOptions = computed(() =>
+  modelTypeOrder.map((value) => ({ label: modelTypeLabels.value[value], value })),
+);
 
 type ModelDto = NonNullable<typeof agent.modelDtos>[number];
 
