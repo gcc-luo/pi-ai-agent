@@ -39,12 +39,33 @@ const modelTypeOptions = [
   { label: "embedding", value: "embedding" },
 ];
 
+const modelTypeLabels: Record<string, string> = {
+  text: "Text",
+  multimodal: "Multimodal",
+  embedding: "Embedding",
+};
+
+const modelTypeOrder = ["text", "multimodal", "embedding"];
+
+type ModelDto = NonNullable<typeof agent.modelDtos>[number];
+
 const groupedModels = computed(() => {
-  const groups: Record<string, typeof agent.modelDtos> = {};
-  for (const m of agent.modelDtos) {
-    (groups[m.provider] ??= []).push(m);
+  const groups: Record<string, ModelDto[]> = {};
+  for (const m of agent.modelDtos ?? []) {
+    const type = m.modelType ?? "text";
+    (groups[type] ??= []).push(m);
   }
-  return groups;
+  // Sort groups by predefined order
+  const sorted: Record<string, ModelDto[]> = {};
+  for (const type of modelTypeOrder) {
+    const g = groups[type];
+    if (g) sorted[type] = g;
+  }
+  // Append any unknown types
+  for (const [type, g] of Object.entries(groups)) {
+    if (!sorted[type] && g) sorted[type] = g;
+  }
+  return sorted;
 });
 
 function openAdd() {
@@ -151,8 +172,8 @@ function setDefault(id: string) {
     </div>
 
     <div class="model-groups">
-      <div v-for="(models, provider) in groupedModels" :key="provider" class="model-group">
-        <div class="group-label">{{ providerLabels[provider] ?? provider }}</div>
+      <div v-for="(models, type) in groupedModels" :key="type" class="model-group">
+        <div class="group-label">{{ modelTypeLabels[type] ?? type }}</div>
         <div class="card-grid">
           <div
             v-for="m in models"
@@ -179,6 +200,7 @@ function setDefault(id: string) {
               </div>
             </div>
             <div class="card-id">{{ m.id }}</div>
+            <div class="card-provider">{{ providerLabels[m.provider] ?? m.provider }}</div>
             <div v-if="m.apiBaseUrl" class="card-url">{{ m.apiBaseUrl }}</div>
             <div class="card-actions">
               <button class="action-btn" @click.stop="openEdit(m)" :title="t('model.edit')">
@@ -414,6 +436,12 @@ function setDefault(id: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.card-provider {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
 }
 
 .card-actions {
