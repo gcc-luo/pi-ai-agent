@@ -75,32 +75,44 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       const session = app.sessions.findById(event.sessionId);
       if (!session) { send({ type: "error", sessionId: event.sessionId, code: "no_session", message: "session not found" }); return; }
 
-      let state = app.sessionStates.get(event.sessionId);
-      if (!state) {
-        const project = app.projects.findById(session.projectId);
-        if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
+      const requestedModelId = event.type === "send" || event.type === "switchModel"
+        ? event.model
+        : undefined;
+      const requestedModel = requestedModelId ? app.models.findById(requestedModelId) : null;
+      if (requestedModelId && !requestedModel) {
+        send({ type: "error", sessionId: event.sessionId, code: "model_not_found", message: "model not found" });
+        return;
+      }
 
+      const project = app.projects.findById(session.projectId);
+      if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
+
+      const startAgentState = async (model = requestedModel ?? app.models.getDefault()) => {
         // A Web session has one canonical Pi JSONL timeline. Do not let RPC
         // and TUI mutate it concurrently when the user changes presentation.
         await app.tuiProcessManager.stopAndWait(session.id);
 
-        const defaultModel = app.models.getDefault();
-        app.log.info({ defaultModel: defaultModel ? `${defaultModel.provider}/${defaultModel.id} hasKey=${defaultModel.hasApiKey}` : "none" }, "resolving default model");
-        const modelConfig = defaultModel ? {
-          provider: defaultModel.provider,
-          model: defaultModel.id,
-          modelType: defaultModel.modelType,
-          apiKey: app.models.getApiKey(defaultModel.id),
-          apiBaseUrl: defaultModel.apiBaseUrl,
+        app.log.info({ defaultModel: model ? `${model.provider}/${model.id} hasKey=${model.hasApiKey}` : "none" }, "resolving default model");
+        const modelConfig = model ? {
+          provider: model.provider,
+          model: model.id,
+          modelType: model.modelType,
+          apiKey: app.models.getApiKey(model.id),
+          apiBaseUrl: model.apiBaseUrl,
         } : undefined;
         app.log.info({ provider: modelConfig?.provider, model: modelConfig?.model, hasKey: !!modelConfig?.apiKey, baseUrl: modelConfig?.apiBaseUrl }, "model config resolved");
 
         const proc = await app.processManager.start({ sessionId: session.id, projectId: project.id, workdir: project.workdir, modelConfig });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
-        state = app.sessionStates.set(session.id, proc, bridge);
-        state.send = send;
+        const nextState = app.sessionStates.set(
+          session.id,
+          proc,
+          bridge,
+          modelConfig ? { provider: modelConfig.provider, model: modelConfig.model } : undefined,
+        );
+        nextState.send = send;
         bridge.onEvent((e) => {
-          state!.send(e);
+          nextState.send(e);
           if (e.type === "tool_call") {
             if (isFileModifyingTool(e.name, e.args)) {
               fileModifyingToolCalls.set(e.toolCallId, e.name);
@@ -112,7 +124,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             const toolName = fileModifyingToolCalls.get(e.toolCallId);
             if (toolName) {
               fileModifyingToolCalls.delete(e.toolCallId);
-              state!.send({ type: "file_changed", sessionId: e.sessionId, toolCallId: e.toolCallId, toolName });
+              nextState.send({ type: "file_changed", sessionId: e.sessionId, toolCallId: e.toolCallId, toolName });
             }
 
             const persisted = persistedToolCalls.get(e.toolCallId);
@@ -140,22 +152,47 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         });
         proc.on("exit", (code: number | null) => {
-          state!.send({ type: "agent_status", sessionId: session.id, status: "idle" });
-          state!.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" });
-          app.sessionStates.delete(session.id);
+          nextState.send({ type: "agent_status", sessionId: session.id, status: "idle" });
+          nextState.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" });
+          if (app.sessionStates.get(session.id) === nextState) {
+            app.sessionStates.delete(session.id);
+          }
         });
-        proc.on("stderr", (line: string) => state!.send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
+        proc.on("stderr", (line: string) => nextState.send({ type: "error", sessionId: session.id, code: "agent_stderr", message: line }));
         app.sessions.touch(session.id, "active");
+        nextState.send({ type: "session_status", sessionId: session.id, status: "active" });
+        return nextState;
+      };
+
+      let state = app.sessionStates.get(event.sessionId);
+      if (!state) {
+        state = await startAgentState();
+      } else if (
+        requestedModel
+        && (state.provider !== requestedModel.provider || state.model !== requestedModel.id)
+      ) {
+        await app.processManager.stopAndWait(session.id);
+        const previousProcess = app.processManager.get(session.id);
+        if (
+          previousProcess
+          && previousProcess.status !== "suspended"
+          && previousProcess.status !== "crashed"
+        ) {
+          send({
+            type: "error",
+            sessionId: event.sessionId,
+            code: "model_switch_failed",
+            message: "failed to stop the current model process",
+          });
+          return;
+        }
+        state = await startAgentState(requestedModel);
       } else {
         state.send = send;
       }
 
       app.sessionStates.touch(event.sessionId);
       if (event.type === "send" || event.type === "steer") {
-        if (event.type === "send") {
-          state.send({ type: "agent_status", sessionId: session.id, status: "working" });
-        }
-
         console.log(`[WS Agent] received: type=${event.type} sessionId=${event.sessionId} contentLen=${event.content?.length ?? 0}`);
 
         // KB search interception: inject context before forwarding to Pi
@@ -284,6 +321,12 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           content = `${content}\n\n${ARTIFACT_INSTRUCTION}`;
         }
 
+        if (event.type === "send") {
+          // Do this only after all synchronous validation has passed. A
+          // rejected image must not leave the composer in a perpetual
+          // "working" state.
+          state.send({ type: "agent_status", sessionId: session.id, status: "working" });
+        }
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
         const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
         if (event.type === "send" && event.images?.length) {
@@ -314,12 +357,12 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {
-        const model = app.models.findById(event.model);
-        if (!model) {
-          send({ type: "error", sessionId: event.sessionId, code: "model_not_found", message: "model not found" });
-          return;
-        }
-        state.bridge.send({ type: "switchModel", sessionId: event.sessionId, provider: model.provider, model: model.id });
+        state.send({
+          type: "model_changed",
+          sessionId: event.sessionId,
+          provider: state.provider!,
+          model: state.model!,
+        });
       }
     });
   });

@@ -72,4 +72,27 @@ describe("agent store session_updated event", () => {
     expect(agent.isSessionBusy("s1")).toBe(false);
     expect(agent.isSessionBusy("s2")).toBe(true);
   });
+
+  it("clears an empty assistant placeholder when the model request fails", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({
+      type: "message_start", sessionId: "s1", messageId: "m1", role: "assistant",
+    });
+    agent.handle({
+      type: "error",
+      sessionId: "s1",
+      code: "pi_model_error",
+      message: "HTTP Error: 400",
+    });
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.messagesFor("s1")).toEqual([]);
+    expect(agent.errors).toContainEqual({
+      sessionId: "s1",
+      code: "pi_model_error",
+      message: "HTTP Error: 400",
+    });
+  });
 });

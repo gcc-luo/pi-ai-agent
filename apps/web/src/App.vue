@@ -304,7 +304,7 @@ function closePreview() {
                   size="small"
                   :placeholder="t('model.selectForChat')"
                   class="model-select"
-                  @update:value="agent.switchModel($event)"
+                  @update:value="agent.switchModel($event, selectedSessionId ?? undefined)"
                 />
                 <!-- Mode switch temporarily hidden
                 <div class="workspace-mode-switch" role="group" :aria-label="t('settings.workMode')">

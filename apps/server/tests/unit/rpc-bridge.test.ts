@@ -53,6 +53,25 @@ describe("RpcBridge", () => {
     expect(writeSpy).toHaveBeenCalledWith(JSON.stringify({ type: "prompt", message: "hi" }) + "\n");
   });
 
+  it("converts web image attachments to Pi RPC image content", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const writeSpy = vi.spyOn(proc.stdin, "write");
+
+    bridge.send({
+      type: "send",
+      sessionId: "s1",
+      content: "describe this image",
+      images: [{ name: "screen.png", mediaType: "image/png", data: "aGVsbG8=" }],
+    });
+
+    expect(writeSpy).toHaveBeenCalledWith(JSON.stringify({
+      type: "prompt",
+      message: "describe this image",
+      images: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+    }) + "\n");
+  });
+
   it("ignores malformed JSON", () => {
     const proc = makeProc();
     const bridge = new RpcBridge(proc, "s1");
@@ -87,6 +106,7 @@ describe("RpcBridge", () => {
       sessionId: "s1",
       messageId: "assistant-111",
       role: "assistant",
+      timestamp: 111,
     });
     expect(onEvent).toHaveBeenNthCalledWith(2, {
       type: "message_delta",
@@ -100,6 +120,7 @@ describe("RpcBridge", () => {
       messageId: "assistant-111",
       content: "你好",
       metadata: expect.any(Object),
+      timestamp: 111,
     });
     expect(onEvent.mock.calls[2][0].metadata.messageParts).toEqual([
       { type: "text", text: "你好" },
@@ -187,6 +208,36 @@ describe("RpcBridge", () => {
       code: "pi_prompt_failed",
       message: "No model selected",
     });
+  });
+
+  it("maps provider error messages instead of emitting a blank assistant reply", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({
+      type: "message_start",
+      message: { role: "assistant", timestamp: 777 },
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "HTTP Error: 400",
+        timestamp: 777,
+      },
+    }) + "\n");
+
+    expect(onEvent).toHaveBeenNthCalledWith(2, {
+      type: "error",
+      sessionId: "s1",
+      code: "pi_model_error",
+      message: "HTTP Error: 400",
+    });
+    expect(onEvent.mock.calls.some(([event]) => event.type === "message_end")).toBe(false);
   });
 
   it("drops structural message updates and lifecycle events from the transcript", () => {

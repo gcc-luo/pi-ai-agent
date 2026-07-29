@@ -1,6 +1,6 @@
 import { Writable, Readable } from "node:stream";
 import { EventEmitter } from "node:events";
-import { ServerEvent, ToolCall } from "@pi-web-ui/shared";
+import { ImageAttachment, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 
 export interface RpcProcess {
   stdin: Writable;
@@ -105,6 +105,22 @@ export class RpcBridge extends EventEmitter {
         ? message.timestamp
         : (this.activeAssistantTimestamp ?? Date.now());
       const messageId = this.activeAssistantMessageId ?? `assistant-${timestamp}`;
+      // Pi reports provider failures as an assistant message with no content,
+      // stopReason="error", and errorMessage set. Treating that as a normal
+      // message produces a blank assistant bubble and makes the request look
+      // as if it never completed.
+      if (message.stopReason === "error" || message.errorMessage) {
+        this.activeAssistantMessageId = null;
+        this.activeAssistantTimestamp = null;
+        return [{
+          type: "error",
+          sessionId: sid,
+          code: "pi_model_error",
+          message: typeof message.errorMessage === "string" && message.errorMessage
+            ? message.errorMessage
+            : "Model request failed",
+        }];
+      }
       // Keep activeAssistantMessageId set so tool_execution_start (which fires after
       // message_end) attaches to the assistant message that triggered the tool.
       const toolCalls = this.extractToolCalls(message);
@@ -210,6 +226,12 @@ export class RpcBridge extends EventEmitter {
       console.log(`[RpcBridge] write completed`);
     } catch (err: any) {
       console.error(`[RpcBridge] write failed: ${err.message}`);
+      this.emitEvent({
+        type: "error",
+        sessionId: this.sessionId,
+        code: "pi_prompt_write_failed",
+        message: err?.message ?? "failed to send prompt to pi",
+      });
     }
   }
 
@@ -217,7 +239,15 @@ export class RpcBridge extends EventEmitter {
     if (command?.type === "send") {
       const cmd: Record<string, unknown> = { type: "prompt", message: command.content };
       if (Array.isArray(command.images) && command.images.length > 0) {
-        cmd.images = command.images;
+        // The web attachment shape keeps a display name, while Pi's RPC
+        // protocol expects ImageContent ({ type, mimeType, data }). Forwarding
+        // the UI object directly makes Pi reject multimodal prompts before it
+        // starts an agent run.
+        cmd.images = command.images.map((image: ImageAttachment) => ({
+          type: "image",
+          mimeType: image.mediaType,
+          data: image.data,
+        }));
       }
       return cmd;
     }

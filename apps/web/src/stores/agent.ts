@@ -119,12 +119,25 @@ export const useAgentStore = defineStore("agent", {
         this.modelDtos = await api.listModels();
       } catch {}
     },
-    async switchModel(model: string) {
-      this.currentModel = model;
-      const m = this.models.find((m) => m.id === model);
-      if (m) this.currentProvider = m.provider;
+    async switchModel(model: string, sessionId?: string) {
+      const previousModel = this.currentModel;
+      const previousProvider = this.currentProvider;
       try {
-        await api.updateConfig(model);
+        const cfg = await api.updateConfig(model);
+        this.currentModel = cfg.model;
+        this.currentProvider = cfg.provider;
+        if (sessionId) wsClient.send({ type: "switchModel", sessionId, model });
+      } catch (error) {
+        this.currentModel = previousModel;
+        this.currentProvider = previousProvider;
+        this.errors = [...this.errors, {
+          sessionId,
+          code: "model_switch_failed",
+          message: error instanceof Error ? error.message : "Failed to switch model",
+        }];
+        return;
+      }
+      try {
         this.modelDtos = await api.listModels();
       } catch {}
     },
@@ -150,6 +163,7 @@ export const useAgentStore = defineStore("agent", {
       this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
       const event: Record<string, unknown> = { type: "send", sessionId, content };
+      if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
       wsClient.send(event as any);
     },
@@ -175,7 +189,21 @@ export const useAgentStore = defineStore("agent", {
       if (e.type === "error") {
         this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
         // A rejected prompt has no `agent_settled` event to close the run.
-        if (e.sessionId && e.code === "pi_prompt_failed") this.runStates[e.sessionId] = "idle";
+        if (e.sessionId && (
+          e.code === "pi_prompt_failed"
+          || e.code === "pi_prompt_write_failed"
+          || e.code === "pi_model_error"
+        )) {
+          this.runStates[e.sessionId] = "idle";
+          // Provider failures arrive after Pi has emitted message_start. Drop
+          // the empty placeholder so the visible result is the error banner,
+          // not a permanently blank PI Agent message.
+          const list = this.streams[e.sessionId] ?? [];
+          const last = list[list.length - 1];
+          if (last?.role === "assistant" && last.status === "streaming" && last.parts.length === 0) {
+            this.streams[e.sessionId] = list.slice(0, -1);
+          }
+        }
         return;
       }
       if (e.type === "session_updated") {
@@ -183,6 +211,11 @@ export const useAgentStore = defineStore("agent", {
         const idx = sessionStore.sessions.findIndex((s) => s.id === e.session.id);
         if (idx >= 0) sessionStore.sessions.splice(idx, 1, e.session);
         if (sessionStore.current?.id === e.session.id) sessionStore.current = e.session;
+        return;
+      }
+      if (e.type === "model_changed") {
+        this.currentModel = e.model;
+        this.currentProvider = e.provider;
         return;
       }
       if (!("sessionId" in e) || !e.sessionId) return;

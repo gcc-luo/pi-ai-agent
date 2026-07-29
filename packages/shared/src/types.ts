@@ -7,7 +7,7 @@ export interface ImageAttachment {
 
 // WebSocket events: client → server
 export type ClientEvent =
-  | { type: "send"; sessionId: string; content: string; images?: ImageAttachment[] }
+  | { type: "send"; sessionId: string; content: string; model?: string; images?: ImageAttachment[] }
   | { type: "interrupt"; sessionId: string }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }
@@ -29,6 +29,7 @@ export type ServerEvent =
   | { type: "agent_status"; sessionId: string; status: "working" | "idle" }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "session_updated"; session: SessionDto }
+  | { type: "model_changed"; sessionId: string; provider: string; model: string }
   | { type: "error"; sessionId?: string; code: string; message: string }
   | { type: "raw"; sessionId: string; data: Record<string, unknown> }
   | {

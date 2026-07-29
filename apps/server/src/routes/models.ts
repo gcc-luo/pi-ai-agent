@@ -30,10 +30,11 @@ interface TestBody {
   modelId?: string;
 }
 
-// 1×1 red PNG (base64) — minimal image payload for multimodal connectivity probe.
-// We only check whether the API accepts image input (HTTP-level), not the response content.
-const RED_PIXEL_PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+// 16×16 white PNG (base64). Some multimodal gateways reject images whose
+// dimensions are 10 px or smaller, which made the previous 1×1 probe report
+// capable models as unsupported.
+const TEST_IMAGE_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFklEQVR42mP4TyFgGDVg1IBRA4aLAQBdePwurSGpXgAAAABJRU5ErkJggg==";
 
 // Check whether an error response body indicates the model does not support
 // image/vision input. Common across OpenAI-compatible providers (OpenAI, Zhipu,
@@ -41,6 +42,30 @@ const RED_PIXEL_PNG_B64 =
 function bodyRejectsImage(body: string): boolean {
   const lower = body.toLowerCase();
   return /image|vision|multimodal|visual|picture|图片|视觉|多模态/.test(lower);
+}
+
+// Some OpenAI-compatible gateways return HTTP 200 while placing the real
+// upstream failure in an SSE `data: {"error": ...}` frame. Checking only
+// Response.ok incorrectly marks those models as healthy.
+export function responseBodyError(body: string): string | null {
+  const candidates = body
+    .split(/\r?\n/)
+    .map((line) => line.startsWith("data:") ? line.slice(5).trim() : line.trim())
+    .filter((line) => line && line !== "[DONE]");
+
+  for (const candidate of candidates) {
+    try {
+      const first = JSON.parse(candidate) as unknown;
+      const parsed = (typeof first === "string" ? JSON.parse(first) : first) as {
+        error?: string | { message?: string };
+      };
+      if (typeof parsed.error === "string") return parsed.error;
+      if (parsed.error && typeof parsed.error.message === "string") return parsed.error.message;
+    } catch {
+      // A normal non-JSON response body is handled by the HTTP status below.
+    }
+  }
+  return null;
 }
 
 async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?: string): Promise<{ ok: boolean; error?: string }> {
@@ -63,6 +88,8 @@ async function testOpenAICompatible(apiBaseUrl: string, apiKey: string, modelId?
     });
     const body = await res.text().catch(() => "");
     console.log(`[ModelTest] text-openai: status=${res.status} body=${body.slice(0, 500)}`);
+    const bodyError = responseBodyError(body);
+    if (bodyError) return { ok: false, error: bodyError };
     if (res.ok || res.status === 400) return { ok: true };
     return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 200)}` };
   } catch (e: any) {
@@ -144,18 +171,24 @@ async function testMultimodalOpenAI(apiBaseUrl: string, apiKey: string, modelId?
               { type: "text", text: "hi" },
               {
                 type: "image_url",
-                image_url: { url: `data:image/png;base64,${RED_PIXEL_PNG_B64}` },
+                image_url: { url: `data:image/png;base64,${TEST_IMAGE_PNG_B64}` },
               },
             ],
           },
         ],
         max_tokens: 1,
+        stream: false,
       }),
       signal: AbortSignal.timeout(15000),
     });
     const body = await res.text().catch(() => "");
     console.log(`[ModelTest] multimodal-openai: status=${res.status} body=${body.slice(0, 500)}`);
 
+    const bodyError = responseBodyError(body);
+    if (bodyError) {
+      if (bodyRejectsImage(body)) return { ok: false, warning: "model_not_multimodal" };
+      return { ok: false, error: bodyError };
+    }
     if (res.ok) return { ok: true };
     // 4xx with image-rejection keywords → model does not support vision input
     if (res.status >= 400 && res.status < 500 && bodyRejectsImage(body)) {
@@ -194,7 +227,7 @@ async function testMultimodalAnthropic(apiBaseUrl: string, apiKey: string, model
                 source: {
                   type: "base64",
                   media_type: "image/png",
-                  data: RED_PIXEL_PNG_B64,
+                  data: TEST_IMAGE_PNG_B64,
                 },
               },
             ],

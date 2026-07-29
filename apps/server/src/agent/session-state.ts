@@ -6,6 +6,8 @@ export interface SessionState {
   sessionId: string;
   process: AgentProcess;
   bridge: RpcBridge;
+  provider: string | null;
+  model: string | null;
   lastActivityAt: number;
   send: (event: ServerEvent) => void;
 }
@@ -13,11 +15,18 @@ export interface SessionState {
 export class SessionStateStore {
   private states = new Map<string, SessionState>();
 
-  set(sessionId: string, process: AgentProcess, bridge: RpcBridge): SessionState {
+  set(
+    sessionId: string,
+    process: AgentProcess,
+    bridge: RpcBridge,
+    model?: { provider: string; model: string },
+  ): SessionState {
     const state: SessionState = {
       sessionId,
       process,
       bridge,
+      provider: model?.provider ?? null,
+      model: model?.model ?? null,
       lastActivityAt: Date.now(),
       send: () => {},
     };
