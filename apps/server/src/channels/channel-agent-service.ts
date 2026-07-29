@@ -65,7 +65,7 @@ export class ChannelAgentService {
 
     const projectId = typeof config.config.projectId === "string" ? config.config.projectId : "";
     if (!projectId) {
-      await this.send(input, "频道尚未配置处理项目，请在 Pi 的频道设置中选择项目。");
+      await this.send(input, "频道尚未配置项目，请在 Pi 的频道设置中选择项目。");
       return;
     }
     const project = this.projects.findById(projectId);

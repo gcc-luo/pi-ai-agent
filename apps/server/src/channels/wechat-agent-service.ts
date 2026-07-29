@@ -43,7 +43,7 @@ export class WeChatAgentService {
     const config = this.channels.list().find((channel) =>
       channel.type === "wechat" && channel.enabled && typeof channel.config.projectId === "string",
     );
-    if (!config) return "微信频道尚未配置处理项目，请在 Pi 的微信频道设置中选择项目。";
+    if (!config) return "微信频道尚未配置项目，请在 Pi 的微信频道设置中选择项目。";
 
     const projectId = config.config.projectId as string;
     const project = this.projects.findById(projectId);

@@ -69,7 +69,7 @@ function ensureBot(): WeChatBot {
       return;
     }
     if (!inboundHandler) {
-      await bot?.reply(msg, "微信频道尚未配置处理项目，请先在 Pi 中完成频道配置。");
+      await bot?.reply(msg, "微信频道尚未配置项目，请先在 Pi 中完成频道配置。");
       return;
     }
     try {
