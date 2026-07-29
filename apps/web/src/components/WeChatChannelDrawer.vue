@@ -69,11 +69,11 @@ async function loadDrawer() {
   // Set projectId first (same pattern as DingTalkChannelDrawer).
   projectId.value = extractProjectId(props.config);
   enabled.value = props.config?.enabled ?? true;
+  status.value = { state: "idle" };
   try {
     const [projectList, conversationList] = await Promise.all([api.listProjects(), api.wechatConversations()]);
     projects.value = projectList;
     conversations.value = conversationList;
-    await refresh();
   } catch {
     // ignore transient errors during load
   }
@@ -83,6 +83,9 @@ async function startLogin() {
   try {
     await api.wechatStartLogin();
     await refresh();
+    // Start polling for QR code / scan status only after the user initiates login.
+    stopPolling();
+    pollTimer = setInterval(() => { void refresh(); }, 1_000);
   } catch (error: any) {
     message.error(error?.message ?? t("channel.wechat.loginFailed"));
   }
@@ -134,7 +137,7 @@ watch(() => props.show, (visible) => {
   stopPolling();
   if (!visible) return;
   void loadDrawer();
-  pollTimer = setInterval(() => { void refresh(); }, 1_000);
+  // Polling starts only after the user clicks "扫码登录" (see startLogin).
 });
 
 onUnmounted(stopPolling);
@@ -174,8 +177,11 @@ onUnmounted(stopPolling);
         <section class="drawer-section qr-section">
           <div class="section-heading"><h3>{{ t('channel.wechat.scanLogin') }}</h3></div>
           <div class="qr-area">
-            <img v-if="status.qrDataUrl" :src="status.qrDataUrl" class="qr-image" alt="WeChat QR" />
-            <div v-else-if="status.state === 'requesting' || status.state === 'idle'" class="qr-requesting">
+            <template v-if="status.state === 'idle'">
+              <NButton type="primary" @click="startLogin">{{ t('channel.wechat.scanLogin') }}</NButton>
+            </template>
+            <img v-else-if="status.qrDataUrl" :src="status.qrDataUrl" class="qr-image" alt="WeChat QR" />
+            <div v-else-if="status.state === 'requesting'" class="qr-requesting">
               <NSpin size="medium" />
               <span class="qr-requesting-text">{{ t('channel.wechat.requesting') }}</span>
             </div>
@@ -183,8 +189,8 @@ onUnmounted(stopPolling);
             <span v-else-if="isLoggedIn" class="logged-in">{{ status.userId }}</span>
             <span v-else class="login-error">{{ status.error || t('channel.wechat.loginFailed') }}</span>
           </div>
-          <p class="status-text" :class="{ error: status.state === 'error' }">{{ statusLabel }}</p>
-          <div class="drawer-actions">
+          <p v-if="status.state !== 'idle'" class="status-text" :class="{ error: status.state === 'error' }">{{ statusLabel }}</p>
+          <div v-if="status.state !== 'idle'" class="drawer-actions">
             <NButton v-if="!isLoggedIn" size="small" type="primary" @click="startLogin">{{ t('channel.wechat.scanLogin') }}</NButton>
             <NButton v-else size="small" type="error" secondary @click="logout">{{ t('channel.wechat.logout') }}</NButton>
           </div>
