@@ -56,9 +56,48 @@ export class RpcBridge extends EventEmitter {
       console.log(`[RpcBridge] agent_start: sessionId=${sid}`);
       return [{ type: "agent_status", sessionId: sid, status: "working" }];
     }
-    if (input?.type === "agent_settled" || input?.type === "agent_end") {
+    if (input?.type === "agent_settled") {
       console.log(`[RpcBridge] ${input.type}: sessionId=${sid}`);
       return [{ type: "agent_status", sessionId: sid, status: "idle" }];
+    }
+    if (input?.type === "agent_end") {
+      // One low-level run ended, but Pi may immediately compact and retry.
+      // `agent_settled` is the authoritative end of the full lifecycle.
+      return [];
+    }
+
+    if (input?.type === "compaction_start") {
+      const reason = this.compactionReason(input.reason);
+      return [
+        { type: "agent_status", sessionId: sid, status: "working" },
+        {
+          type: "context_compaction",
+          sessionId: sid,
+          phase: "started",
+          reason,
+          willRetry: input.willRetry === true,
+        },
+      ];
+    }
+
+    if (input?.type === "compaction_end") {
+      const reason = this.compactionReason(input.reason);
+      const result = input.result && typeof input.result === "object" ? input.result : {};
+      const error = typeof input.errorMessage === "string" && input.errorMessage
+        ? input.errorMessage
+        : undefined;
+      return [{
+        type: "context_compaction",
+        sessionId: sid,
+        phase: error ? "failed" : "completed",
+        reason,
+        tokensBefore: typeof result.tokensBefore === "number" ? result.tokensBefore : undefined,
+        estimatedTokensAfter: typeof result.estimatedTokensAfter === "number"
+          ? result.estimatedTokensAfter
+          : undefined,
+        willRetry: input.willRetry === true,
+        error,
+      }];
     }
 
     if (input?.type === "message_start") {
@@ -233,6 +272,10 @@ export class RpcBridge extends EventEmitter {
         message: err?.message ?? "failed to send prompt to pi",
       });
     }
+  }
+
+  private compactionReason(reason: unknown): "manual" | "threshold" | "overflow" {
+    return reason === "manual" || reason === "overflow" ? reason : "threshold";
   }
 
   private toPiCommand(command: any): object {

@@ -45,6 +45,19 @@ describe("ProcessManager", () => {
     ], expect.objectContaining({ cwd: "/tmp" }));
   });
 
+  it("enables native Pi auto-compaction before callers can send a prompt", async () => {
+    const child = new FakeProcess();
+    spawner.mockReturnValueOnce(child);
+    const writes: string[] = [];
+    child.stdin.on("data", (chunk) => writes.push(chunk.toString()));
+
+    await manager.start({ sessionId: "s1", projectId: "p1", workdir: "/tmp" });
+
+    expect(writes).toEqual([
+      JSON.stringify({ type: "set_auto_compaction", enabled: true }) + "\n",
+    ]);
+  });
+
   it("continues the isolated Pi JSONL session when one already exists", async () => {
     const sessionDir = path.join(sessionRootDir, "s2");
     fs.mkdirSync(sessionDir, { recursive: true });

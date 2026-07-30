@@ -18,6 +18,7 @@ export interface Config {
   noResponseTimeoutMs: number;
   piProvider: string;
   piModel: string;
+  piAutoCompaction: boolean;
   skillsDir: string;
   skillStoreTimeoutMs: number;
   skillsMpApiKey: string;
@@ -64,6 +65,7 @@ export function loadConfig(): Config {
     piSessionRootDir: process.env.PI_SESSION_ROOT_DIR ?? path.join(root, "tui-sessions"),
     piProvider: process.env.PI_PROVIDER ?? "",
     piModel: process.env.PI_MODEL ?? "",
+    piAutoCompaction: process.env.PI_AUTO_COMPACTION !== "false",
     skillsDir: process.env.PI_SKILLS_DIR ?? path.join(os.homedir(), ".pi/agent/skills"),
     skillStoreTimeoutMs: Number(process.env.SKILL_STORE_TIMEOUT_MS ?? 10_000),
     skillsMpApiKey: process.env.SKILLSMP_API_KEY ?? "",

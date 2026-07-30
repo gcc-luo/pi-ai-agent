@@ -263,6 +263,73 @@ describe("RpcBridge", () => {
     ]);
   });
 
+  it("exposes automatic compaction progress and token reduction", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({
+      type: "compaction_start",
+      reason: "threshold",
+      willRetry: false,
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "compaction_end",
+      reason: "threshold",
+      result: { tokensBefore: 118000, estimatedTokensAfter: 24000 },
+      willRetry: false,
+    }) + "\n");
+
+    expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
+      { type: "agent_status", sessionId: "s1", status: "working" },
+      {
+        type: "context_compaction",
+        sessionId: "s1",
+        phase: "started",
+        reason: "threshold",
+        willRetry: false,
+      },
+      {
+        type: "context_compaction",
+        sessionId: "s1",
+        phase: "completed",
+        reason: "threshold",
+        tokensBefore: 118000,
+        estimatedTokensAfter: 24000,
+        willRetry: false,
+        error: undefined,
+      },
+    ]);
+  });
+
+  it("keeps the run working through overflow compaction until agent_settled", () => {
+    const proc = makeProc();
+    const bridge = new RpcBridge(proc, "s1");
+    const onEvent = vi.fn();
+    bridge.onEvent(onEvent);
+
+    proc.stdout.write(JSON.stringify({ type: "agent_end" }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "compaction_start", reason: "overflow", willRetry: true,
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({
+      type: "compaction_end",
+      reason: "overflow",
+      result: { tokensBefore: 128000, estimatedTokensAfter: 20000 },
+      willRetry: true,
+    }) + "\n");
+    proc.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\n");
+
+    const statuses = onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "agent_status");
+    expect(statuses).toEqual([
+      { type: "agent_status", sessionId: "s1", status: "working" },
+      { type: "agent_status", sessionId: "s1", status: "idle" },
+    ]);
+  });
+
   it("maps model switch commands to pi set_model commands", () => {
     const proc = makeProc();
     const bridge = new RpcBridge(proc, "s1");

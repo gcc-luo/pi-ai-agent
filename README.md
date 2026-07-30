@@ -174,6 +174,7 @@ LOG_LEVEL=info
 # LLM Provider（四选一，至少填一个 API Key）
 PI_PROVIDER=google        # google | openai | anthropic | openrouter
 PI_MODEL=                  # 留空使用 provider 默认模型
+PI_AUTO_COMPACTION=true    # 接近上下文上限时自动压缩，默认 true
 GOOGLE_API_KEY=
 
 # Agent 进程（可选，覆盖默认启动命令）

@@ -219,6 +219,28 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
+const compaction = computed(() => agent.compactionFor(props.sessionId));
+
+function compactTokenCount(value?: number): string {
+  if (value == null) return "";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
+}
+
+const compactionLabel = computed(() => {
+  const state = compaction.value;
+  if (!state) return "";
+  if (state.phase === "started") return t("chat.compactionStarted");
+  if (state.phase === "failed") return t("chat.compactionFailed");
+  if (state.tokensBefore != null && state.estimatedTokensAfter != null) {
+    return t("chat.compactionCompletedWithTokens", {
+      before: compactTokenCount(state.tokensBefore),
+      after: compactTokenCount(state.estimatedTokensAfter),
+    });
+  }
+  return t("chat.compactionCompleted");
+});
 
 /** Cumulative session tokens with animated number transitions. */
 const displayedInput = ref(0);
@@ -918,6 +940,16 @@ const pendingTipLabel = computed(() => {
         />
         <ChatExpertPicker :session-id="sessionId" />
         <ChatKbPicker :session-id="sessionId" />
+        <span
+          v-if="compaction"
+          class="compaction-status"
+          :class="compaction.phase"
+          :title="compaction.error || t('chat.compactionHint')"
+        >
+          <span v-if="compaction.phase === 'started'" class="compaction-spinner"></span>
+          <span v-else class="compaction-icon">↻</span>
+          {{ compactionLabel }}
+        </span>
         <span class="token-usage" :title="t('chat.tokenUsage')">
           <span class="token-in"><span class="token-arrow up">↑</span>{{ tokenLabel.input }}</span>
           <span class="token-out"><span class="token-arrow down">↓</span>{{ tokenLabel.output }}</span>
@@ -1746,6 +1778,42 @@ const pendingTipLabel = computed(() => {
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.compaction-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.compaction-status + .token-usage {
+  margin-left: 0;
+}
+
+.compaction-status.failed {
+  color: var(--error-color, #d45b5b);
+}
+
+.compaction-icon {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.compaction-spinner {
+  width: 9px;
+  height: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: compaction-spin 0.8s linear infinite;
+}
+
+@keyframes compaction-spin {
+  to { transform: rotate(360deg); }
 }
 
 .tool-running-line span {

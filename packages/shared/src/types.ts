@@ -27,6 +27,16 @@ export type ServerEvent =
   // It deliberately does not mirror `message_start`/`message_end`, because an
   // agent run can contain several assistant messages.
   | { type: "agent_status"; sessionId: string; status: "working" | "idle" }
+  | {
+      type: "context_compaction";
+      sessionId: string;
+      phase: "started" | "completed" | "failed";
+      reason: "manual" | "threshold" | "overflow";
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
+      willRetry?: boolean;
+      error?: string;
+    }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "session_updated"; session: SessionDto }
   | { type: "model_changed"; sessionId: string; provider: string; model: string }

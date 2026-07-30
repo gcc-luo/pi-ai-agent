@@ -95,4 +95,36 @@ describe("agent store session_updated event", () => {
       message: "HTTP Error: 400",
     });
   });
+
+  it("tracks context compaction independently for each session", () => {
+    const agent = useAgentStore();
+
+    agent.handle({
+      type: "context_compaction",
+      sessionId: "s1",
+      phase: "started",
+      reason: "threshold",
+    });
+    agent.handle({
+      type: "context_compaction",
+      sessionId: "s2",
+      phase: "completed",
+      reason: "overflow",
+      tokensBefore: 128000,
+      estimatedTokensAfter: 22000,
+      willRetry: true,
+    });
+
+    expect(agent.compactionFor("s1")).toMatchObject({
+      phase: "started",
+      reason: "threshold",
+    });
+    expect(agent.compactionFor("s2")).toMatchObject({
+      phase: "completed",
+      reason: "overflow",
+      tokensBefore: 128000,
+      estimatedTokensAfter: 22000,
+      willRetry: true,
+    });
+  });
 });

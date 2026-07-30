@@ -87,6 +87,15 @@ export const useAgentStore = defineStore("agent", {
     // Cumulative token usage per session: { input, output } accumulated from
     // live message_end events and historical metadata.
     sessionTokens: {} as Record<string, { input: number; output: number }>,
+    contextCompactions: {} as Record<string, {
+      phase: "started" | "completed" | "failed";
+      reason: "manual" | "threshold" | "overflow";
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
+      willRetry?: boolean;
+      error?: string;
+      at: number;
+    }>,
   }),
   getters: {
     messagesFor: (state) => (sessionId: string): StreamMessage[] => state.streams[sessionId] ?? [],
@@ -102,6 +111,7 @@ export const useAgentStore = defineStore("agent", {
     },
     tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
       state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
+    compactionFor: (state) => (sessionId: string) => state.contextCompactions[sessionId] ?? null,
   },
   actions: {
     init() {
@@ -226,6 +236,18 @@ export const useAgentStore = defineStore("agent", {
       }
       if (e.type === "session_status") {
         if (e.status === "suspended" || e.status === "crashed") this.runStates[sid] = "idle";
+        return;
+      }
+      if (e.type === "context_compaction") {
+        this.contextCompactions[sid] = {
+          phase: e.phase,
+          reason: e.reason,
+          tokensBefore: e.tokensBefore,
+          estimatedTokensAfter: e.estimatedTokensAfter,
+          willRetry: e.willRetry,
+          error: e.error,
+          at: Date.now(),
+        };
         return;
       }
       const list = this.streams[sid] ?? [];

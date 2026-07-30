@@ -125,6 +125,7 @@ export async function buildConfiguredApp(config: Config) {
     npmRegistry: config.piNpmRegistry,
     provider: config.piProvider,
     model: config.piModel,
+    autoCompaction: config.piAutoCompaction,
     sessionRootDir: config.piSessionRootDir,
     logger: app.log,
   });

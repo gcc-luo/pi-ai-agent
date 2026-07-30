@@ -17,6 +17,7 @@ export interface ProcessManagerOptions {
   npmRegistry?: string;
   provider?: string;
   model?: string;
+  autoCompaction?: boolean;
   sessionRootDir?: string;
   logger: FastifyBaseLogger;
 }
@@ -124,6 +125,7 @@ export class ProcessManager extends EventEmitter {
   private npmRegistry?: string;
   private provider: string;
   private model: string;
+  private autoCompaction: boolean;
   private sessionRootDir: string;
   private log: FastifyBaseLogger;
 
@@ -135,6 +137,7 @@ export class ProcessManager extends EventEmitter {
     this.npmRegistry = opts.npmRegistry;
     this.provider = opts.provider ?? "";
     this.model = opts.model ?? "";
+    this.autoCompaction = opts.autoCompaction ?? true;
     this.sessionRootDir = opts.sessionRootDir ?? path.join(os.tmpdir(), "pi-web-ui-sessions");
     this.log = opts.logger;
   }
@@ -229,6 +232,10 @@ export class ProcessManager extends EventEmitter {
 
     this.procs.set(input.sessionId, proc);
     proc.status = "active";
+    // Make the Web UI's behavior deterministic even when the user's global Pi
+    // settings disable compaction. JSONL commands are processed in order, so
+    // this always takes effect before the first prompt written by a caller.
+    proc.writeCommand({ type: "set_auto_compaction", enabled: this.autoCompaction });
     return proc;
   }
 
