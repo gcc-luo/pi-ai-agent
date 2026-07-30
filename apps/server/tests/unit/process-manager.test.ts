@@ -27,10 +27,13 @@ describe("ProcessManager", () => {
     sessionRootDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-process-test-"));
     manager = new ProcessManager({
       spawn: spawner as any,
+      killProcessTree: (child) => child.kill(),
       command: "pi",
       args: ["--rpc"],
       npmRegistry: "https://registry.npmjs.org/",
       sessionRootDir,
+      browserExtensionPath: "browser-tools.ts",
+      browserEndpoint: "http://127.0.0.1:8080/api/internal/browser",
       logger: logger as any,
     });
   });
@@ -81,6 +84,7 @@ describe("ProcessManager", () => {
     await manager.start({ sessionId: "s1", projectId: "p1", workdir: "/tmp" });
     manager.stop("s1");
     expect(proc.killed).toBe(true);
+    expect(manager.get("s1")?.status).toBe("suspended");
   });
 
   it("marks the process crashed when exit code != 0", async () => {
@@ -190,5 +194,43 @@ describe("ProcessManager", () => {
 
     expect(onStderr).toHaveBeenCalledTimes(1);
     expect(onStderr).toHaveBeenCalledWith("real provider error");
+  });
+
+  it("issues an isolated browser bridge token for each enabled session", async () => {
+    await manager.start({
+      sessionId: "browser-a", projectId: "p1", workdir: "/tmp", browserEnabled: true,
+    });
+    await manager.start({
+      sessionId: "browser-b", projectId: "p1", workdir: "/tmp", browserEnabled: true,
+    });
+
+    const firstEnv = (spawner.mock.calls[0]![2] as {
+      env: Record<string, string | undefined>;
+    }).env;
+    const secondEnv = (spawner.mock.calls[1]![2] as {
+      env: Record<string, string | undefined>;
+    }).env;
+    const firstToken = String(firstEnv.PI_WEB_UI_BROWSER_TOKEN);
+    const secondToken = String(secondEnv.PI_WEB_UI_BROWSER_TOKEN);
+    expect(firstToken).not.toBe(secondToken);
+    expect(manager.validateBrowserToken("browser-a", firstToken)).toBe(true);
+    expect(manager.validateBrowserToken("browser-a", secondToken)).toBe(false);
+    expect(manager.validateBrowserToken("browser-b", firstToken)).toBe(false);
+  });
+
+  it("restarts the Pi process when browser tool availability changes", async () => {
+    const first = new FakeProcess();
+    const second = new FakeProcess();
+    spawner.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    await manager.start({
+      sessionId: "s1", projectId: "p1", workdir: "/tmp", browserEnabled: false,
+    });
+    const restarted = await manager.start({
+      sessionId: "s1", projectId: "p1", workdir: "/tmp", browserEnabled: true,
+    });
+
+    expect(first.killed).toBe(true);
+    expect(restarted.browserEnabled).toBe(true);
+    expect(spawner).toHaveBeenCalledTimes(2);
   });
 });

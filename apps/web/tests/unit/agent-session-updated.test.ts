@@ -10,7 +10,7 @@ describe("agent store session_updated event", () => {
   });
 
   const seedSession = (id: string, title: string | null) => ({
-    id, projectId: "p1", title, parentId: null, expertId: null,
+    id, projectId: "p1", title, parentId: null, expertId: null, browserEnabled: false,
     status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
   });
 

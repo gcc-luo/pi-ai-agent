@@ -35,7 +35,10 @@ export function deriveDefaultTitle(content: string): string | null {
 // decide when to emit a `file_changed` ServerEvent so the client can refresh
 // its file tree. `bash` is special-cased because file ops happen inside the
 // shell command — we scan for common file-modifying subcommands.
-const FILE_TOOLS = new Set(["write", "edit", "write_file", "edit_file", "create_file", "delete_file", "mkdir", "mv", "rm", "touch"]);
+const FILE_TOOLS = new Set([
+  "write", "edit", "write_file", "edit_file", "create_file", "delete_file",
+  "mkdir", "mv", "rm", "touch", "browser_screenshot", "browser_click",
+]);
 
 function bashModifiesFiles(command: string): boolean {
   // Conservative heuristic: refresh whenever the shell command uses a file
@@ -58,10 +61,43 @@ function isFileModifyingTool(name: string, args: unknown): boolean {
 }
 
 export const agentRoutes: FastifyPluginAsync = async (app) => {
-  const persistedToolCalls = new Map<string, { messageId: string; metadata: Record<string, unknown> }>();
+  const persistedToolCalls = new Map<string, {
+    sessionId: string;
+    messageId: string;
+    metadata: Record<string, unknown>;
+  }>();
   // toolCallId -> toolName, populated on `tool_call`, drained on `tool_result`
   // so we know which executions should trigger a `file_changed` push.
   const fileModifyingToolCalls = new Map<string, string>();
+  const finishPendingToolCalls = (sessionId: string, reason: string) => {
+    const result = {
+      content: [{ type: "text", text: reason }],
+      isError: true,
+    };
+    for (const [toolCallId, persisted] of persistedToolCalls) {
+      if (persisted.sessionId !== sessionId) continue;
+      const toolCalls = Array.isArray(persisted.metadata.toolCalls)
+        ? persisted.metadata.toolCalls as ToolCall[]
+        : [];
+      persisted.metadata.toolCalls = toolCalls.map((toolCall) =>
+        toolCall.toolCallId === toolCallId
+          ? { ...toolCall, status: "complete", result }
+          : toolCall,
+      );
+      const messageParts = Array.isArray(persisted.metadata.messageParts)
+        ? persisted.metadata.messageParts as Record<string, unknown>[]
+        : [];
+      persisted.metadata.messageParts = messageParts.map((part) =>
+        part.type === "toolCall" && part.id === toolCallId
+          ? { ...part, status: "complete", result }
+          : part,
+      );
+      app.messages.updateMetadata(persisted.messageId, persisted.metadata);
+      persistedToolCalls.delete(toolCallId);
+      fileModifyingToolCalls.delete(toolCallId);
+    }
+  };
+
   app.get("/ws/agent", { websocket: true }, (connection) => {
     const send = (event: ServerEvent) => {
       try { connection.send(JSON.stringify(event)); } catch {}
@@ -74,6 +110,22 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
       const session = app.sessions.findById(event.sessionId);
       if (!session) { send({ type: "error", sessionId: event.sessionId, code: "no_session", message: "session not found" }); return; }
+
+      if (event.type === "subscribe") {
+        const state = app.sessionStates.get(session.id);
+        if (state) state.send = send;
+        send({
+          type: "agent_status",
+          sessionId: session.id,
+          status: state?.runStatus ?? "idle",
+        });
+        send({
+          type: "session_status",
+          sessionId: session.id,
+          status: state ? "active" : session.status,
+        });
+        return;
+      }
 
       const requestedModelId = event.type === "send" || event.type === "switchModel"
         ? event.model
@@ -102,7 +154,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         } : undefined;
         app.log.info({ provider: modelConfig?.provider, model: modelConfig?.model, hasKey: !!modelConfig?.apiKey, baseUrl: modelConfig?.apiBaseUrl }, "model config resolved");
 
-        const proc = await app.processManager.start({ sessionId: session.id, projectId: project.id, workdir: project.workdir, modelConfig });
+        const proc = await app.processManager.start({
+          sessionId: session.id,
+          projectId: project.id,
+          workdir: project.workdir,
+          modelConfig,
+          browserEnabled: session.browserEnabled,
+        });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
         const nextState = app.sessionStates.set(
           session.id,
@@ -112,6 +170,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         );
         nextState.send = send;
         bridge.onEvent((e) => {
+          if (e.type === "agent_status") nextState.runStatus = e.status;
           nextState.send(e);
           if (e.type === "tool_call") {
             if (isFileModifyingTool(e.name, e.args)) {
@@ -142,18 +201,27 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                 : part,
             );
             app.messages.updateMetadata(persisted.messageId, persisted.metadata);
+            persistedToolCalls.delete(e.toolCallId);
           } else if (e.type === "message_end") {
             const metadata = e.metadata ?? {};
             const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
             const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
             for (const toolCall of toolCalls) {
-              persistedToolCalls.set(toolCall.toolCallId, { messageId: saved.id, metadata });
+              persistedToolCalls.set(toolCall.toolCallId, {
+                sessionId: e.sessionId,
+                messageId: saved.id,
+                metadata,
+              });
             }
           }
         });
-        proc.on("exit", (code: number | null) => {
+        proc.on("exit", () => {
+          nextState.runStatus = "idle";
+          finishPendingToolCalls(session.id, "Agent 进程已结束，工具调用未完成。");
+          const status = proc.status === "crashed" ? "crashed" : "suspended";
+          app.sessions.setStatus(session.id, status);
           nextState.send({ type: "agent_status", sessionId: session.id, status: "idle" });
-          nextState.send({ type: "session_status", sessionId: session.id, status: code === 0 ? "suspended" : "crashed" });
+          nextState.send({ type: "session_status", sessionId: session.id, status });
           if (app.sessionStates.get(session.id) === nextState) {
             app.sessionStates.delete(session.id);
           }
@@ -325,6 +393,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           // Do this only after all synchronous validation has passed. A
           // rejected image must not leave the composer in a perpetual
           // "working" state.
+          state.runStatus = "working";
           state.send({ type: "agent_status", sessionId: session.id, status: "working" });
         }
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
@@ -354,6 +423,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
       } else if (event.type === "interrupt") {
+        state.runStatus = "idle";
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {

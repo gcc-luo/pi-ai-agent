@@ -3,15 +3,18 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { FastifyBaseLogger } from "fastify";
 import { ServerEvent } from "@pi-web-ui/shared";
 import { AgentProcess, SpawnOptions } from "./types.js";
 import { preparePiSession } from "./pi-session-store.js";
 
 type Spawner = (cmd: string, args: string[], opts: NodeSpawnOptions) => ChildProcess;
+type ProcessTreeKiller = (child: ChildProcess) => void;
 
 export interface ProcessManagerOptions {
   spawn?: Spawner;
+  killProcessTree?: ProcessTreeKiller;
   command: string;
   args: string[];
   npmRegistry?: string;
@@ -19,6 +22,8 @@ export interface ProcessManagerOptions {
   model?: string;
   autoCompaction?: boolean;
   sessionRootDir?: string;
+  browserExtensionPath?: string;
+  browserEndpoint?: string;
   logger: FastifyBaseLogger;
 }
 
@@ -120,6 +125,7 @@ function isIgnorableStderr(line: string): boolean {
 export class ProcessManager extends EventEmitter {
   private procs = new Map<string, AgentProcess>();
   private spawn: Spawner;
+  private killProcessTree: ProcessTreeKiller;
   private command: string;
   private args: string[];
   private npmRegistry?: string;
@@ -128,10 +134,35 @@ export class ProcessManager extends EventEmitter {
   private autoCompaction: boolean;
   private sessionRootDir: string;
   private log: FastifyBaseLogger;
+  private browserExtensionPath?: string;
+  private browserEndpoint?: string;
+  private browserTokens = new Map<string, string>();
 
   constructor(opts: ProcessManagerOptions) {
     super();
     this.spawn = opts.spawn ?? ((c, a, o) => spawn(c, a, o) as ChildProcess);
+    this.killProcessTree = opts.killProcessTree ?? (opts.spawn
+      ? ((child) => { child.kill("SIGTERM"); })
+      : ((child) => {
+      if (!child.pid) {
+        child.kill("SIGTERM");
+        return;
+      }
+      if (process.platform === "win32") {
+        const killer = spawn(
+          "taskkill",
+          ["/PID", String(child.pid), "/T", "/F"],
+          { stdio: "ignore", windowsHide: true },
+        );
+        killer.once("error", () => child.kill("SIGTERM"));
+        return;
+      }
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+      }));
     this.command = opts.command;
     this.args = opts.args;
     this.npmRegistry = opts.npmRegistry;
@@ -140,12 +171,26 @@ export class ProcessManager extends EventEmitter {
     this.autoCompaction = opts.autoCompaction ?? true;
     this.sessionRootDir = opts.sessionRootDir ?? path.join(os.tmpdir(), "pi-web-ui-sessions");
     this.log = opts.logger;
+    this.browserExtensionPath = opts.browserExtensionPath;
+    this.browserEndpoint = opts.browserEndpoint;
   }
 
-  async start(input: { sessionId: string; projectId: string; workdir: string; modelConfig?: ModelConfig }): Promise<AgentProcess> {
+  async start(input: {
+    sessionId: string;
+    projectId: string;
+    workdir: string;
+    modelConfig?: ModelConfig;
+    browserEnabled?: boolean;
+  }): Promise<AgentProcess> {
     const existing = this.procs.get(input.sessionId);
     if (existing && existing.status !== "crashed" && existing.status !== "suspended") {
-      return existing;
+      if ((existing.browserEnabled ?? false) === (input.browserEnabled ?? false)) {
+        return existing;
+      }
+      const stopped = await this.stopAndWait(input.sessionId);
+      if (!stopped) {
+        throw new Error("failed to stop agent process while changing browser capability");
+      }
     }
     const cfg = input.modelConfig;
     const provider = cfg?.provider ?? this.provider;
@@ -154,6 +199,9 @@ export class ProcessManager extends EventEmitter {
     const extraArgs: string[] = [];
     if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
       extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl, modelType: cfg.modelType }));
+    }
+    if (input.browserEnabled && this.browserExtensionPath) {
+      extraArgs.push("--extension", this.browserExtensionPath);
     }
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);
@@ -172,6 +220,16 @@ export class ProcessManager extends EventEmitter {
         env.OPENAI_BASE_URL = cfg.apiBaseUrl;
       }
     }
+    let browserToken: string | undefined;
+    if (input.browserEnabled) {
+      browserToken = crypto.randomBytes(32).toString("hex");
+      this.browserTokens.set(input.sessionId, browserToken);
+      env.PI_WEB_UI_BROWSER_ENDPOINT = this.browserEndpoint;
+      env.PI_WEB_UI_BROWSER_TOKEN = browserToken;
+      env.PI_WEB_UI_SESSION_ID = input.sessionId;
+    } else {
+      this.browserTokens.delete(input.sessionId);
+    }
 
     const envKeys = Object.keys(env).filter(k => k.includes("API_KEY") || k.includes("BASE_URL") || k === "PI_RPC");
     const args = [...this.args, ...extraArgs, ...piSession.args];
@@ -184,8 +242,12 @@ export class ProcessManager extends EventEmitter {
       // Windows resolves `npx`/`pnpm` as .cmd shims that spawn() cannot open
       // without a shell; enabling it here avoids `spawn npx ENOENT`.
       shell: process.platform === "win32",
+      // Give the agent and every command it starts one process group on POSIX,
+      // allowing session shutdown to terminate the complete descendant tree.
+      detached: process.platform !== "win32",
     });
 
+    let stopRequested = false;
     const proc: AgentProcess = new EventEmitter() as unknown as AgentProcess;
     Object.assign(proc, {
       sessionId: input.sessionId,
@@ -197,10 +259,15 @@ export class ProcessManager extends EventEmitter {
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
       status: "starting" as const,
+      browserEnabled: input.browserEnabled ?? false,
       writeCommand(cmd: object) {
         child.stdin!.write(JSON.stringify(cmd) + "\n");
       },
-      kill() { child.kill("SIGTERM"); },
+      kill: () => {
+        if (stopRequested) return;
+        stopRequested = true;
+        this.killProcessTree(child);
+      },
     });
 
     child.stdout!.on("data", () => { proc.lastActivityAt = Date.now(); });
@@ -220,7 +287,10 @@ export class ProcessManager extends EventEmitter {
     const reportExit = (code: number | null) => {
       if (exited) return;
       exited = true;
-      proc.status = code === 0 ? "suspended" : "crashed";
+      proc.status = stopRequested || code === 0 ? "suspended" : "crashed";
+      if (browserToken && this.browserTokens.get(input.sessionId) === browserToken) {
+        this.browserTokens.delete(input.sessionId);
+      }
       (proc as unknown as EventEmitter).emit("exit", code);
     };
     child.on("exit", reportExit);
@@ -248,25 +318,33 @@ export class ProcessManager extends EventEmitter {
     if (p) p.kill();
   }
 
-  async stopAndWait(sessionId: string, timeoutMs = 2_000): Promise<void> {
+  async stopAndWait(sessionId: string, timeoutMs = 2_000): Promise<boolean> {
     const proc = this.procs.get(sessionId);
-    if (!proc || proc.status === "suspended" || proc.status === "crashed") return;
-    await new Promise<void>((resolve) => {
+    if (!proc || proc.status === "suspended" || proc.status === "crashed") return true;
+    return new Promise<boolean>((resolve) => {
       let timer: NodeJS.Timeout | undefined;
-      const onExit = () => done();
-      const done = () => {
+      const onExit = () => done(true);
+      const done = (exited: boolean) => {
         if (timer) clearTimeout(timer);
         proc.off("exit", onExit);
-        resolve();
+        resolve(exited);
       };
       proc.on("exit", onExit);
-      timer = setTimeout(done, timeoutMs);
+      timer = setTimeout(() => done(false), timeoutMs);
       proc.kill();
     });
+  }
+
+  validateBrowserToken(sessionId: string, token: string | undefined): boolean {
+    if (!token) return false;
+    const expected = this.browserTokens.get(sessionId);
+    if (!expected || expected.length !== token.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
   }
 
   async shutdown(): Promise<void> {
     for (const p of this.procs.values()) p.kill();
     this.procs.clear();
+    this.browserTokens.clear();
   }
 }

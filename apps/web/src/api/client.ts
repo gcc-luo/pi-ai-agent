@@ -4,7 +4,7 @@ import type {
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
   ScheduledTaskDto, TaskLogDto, TaskType,
   ArtifactItem, ArtifactValidation,
-  ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType,
+  ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -52,6 +52,10 @@ export const api = {
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   activateOfficeSession: (id: string) => request<void>("POST", `/sessions/${id}/activate-office`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
+  getBrowserCapability: (sessionId: string) =>
+    request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),
+  setBrowserCapability: (sessionId: string, enabled: boolean) =>
+    request<BrowserCapabilityDto>("PUT", `/sessions/${sessionId}/browser`, { enabled }),
   listSkills: () => request<SkillDto[]>("GET", "/skills"),
   importSkill: (data: { name: string; description: string; body: string }) =>
     request<SkillDto>("POST", "/skills", data),

@@ -11,6 +11,7 @@ export type ClientEvent =
   | { type: "interrupt"; sessionId: string }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }
+  | { type: "subscribe"; sessionId: string }
   | { type: "ping" };
 
 // WebSocket events: server → client
@@ -91,11 +92,27 @@ export interface SessionDto {
   title: string | null;
   parentId: string | null;
   expertId: string | null;
+  browserEnabled: boolean;
   status: SessionStatus;
   createdAt: number;
   updatedAt: number;
   lastActiveAt: number | null;
   deletedAt: number | null;
+}
+
+export type BrowserCapabilityStatus =
+  | "disabled"
+  | "starting"
+  | "running"
+  | "error"
+  | "closed";
+
+export interface BrowserCapabilityDto {
+  enabled: boolean;
+  status: BrowserCapabilityStatus;
+  pageCount: number;
+  currentUrl: string | null;
+  error: string | null;
 }
 
 export interface TrashItemDto {

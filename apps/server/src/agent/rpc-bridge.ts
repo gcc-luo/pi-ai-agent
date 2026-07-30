@@ -228,7 +228,10 @@ export class RpcBridge extends EventEmitter {
         toolCallId: p.id,
         name: p.name,
         args: p.arguments,
-        status: "complete" as const,
+        // An assistant tool-use message is persisted before its tool result
+        // arrives. Keeping it running prevents history reloads from presenting
+        // an unfinished execution as successfully completed.
+        status: "running" as const,
       }));
   }
 
@@ -236,7 +239,9 @@ export class RpcBridge extends EventEmitter {
     if (!Array.isArray(message?.content)) return [];
     return message.content
       .filter((part: any) => part && typeof part === "object")
-      .map((part: any) => ({ ...part }));
+      .map((part: any) => part.type === "toolCall"
+        ? { ...part, status: "running" }
+        : { ...part });
   }
 
   private messageText(message: any): string {

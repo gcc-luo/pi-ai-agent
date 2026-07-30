@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Config } from "./config.js";
 import { openDatabase } from "./db/sqlite.js";
 import { ProjectRepository } from "./db/repositories/project.js";
@@ -49,6 +50,8 @@ import { getWeChatWorker } from "./channels/wechat-worker.js";
 import { WeChatAgentService } from "./channels/wechat-agent-service.js";
 import { ChannelAgentService } from "./channels/channel-agent-service.js";
 import { ChannelConversationRepository } from "./db/repositories/channel-conversation.js";
+import { BrowserSessionManager } from "./browser/browser-session-manager.js";
+import { browserRoutes } from "./routes/browser.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -119,6 +122,14 @@ export async function buildConfiguredApp(config: Config) {
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
     scheduledTasks, taskLogs, channels, channelConversations, config,
   });
+  const browserManager = new BrowserSessionManager({ logger: app.log });
+  (app as any).browserManager = browserManager;
+  let browserExtensionPath = fileURLToPath(
+    new URL("./agent/extensions/browser-tools.js", import.meta.url),
+  );
+  if (!fs.existsSync(browserExtensionPath)) {
+    browserExtensionPath = browserExtensionPath.replace(/\.js$/, ".ts");
+  }
   const processManager = new ProcessManager({
     command: config.piCommand,
     args: config.piArgs,
@@ -127,6 +138,8 @@ export async function buildConfiguredApp(config: Config) {
     model: config.piModel,
     autoCompaction: config.piAutoCompaction,
     sessionRootDir: config.piSessionRootDir,
+    browserExtensionPath,
+    browserEndpoint: `http://127.0.0.1:${config.port}/api/internal/browser`,
     logger: app.log,
   });
   (app as any).processManager = processManager;
@@ -169,11 +182,14 @@ export async function buildConfiguredApp(config: Config) {
       const state = sessionStates.get(id);
       if (state) { state.process.kill(); sessionStates.delete(id); }
       tuiProcessManager.stop(id);
+      void browserManager.close(id);
       sessions.setStatus(id, "suspended");
     },
   });
   app.addHook("onClose", async () => {
     sweeper.stop();
+    await browserManager.shutdown();
+    await processManager.shutdown();
     await tuiProcessManager.shutdown();
     try {
       const { getRegistry } = await import("./channels/registry.js");
@@ -195,6 +211,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(createKbFilesRoutes(parsePipeline, config.kbFilesDir), { prefix: "/api" });
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
+  await app.register(browserRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
   await app.register(channelsRoutes, { prefix: "/api/channels" });

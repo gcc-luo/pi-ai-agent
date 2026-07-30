@@ -5,6 +5,7 @@ import { ulid } from "../../util/ulid.js";
 type Row = {
   id: string; project_id: string; title: string | null; parent_id: string | null;
   expert_id: string | null; status: SessionStatus; pi_session_ref: string | null;
+  browser_enabled: number;
   created_at: number; updated_at: number; last_active_at: number | null;
   deleted_at: number | null;
 };
@@ -12,6 +13,7 @@ type Row = {
 function toDto(r: Row): SessionDto {
   return {
     id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id, expertId: r.expert_id,
+    browserEnabled: r.browser_enabled === 1,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
     deletedAt: r.deleted_at,
   };
@@ -29,6 +31,7 @@ export class SessionRepository {
     `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, input.expertId ?? null, now, now);
     return {
       id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
+      browserEnabled: false,
       status: "active", createdAt: now, updatedAt: now, lastActiveAt: null, deletedAt: null,
     };
   }
@@ -73,6 +76,13 @@ export class SessionRepository {
     if (!cur) throw new Error("session not found");
     this.db.prepare("UPDATE sessions SET expert_id = ?, updated_at = ? WHERE id = ?")
       .run(expertId, Date.now(), id);
+  }
+
+  setBrowserEnabled(id: string, enabled: boolean): void {
+    const cur = this.findById(id);
+    if (!cur) throw new Error("session not found");
+    this.db.prepare("UPDATE sessions SET browser_enabled = ?, updated_at = ? WHERE id = ?")
+      .run(enabled ? 1 : 0, Date.now(), id);
   }
 
   markActiveAsCrashed(): void {

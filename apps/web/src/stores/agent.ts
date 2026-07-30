@@ -180,6 +180,12 @@ export const useAgentStore = defineStore("agent", {
     interrupt(sessionId: string) {
       wsClient.send({ type: "interrupt", sessionId });
     },
+    subscribe(sessionId: string) {
+      wsClient.subscribe(sessionId);
+    },
+    unsubscribe(sessionId: string) {
+      wsClient.unsubscribe(sessionId);
+    },
     addSessionTokens(sessionId: string, input: number, output: number) {
       const prev = this.sessionTokens[sessionId] ?? { input: 0, output: 0 };
       this.sessionTokens[sessionId] = { input: prev.input + input, output: prev.output + output };

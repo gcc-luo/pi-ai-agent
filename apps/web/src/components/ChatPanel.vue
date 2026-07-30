@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { NInput } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { api } from "../api/client.js";
@@ -14,7 +14,12 @@ import ChatExpertPicker from "./ChatExpertPicker.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
-import type { MessagePart, ArtifactItem, ArtifactValidation } from "@pi-web-ui/shared";
+import type {
+  MessagePart,
+  ArtifactItem,
+  ArtifactValidation,
+  BrowserCapabilityDto,
+} from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
@@ -219,6 +224,92 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
+const browser = ref<BrowserCapabilityDto>({
+  enabled: false,
+  status: "disabled",
+  pageCount: 0,
+  currentUrl: null,
+  error: null,
+});
+const browserLoading = ref(false);
+
+async function loadBrowserCapability() {
+  const sessionId = props.sessionId;
+  try {
+    const nextBrowser = await api.getBrowserCapability(sessionId);
+    if (props.sessionId === sessionId) browser.value = nextBrowser;
+  } catch {
+    if (props.sessionId !== sessionId) return;
+    browser.value = {
+      enabled: false,
+      status: "error",
+      pageCount: 0,
+      currentUrl: null,
+      error: t("chat.browserStatusError"),
+    };
+  }
+}
+
+async function toggleBrowserCapability() {
+  if (browserLoading.value || isBusy.value) return;
+  const enabled = !browser.value.enabled;
+  const sessionId = props.sessionId;
+  browserLoading.value = true;
+  browser.value = {
+    ...browser.value,
+    enabled,
+    status: enabled ? "starting" : "disabled",
+    error: null,
+  };
+  try {
+    const nextBrowser = await api.setBrowserCapability(sessionId, enabled);
+    if (props.sessionId === sessionId) browser.value = nextBrowser;
+  } catch (error) {
+    if (props.sessionId !== sessionId) return;
+    browser.value = {
+      ...browser.value,
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    browserLoading.value = false;
+  }
+}
+
+watch(() => props.sessionId, () => {
+  void loadBrowserCapability();
+}, { immediate: true });
+
+const browserStatusLabel = computed(() => {
+  if (browserLoading.value || browser.value.status === "starting") return t("chat.browserStatusStarting");
+  if (browser.value.status === "running") return t("chat.browserStatusRunning");
+  if (browser.value.status === "error") return t("chat.browserStatusError");
+  if (browser.value.status === "closed") return t("chat.browserStatusClosed");
+  return browser.value.enabled ? t("chat.browserStatusEnabled") : t("chat.browser");
+});
+
+const browserPollTimer = window.setInterval(() => {
+  if (browser.value.enabled && !browserLoading.value && !isBusy.value) {
+    void loadBrowserCapability();
+  }
+}, 3_000);
+onUnmounted(() => window.clearInterval(browserPollTimer));
+
+watch(messages, (items) => {
+  for (let messageIndex = items.length - 1; messageIndex >= 0; messageIndex--) {
+    const parts = items[messageIndex]?.parts ?? [];
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
+      const part = parts[partIndex];
+      if (part?.kind !== "tool_call" || !part.name.startsWith("browser_")) continue;
+      if (part.status === "running" && browser.value.enabled) {
+        browser.value = { ...browser.value, status: "running", error: null };
+      } else {
+        void loadBrowserCapability();
+      }
+      return;
+    }
+  }
+}, { deep: true });
 const compaction = computed(() => agent.compactionFor(props.sessionId));
 
 function compactTokenCount(value?: number): string {
@@ -380,6 +471,7 @@ async function loadMessages() {
 }
 
 onMounted(async () => {
+  agent.subscribe(props.sessionId);
   // Make office mode the sole Pi writer before loading the canonical history.
   try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
@@ -387,12 +479,16 @@ onMounted(async () => {
   await kbStore.loadAll();
 });
 
-watch(() => props.sessionId, async () => {
+watch(() => props.sessionId, async (sessionId, previousSessionId) => {
+  agent.unsubscribe(previousSessionId);
+  agent.subscribe(sessionId);
   kbSearchByMessage.value = {};
   try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
 });
+
+onUnmounted(() => agent.unsubscribe(props.sessionId));
 
 watch(
   () => messages.value.length,
@@ -463,6 +559,58 @@ function toolPreview(name: string, args: unknown): string {
   if (typeof value.query === "string") return truncate(value.query);
   if (typeof value.url === "string") return truncate(value.url);
   return truncate(formatJson(args));
+}
+
+function toolDisplayName(name: string): string {
+  const labels: Record<string, string> = {
+    browser_open: t("chat.browserToolOpen"),
+    browser_navigate: t("chat.browserToolNavigate"),
+    browser_snapshot: t("chat.browserToolSnapshot"),
+    browser_click: t("chat.browserToolClick"),
+    browser_fill: t("chat.browserToolFill"),
+    browser_select: t("chat.browserToolSelect"),
+    browser_press: t("chat.browserToolPress"),
+    browser_hover: t("chat.browserToolHover"),
+    browser_scroll: t("chat.browserToolScroll"),
+    browser_wait: t("chat.browserToolWait"),
+    browser_tabs: t("chat.browserToolTabs"),
+    browser_screenshot: t("chat.browserToolScreenshot"),
+    browser_console_errors: t("chat.browserToolConsole"),
+    browser_network_errors: t("chat.browserToolNetwork"),
+    browser_close: t("chat.browserToolClose"),
+  };
+  return labels[name] ?? name;
+}
+
+function browserArtifacts(result: unknown): ArtifactItem[] {
+  const found: ArtifactItem[] = [];
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number) => {
+    if (depth > 5 || !value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.path === "string"
+      && typeof record.name === "string"
+      && typeof record.mimeType === "string"
+      && record.path.startsWith("browser/")
+    ) {
+      found.push({
+        path: record.path,
+        name: record.name,
+        mimeType: record.mimeType,
+      });
+    }
+    for (const child of Object.values(record)) visit(child, depth + 1);
+  };
+  visit(result, 0);
+  return found.filter((item, index) =>
+    found.findIndex((candidate) => candidate.path === item.path) === index,
+  );
 }
 
 function toolResultText(result: unknown): string {
@@ -578,6 +726,9 @@ const allMessages = computed(() => {
           }
         } else {
           newParts.push(p);
+          if (p.kind === "tool_call" && p.result !== undefined) {
+            artifacts.push(...browserArtifacts(p.result));
+          }
         }
       }
       parts = newParts;
@@ -794,7 +945,7 @@ const pendingTipLabel = computed(() => {
               <details>
                 <summary class="tool-summary">
                   <span class="trace-gutter">›</span>
-                  <span class="tool-name">{{ p.name }}</span>
+                  <span class="tool-name" :title="p.name">{{ toolDisplayName(p.name) }}</span>
                   <span class="tool-preview">{{ toolPreview(p.name, p.args) }}</span>
                   <span class="tool-status" :class="p.status === 'running' ? 'running' : 'done'">
                     {{ p.status === 'running' ? t('chat.toolRunning') : t('chat.toolDone') }}
@@ -940,6 +1091,23 @@ const pendingTipLabel = computed(() => {
         />
         <ChatExpertPicker :session-id="sessionId" />
         <ChatKbPicker :session-id="sessionId" />
+        <button
+          type="button"
+          class="browser-capability"
+          :class="[browser.status, { enabled: browser.enabled }]"
+          :disabled="browserLoading || isBusy"
+          :title="browser.error || browser.currentUrl || browserStatusLabel"
+          data-test="browser-capability-toggle"
+          @click="toggleBrowserCapability"
+        >
+          <span v-if="browserLoading || browser.status === 'starting'" class="browser-spinner" />
+          <svg v-else width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3" />
+            <path d="M1.9 8h12.2M8 1.8c1.7 1.7 2.6 3.8 2.6 6.2S9.7 12.5 8 14.2M8 1.8C6.3 3.5 5.4 5.6 5.4 8s.9 4.5 2.6 6.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
+          </svg>
+          <span>{{ browserStatusLabel }}</span>
+          <span class="browser-dot" />
+        </button>
         <span
           v-if="compaction"
           class="compaction-status"
@@ -1863,6 +2031,66 @@ const pendingTipLabel = computed(() => {
 }
 .tool-btn:hover {
   color: var(--text-primary);
+}
+
+.browser-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.browser-capability:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.browser-capability.enabled {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default));
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.browser-capability.error {
+  border-color: color-mix(in srgb, var(--rose) 45%, var(--border-default));
+  background: var(--rose-dim);
+  color: var(--rose);
+}
+
+.browser-capability:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.browser-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.browser-capability.running .browser-dot {
+  opacity: 1;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.browser-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: compaction-spin 0.8s linear infinite;
 }
 
 .token-usage {

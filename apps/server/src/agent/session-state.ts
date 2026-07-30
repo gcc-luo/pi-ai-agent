@@ -8,6 +8,7 @@ export interface SessionState {
   bridge: RpcBridge;
   provider: string | null;
   model: string | null;
+  runStatus: "working" | "idle";
   lastActivityAt: number;
   send: (event: ServerEvent) => void;
 }
@@ -27,6 +28,7 @@ export class SessionStateStore {
       bridge,
       provider: model?.provider ?? null,
       model: model?.model ?? null,
+      runStatus: "idle",
       lastActivityAt: Date.now(),
       send: () => {},
     };

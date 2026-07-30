@@ -9,6 +9,7 @@ export class WsClient {
   private reconnectAttempts = 0;
   private status: Status = "disconnected";
   private statusListeners = new Set<(s: Status) => void>();
+  private subscriptions = new Set<string>();
   private pingTimer?: number;
 
   connect() {
@@ -19,6 +20,9 @@ export class WsClient {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.setStatus("connected");
+      for (const sessionId of this.subscriptions) {
+        this.ws?.send(JSON.stringify({ type: "subscribe", sessionId }));
+      }
       this.pingTimer = window.setInterval(() => this.send({ type: "ping" }), 25000);
     };
     this.ws.onmessage = (msg) => {
@@ -47,6 +51,17 @@ export class WsClient {
 
   send(event: ClientEvent) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(event));
+  }
+
+  subscribe(sessionId: string) {
+    this.subscriptions.add(sessionId);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "subscribe", sessionId }));
+    }
+  }
+
+  unsubscribe(sessionId: string) {
+    this.subscriptions.delete(sessionId);
   }
 
   onEvent(l: Listener) { this.listeners.add(l); return () => this.listeners.delete(l); }

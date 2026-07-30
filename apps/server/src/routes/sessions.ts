@@ -93,6 +93,7 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     if (!s) return reply.code(404).send({ error: "not found" });
     app.sessionStates.get(req.params.id)?.process.kill();
     app.sessionStates.delete(req.params.id);
+    await app.browserManager.close(req.params.id);
     app.tuiProcessManager.stop(req.params.id);
     app.sessions.delete(req.params.id);
     return reply.code(204).send();

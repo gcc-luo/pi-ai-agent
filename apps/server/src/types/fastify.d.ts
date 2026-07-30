@@ -20,6 +20,7 @@ import type { TaskScheduler } from "../services/task-scheduler.js";
 import type { ChannelRepository } from "../db/repositories/channel.js";
 import type { ChannelConversationRepository } from "../db/repositories/channel-conversation.js";
 import type { Config } from "../config.js";
+import type { BrowserSessionManager } from "../browser/browser-session-manager.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -45,5 +46,6 @@ declare module "fastify" {
     channels: ChannelRepository;
     channelConversations: ChannelConversationRepository;
     config: Config;
+    browserManager: BrowserSessionManager;
   }
 }

@@ -80,6 +80,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       for (const proc of app.tuiProcessManager.values()) {
         if (proc.projectId === body.id) app.tuiProcessManager.stop(proc.sessionId);
       }
+      await Promise.allSettled(
+        projectSessionIds.map((sessionId) => app.browserManager.close(sessionId)),
+      );
       for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(body.id);
     } else if (body.kind === "session") {
@@ -90,6 +93,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         app.sessionStates.delete(body.id);
       }
       app.tuiProcessManager.stop(body.id);
+      await app.browserManager.close(body.id);
       app.tuiProcessManager.removeSessionHistory(body.id);
       app.sessions.destroyPermanently(body.id);
     } else {
@@ -116,6 +120,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       for (const proc of app.tuiProcessManager.values()) {
         if (proc.projectId === p.id) app.tuiProcessManager.stop(proc.sessionId);
       }
+      await Promise.allSettled(
+        projectSessionIds.map((sessionId) => app.browserManager.close(sessionId)),
+      );
       for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(p.id);
     }
@@ -129,6 +136,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         app.sessionStates.delete(s.id);
       }
       app.tuiProcessManager.stop(s.id);
+      await app.browserManager.close(s.id);
       app.tuiProcessManager.removeSessionHistory(s.id);
       app.sessions.destroyPermanently(s.id);
     }

@@ -41,6 +41,7 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
     const cur = app.projects.findById(req.params.id);
     if (!cur) return reply.code(404).send({ error: "not found" });
     const projectId = req.params.id;
+    const projectSessionIds = app.sessions.listByProject(projectId).map((session) => session.id);
     for (const state of app.sessionStates.values()) {
       if (state.process.projectId !== projectId) continue;
       try {
@@ -53,6 +54,9 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
     for (const proc of app.tuiProcessManager.values()) {
       if (proc.projectId === projectId) app.tuiProcessManager.stop(proc.sessionId);
     }
+    await Promise.allSettled(
+      projectSessionIds.map((sessionId) => app.browserManager.close(sessionId)),
+    );
     app.projects.delete(projectId);
     return reply.code(204).send();
   });

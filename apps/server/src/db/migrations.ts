@@ -285,6 +285,13 @@ const MIGRATIONS = [
       SELECT channel_id, user_id, session_id, updated_at FROM wechat_conversations;
     `,
   },
+  {
+    name: "018_session_browser_capability",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN browser_enabled INTEGER NOT NULL DEFAULT 0;
+    `,
+    safe: true, // ignore "duplicate column" errors for idempotency
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
@@ -300,8 +307,14 @@ export function runMigrations(db: Database.Database): void {
       db.exec(m.sql);
       insert.run(m.name, Date.now());
       db.exec("COMMIT");
-    } catch (e) {
+    } catch (e: any) {
       db.exec("ROLLBACK");
+      if ((m as any).safe && e?.code === "SQLITE_ERROR") {
+        // Migration marked safe — record it as applied even if the SQL failed
+        // (e.g. "duplicate column" means the schema change already exists).
+        insert.run(m.name, Date.now());
+        continue;
+      }
       throw e;
     }
   }

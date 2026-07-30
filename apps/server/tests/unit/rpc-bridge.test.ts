@@ -151,7 +151,13 @@ describe("RpcBridge", () => {
 
     expect(onEvent.mock.calls[1][0].metadata.messageParts).toEqual([
       { type: "thinking", thinking: "I need a tool." },
-      { type: "toolCall", id: "call-2", name: "read_file", arguments: { path: "README.md" } },
+      {
+        type: "toolCall",
+        id: "call-2",
+        name: "read_file",
+        arguments: { path: "README.md" },
+        status: "running",
+      },
     ]);
   });
 

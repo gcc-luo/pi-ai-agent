@@ -9,10 +9,12 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "browser:install": "playwright install chromium"
   },
   "dependencies": {
     "@amaster.ai/pi-channels": "0.1.6",
+    "@earendil-works/pi-coding-agent": "0.82.1",
     "@fastify/cors": "11.3.0",
     "@fastify/multipart": "10.1.0",
     "@fastify/websocket": "11.3.0",
@@ -29,7 +31,9 @@
     "nodejieba": "3.5.8",
     "pino": "9.3.2",
     "pino-pretty": "11.2.2",
+    "playwright": "1.55.0",
     "qrcode": "1.5.4",
+    "typebox": "1.1.38",
     "ulid": "2.3.0",
     "unpdf": "1.6.2"
   },
