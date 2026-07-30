@@ -11,6 +11,7 @@ export interface Config {
   piCommand: string;
   piArgs: string[];
   piTuiArgs: string[];
+  piNpmRegistry: string;
   piSessionRootDir: string;
   idleTimeoutMs: number;
   suspendedTimeoutMs: number;
@@ -57,6 +58,7 @@ export function loadConfig(): Config {
     // The web terminal runs Pi's normal interactive interface, not its JSON-RPC mode.
     // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
     piTuiArgs: (process.env.PI_TUI_ARGS?.split(" ") ?? withoutRpcMode(piArgs)),
+    piNpmRegistry: process.env.PI_NPM_REGISTRY ?? "https://registry.npmjs.org/",
     // One private Pi JSONL directory per Web UI session. Keep the original
     // tui-sessions location so existing Coding conversations remain usable.
     piSessionRootDir: process.env.PI_SESSION_ROOT_DIR ?? path.join(root, "tui-sessions"),

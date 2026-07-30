@@ -14,6 +14,7 @@ export interface ProcessManagerOptions {
   spawn?: Spawner;
   command: string;
   args: string[];
+  npmRegistry?: string;
   provider?: string;
   model?: string;
   sessionRootDir?: string;
@@ -104,14 +105,15 @@ export function createCustomModelExtension(config: { provider: string; model: st
 function cleanSpawnEnv(source: NodeJS.ProcessEnv): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (key.startsWith("npm_config_")) continue;
+    if (key.toLowerCase().startsWith("npm_config_")) continue;
     env[key] = value;
   }
   return env;
 }
 
 function isIgnorableStderr(line: string): boolean {
-  return /^npm warn Unknown (env|project) config /.test(line);
+  return /^npm warn Unknown (env|project) config /.test(line)
+    || /^npm warn deprecated /.test(line);
 }
 
 export class ProcessManager extends EventEmitter {
@@ -119,6 +121,7 @@ export class ProcessManager extends EventEmitter {
   private spawn: Spawner;
   private command: string;
   private args: string[];
+  private npmRegistry?: string;
   private provider: string;
   private model: string;
   private sessionRootDir: string;
@@ -129,6 +132,7 @@ export class ProcessManager extends EventEmitter {
     this.spawn = opts.spawn ?? ((c, a, o) => spawn(c, a, o) as ChildProcess);
     this.command = opts.command;
     this.args = opts.args;
+    this.npmRegistry = opts.npmRegistry;
     this.provider = opts.provider ?? "";
     this.model = opts.model ?? "";
     this.sessionRootDir = opts.sessionRootDir ?? path.join(os.tmpdir(), "pi-web-ui-sessions");
@@ -153,6 +157,7 @@ export class ProcessManager extends EventEmitter {
     const piSession = preparePiSession(this.sessionRootDir, input.sessionId);
 
     const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
+    if (this.npmRegistry) env.npm_config_registry = this.npmRegistry;
     if (cfg?.apiKey) {
       env.PI_WEB_UI_MODEL_API_KEY = cfg.apiKey;
       env[API_KEY_ENV_BY_PROVIDER[provider] ?? "OPENAI_API_KEY"] = cfg.apiKey;

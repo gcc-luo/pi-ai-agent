@@ -25,7 +25,14 @@ describe("ProcessManager", () => {
     spawner = vi.fn((_cmd: string, _args: string[], _opts: object) => new FakeProcess()) as any;
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     sessionRootDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-process-test-"));
-    manager = new ProcessManager({ spawn: spawner as any, command: "pi", args: ["--rpc"], sessionRootDir, logger: logger as any });
+    manager = new ProcessManager({
+      spawn: spawner as any,
+      command: "pi",
+      args: ["--rpc"],
+      npmRegistry: "https://registry.npmjs.org/",
+      sessionRootDir,
+      logger: logger as any,
+    });
   });
 
   afterEach(() => fs.rmSync(sessionRootDir, { recursive: true, force: true }));
@@ -137,18 +144,24 @@ describe("ProcessManager", () => {
     expect((opts as any).env.ANTHROPIC_BASE_URL).toBe("https://anthropic-proxy.example/v1");
   });
 
-  it("does not pass pnpm npm_config variables to npx", async () => {
-    const previous = process.env.npm_config_workspace_concurrency;
+  it("does not pass npm config variables through to child processes", async () => {
+    const previousWorkspaceConcurrency = process.env.npm_config_workspace_concurrency;
+    const previousRegistry = process.env.NPM_CONFIG_REGISTRY;
     process.env.npm_config_workspace_concurrency = "1";
+    process.env.NPM_CONFIG_REGISTRY = "https://registry.npmmirror.com/";
     try {
       await manager.start({ sessionId: "s1", projectId: "p1", workdir: "/tmp" });
     } finally {
-      if (previous === undefined) delete process.env.npm_config_workspace_concurrency;
-      else process.env.npm_config_workspace_concurrency = previous;
+      if (previousWorkspaceConcurrency === undefined) delete process.env.npm_config_workspace_concurrency;
+      else process.env.npm_config_workspace_concurrency = previousWorkspaceConcurrency;
+      if (previousRegistry === undefined) delete process.env.NPM_CONFIG_REGISTRY;
+      else process.env.NPM_CONFIG_REGISTRY = previousRegistry;
     }
 
     const [, , opts] = spawner.mock.calls[0]!;
     expect((opts as any).env.npm_config_workspace_concurrency).toBeUndefined();
+    expect((opts as any).env.NPM_CONFIG_REGISTRY).toBeUndefined();
+    expect((opts as any).env.npm_config_registry).toBe("https://registry.npmjs.org/");
   });
 
   it("filters npm warning noise from stderr but keeps real stderr lines", async () => {
@@ -159,6 +172,7 @@ describe("ProcessManager", () => {
     proc.on("stderr", onStderr);
 
     child.stderr.write('npm warn Unknown env config "stream". This will stop working\n');
+    child.stderr.write("npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead\n");
     child.stderr.write("real provider error\n");
 
     expect(onStderr).toHaveBeenCalledTimes(1);

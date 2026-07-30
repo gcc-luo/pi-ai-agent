@@ -1,9 +1,15 @@
-import { WeChatBot, type Credentials, type QrLoginCallbacks } from "@wechatbot/wechatbot";
+import {
+  WeChatBot,
+  type Credentials,
+  type IncomingMessage,
+  type QrLoginCallbacks,
+} from "@wechatbot/wechatbot";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import QRCode from "qrcode";
 import { pino } from "pino";
+import type { WeChatAgentReply } from "./wechat-artifacts.js";
 
 const log = pino({ name: "wechat-worker" });
 
@@ -51,36 +57,85 @@ let loginState: WeChatLoginState = { state: "idle" };
 let startPromise: Promise<void> | null = null;
 let qrLoginPromise: Promise<void> | null = null;
 let loginAttempt = 0;
-let inboundHandler: ((input: { userId: string; text: string }) => Promise<string>) | null = null;
+let inboundHandler: ((input: { userId: string; text: string }) => Promise<WeChatAgentReply>) | null = null;
+const inboundQueues = new Map<string, Promise<void>>();
 
 function ensureBot(): WeChatBot {
   if (bot) return bot;
   if (!existsSync(SESSION_DIR)) mkdirSync(SESSION_DIR, { recursive: true });
-  bot = new WeChatBot({
+  const createdBot = new WeChatBot({
     storage: "file",
     storageDir: SESSION_DIR,
     logLevel: "info",
   });
-  bot.onMessage(async (msg) => {
-    const text = msg.text?.trim();
-    log.debug({ from: msg.userId, text: text?.slice(0, 50) }, "wechat inbound");
-    if (!text) {
-      await bot?.reply(msg, "目前仅支持文本消息。");
-      return;
+  bot = createdBot;
+  createdBot.onMessage((msg) => enqueueInbound(createdBot, msg));
+  return createdBot;
+}
+
+function enqueueInbound(activeBot: WeChatBot, msg: IncomingMessage): Promise<void> {
+  const key = msg.userId;
+  const previous = inboundQueues.get(key) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(() => {
+      if (bot !== activeBot) return;
+      return handleInbound(activeBot, msg);
+    });
+  inboundQueues.set(key, next);
+  const clearQueue = () => {
+    if (inboundQueues.get(key) === next) inboundQueues.delete(key);
+  };
+  void next.then(clearQueue, clearQueue);
+  return next;
+}
+
+async function handleInbound(activeBot: WeChatBot, msg: IncomingMessage): Promise<void> {
+  const text = msg.text?.trim();
+  log.debug({ from: msg.userId, text: text?.slice(0, 50) }, "wechat inbound");
+  if (!text) {
+    await activeBot.reply(msg, "目前仅支持文本消息。");
+    return;
+  }
+  if (!inboundHandler) {
+    await activeBot.reply(msg, "微信频道尚未配置项目，请先在 Pi 中完成频道配置。");
+    return;
+  }
+  try {
+    const response = await inboundHandler({ userId: msg.userId, text });
+    if (bot !== activeBot) return;
+    await activeBot.reply(msg, response.text);
+    const failedFiles = [...response.failedFiles];
+    for (const file of response.files) {
+      if (bot !== activeBot) return;
+      try {
+        await activeBot.reply(msg, { file: file.data, fileName: file.fileName });
+      } catch (error: any) {
+        failedFiles.push(file.fileName);
+        log.error(
+          { err: error?.message ?? String(error), userId: msg.userId, fileName: file.fileName },
+          "wechat artifact delivery failed",
+        );
+      }
     }
-    if (!inboundHandler) {
-      await bot?.reply(msg, "微信频道尚未配置项目，请先在 Pi 中完成频道配置。");
-      return;
+    if (failedFiles.length > 0 && bot === activeBot) {
+      const shown = failedFiles.slice(0, 10);
+      const remaining = failedFiles.length - shown.length;
+      const suffix = remaining > 0 ? ` 等 ${failedFiles.length} 个文件` : "";
+      await activeBot.reply(msg, `以下文件发送失败：${shown.join("、")}${suffix}`);
     }
-    try {
-      const response = await inboundHandler({ userId: msg.userId, text });
-      await bot?.reply(msg, response);
-    } catch (error: any) {
-      log.error({ err: error?.message ?? String(error), userId: msg.userId }, "wechat inbound handling failed");
-      await bot?.reply(msg, "抱歉，处理消息时出现错误，请稍后重试。");
+    if (response.failedDeclarations > 0 && bot === activeBot) {
+      await activeBot.reply(
+        msg,
+        `有 ${response.failedDeclarations} 项产物声明无法解析，相关文件未发送。`,
+      );
     }
-  });
-  return bot;
+  } catch (error: any) {
+    log.error({ err: error?.message ?? String(error), userId: msg.userId }, "wechat inbound handling failed");
+    if (bot === activeBot) {
+      await activeBot.reply(msg, "抱歉，处理消息时出现错误，请稍后重试。");
+    }
+  }
 }
 
 /** Start (or reuse) the bot. Resolves once login() + start() chain kicks off. */
@@ -169,6 +224,7 @@ function stop(): void {
     try { bot.stop(); } catch { /* best-effort */ }
   }
   bot = null;
+  inboundQueues.clear();
   startPromise = null;
   qrLoginPromise = null;
   loginState = { state: "idle" };
@@ -179,7 +235,7 @@ function getStatus(): WeChatLoginState {
   return loginState;
 }
 
-function setInboundHandler(handler: ((input: { userId: string; text: string }) => Promise<string>) | null): void {
+function setInboundHandler(handler: ((input: { userId: string; text: string }) => Promise<WeChatAgentReply>) | null): void {
   inboundHandler = handler;
 }
 

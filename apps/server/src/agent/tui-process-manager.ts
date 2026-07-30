@@ -23,6 +23,7 @@ export interface TuiProcess extends EventEmitter {
 export interface TuiProcessManagerOptions {
   command: string;
   args: string[];
+  npmRegistry?: string;
   provider?: string;
   model?: string;
   /** Isolated Pi session directories, one per Web UI conversation. */
@@ -35,7 +36,7 @@ const MAX_TERMINAL_HISTORY_BYTES = 1_500_000;
 function cleanEnv(source: NodeJS.ProcessEnv): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (key.startsWith("npm_config_") || key === "PI_RPC" || value === undefined) continue;
+    if (key.toLowerCase().startsWith("npm_config_") || key === "PI_RPC" || value === undefined) continue;
     env[key] = value;
   }
   return env;
@@ -135,6 +136,7 @@ export class TuiProcessManager {
     if (model) args.push("--model", model);
 
     const env = cleanEnv(process.env);
+    if (this.options.npmRegistry) env.npm_config_registry = this.options.npmRegistry;
     if (modelConfig?.apiKey) {
       env.PI_WEB_UI_MODEL_API_KEY = modelConfig.apiKey;
       env[API_KEY_ENV_BY_PROVIDER[provider ?? ""] ?? "OPENAI_API_KEY"] = modelConfig.apiKey;

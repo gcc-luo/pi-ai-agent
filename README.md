@@ -179,6 +179,7 @@ GOOGLE_API_KEY=
 # Agent 进程（可选，覆盖默认启动命令）
 # PI_COMMAND=npx
 # PI_ARGS=-y @earendil-works/pi-coding-agent --mode rpc
+# PI_NPM_REGISTRY=https://registry.npmjs.org/
 
 # 超时（可选）
 # IDLE_TIMEOUT_MS=300000         # 空闲多久后标记 idle（5 分钟）

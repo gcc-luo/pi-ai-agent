@@ -119,11 +119,20 @@ export async function buildConfiguredApp(config: Config) {
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
     scheduledTasks, taskLogs, channels, channelConversations, config,
   });
-  const processManager = new ProcessManager({ command: config.piCommand, args: config.piArgs, provider: config.piProvider, model: config.piModel, sessionRootDir: config.piSessionRootDir, logger: app.log });
+  const processManager = new ProcessManager({
+    command: config.piCommand,
+    args: config.piArgs,
+    npmRegistry: config.piNpmRegistry,
+    provider: config.piProvider,
+    model: config.piModel,
+    sessionRootDir: config.piSessionRootDir,
+    logger: app.log,
+  });
   (app as any).processManager = processManager;
   const tuiProcessManager = new TuiProcessManager({
     command: config.piCommand,
     args: config.piTuiArgs,
+    npmRegistry: config.piNpmRegistry,
     provider: config.piProvider,
     model: config.piModel,
     sessionRootDir: config.piSessionRootDir,
