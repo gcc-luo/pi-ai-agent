@@ -4,9 +4,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-const endpoint = process.env.PI_WEB_UI_BROWSER_ENDPOINT;
+const pluginEndpoint = process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
+const legacyEndpoint = process.env.PI_WEB_UI_BROWSER_ENDPOINT;
 const sessionId = process.env.PI_WEB_UI_SESSION_ID;
-const token = process.env.PI_WEB_UI_BROWSER_TOKEN;
+const token = process.env.PI_WEB_UI_PLUGIN_TOKEN ?? process.env.PI_WEB_UI_BROWSER_TOKEN;
+for (const key of [
+  "PI_WEB_UI_PLUGIN_ENDPOINT",
+  "PI_WEB_UI_PLUGIN_TOKEN",
+  "PI_WEB_UI_BROWSER_ENDPOINT",
+  "PI_WEB_UI_BROWSER_TOKEN",
+  "PI_WEB_UI_SESSION_ID",
+]) {
+  delete process.env[key];
+}
 
 const targetProperties = {
   ref: Type.Optional(Type.String({ description: "browser_snapshot 返回的短期元素引用，如 e2" })),
@@ -26,7 +36,7 @@ async function invoke(
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ) {
-  if (!endpoint || !sessionId || !token) {
+  if ((!pluginEndpoint && !legacyEndpoint) || !sessionId || !token) {
     return {
       content: [{ type: "text" as const, text: "浏览器工具配置缺失，请关闭后重新启用浏览器能力。" }],
       details: { ok: false, error: "browser tool configuration missing" },
@@ -34,10 +44,14 @@ async function invoke(
     };
   }
   try {
-    const response = await fetch(`${endpoint}/${encodeURIComponent(sessionId)}/action`, {
+    const url = pluginEndpoint
+      ? `${pluginEndpoint}/${encodeURIComponent(sessionId)}/browser-use/action`
+      : `${legacyEndpoint}/${encodeURIComponent(sessionId)}/action`;
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-pi-plugin-token": token,
         "x-pi-browser-token": token,
       },
       body: JSON.stringify({ action, args }),
@@ -77,16 +91,16 @@ export default function browserTools(pi: ExtensionAPI) {
   const builtinBash = createBashToolDefinition(process.cwd());
   pi.registerTool({
     ...builtinBash,
-    description: `${builtinBash.description} 未指定 timeout 时默认最多执行 120 秒。`,
+    description: `${builtinBash.description} 未指定 timeout 时默认最多执行 30 秒。`,
     promptSnippet: "执行有界 Bash 命令；常驻开发服务必须后台启动并重定向日志",
     promptGuidelines: [
       "不要用 bash 在前台直接运行 pnpm dev、npm run dev、vite、next dev 等常驻服务；应后台启动并重定向输出，例如 `pnpm dev > browser/dev-server.log 2>&1 &`，随后轮询目标 URL。",
-      "bash 未显式提供 timeout 时会在 120 秒后终止命令；确实需要更久的有限任务时必须显式设置 timeout。",
+      "bash 未显式提供 timeout 时会在 30 秒后终止命令；确实需要更久的有限任务时必须显式设置 timeout。",
     ],
     execute(toolCallId, params, signal, onUpdate, ctx) {
       return builtinBash.execute(
         toolCallId,
-        { ...params, timeout: params.timeout ?? 120 },
+        { ...params, timeout: params.timeout ?? 30 },
         signal,
         onUpdate,
         ctx,
@@ -142,9 +156,6 @@ export default function browserTools(pi: ExtensionAPI) {
       expectDownload: Type.Optional(Type.Boolean({
         description: "点击预期触发下载时设为 true，工具会等待文件保存完成",
       })),
-      userConfirmed: Type.Optional(Type.Boolean({
-        description: "仅当用户已在当前对话中明确确认危险操作时设为 true",
-      })),
     }),
     executionMode: "sequential",
     execute: run("click"),
@@ -183,9 +194,6 @@ export default function browserTools(pi: ExtensionAPI) {
     parameters: Type.Object({
       ...targetProperties,
       key: Type.String({ description: "Playwright 键名或组合键，如 Enter、Control+A" }),
-      userConfirmed: Type.Optional(Type.Boolean({
-        description: "仅当用户已在当前对话中明确确认危险提交时设为 true",
-      })),
     }),
     executionMode: "sequential",
     execute: run("press"),

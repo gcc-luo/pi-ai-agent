@@ -49,4 +49,58 @@ export class MessageRepository {
   updateCreatedAt(id: string, createdAt: number): void {
     this.db.prepare("UPDATE messages SET created_at = ? WHERE id = ?").run(createdAt, id);
   }
+
+  finishDanglingToolCalls(reason: string): number {
+    const rows = this.db.prepare(
+      "SELECT id, metadata FROM messages WHERE metadata IS NOT NULL",
+    ).all() as { id: string; metadata: string }[];
+    const update = this.db.prepare("UPDATE messages SET metadata = ? WHERE id = ?");
+    const result = {
+      content: [{ type: "text", text: reason }],
+      isError: true,
+    };
+    let updated = 0;
+
+    const transaction = this.db.transaction(() => {
+      for (const row of rows) {
+        let metadata: Record<string, unknown>;
+        try {
+          metadata = JSON.parse(row.metadata) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        const toolCalls = Array.isArray(metadata.toolCalls)
+          ? metadata.toolCalls as Array<Record<string, unknown>>
+          : [];
+        const danglingIds = new Set(
+          toolCalls
+            .filter((toolCall) =>
+              toolCall.status === "running"
+              || !Object.prototype.hasOwnProperty.call(toolCall, "result"),
+            )
+            .map((toolCall) => String(toolCall.toolCallId ?? ""))
+            .filter(Boolean),
+        );
+        if (danglingIds.size === 0) continue;
+
+        metadata.toolCalls = toolCalls.map((toolCall) =>
+          danglingIds.has(String(toolCall.toolCallId))
+            ? { ...toolCall, status: "complete", result }
+            : toolCall,
+        );
+        const messageParts = Array.isArray(metadata.messageParts)
+          ? metadata.messageParts as Array<Record<string, unknown>>
+          : [];
+        metadata.messageParts = messageParts.map((part) =>
+          part.type === "toolCall" && danglingIds.has(String(part.id))
+            ? { ...part, status: "complete", result }
+            : part,
+        );
+        update.run(JSON.stringify(metadata), row.id);
+        updated++;
+      }
+    });
+    transaction();
+    return updated;
+  }
 }

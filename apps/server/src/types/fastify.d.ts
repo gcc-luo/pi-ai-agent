@@ -21,6 +21,10 @@ import type { ChannelRepository } from "../db/repositories/channel.js";
 import type { ChannelConversationRepository } from "../db/repositories/channel-conversation.js";
 import type { Config } from "../config.js";
 import type { BrowserSessionManager } from "../browser/browser-session-manager.js";
+import type { ComputerSessionManager } from "../computer/computer-session-manager.js";
+import type { PluginRepository } from "../db/repositories/plugin.js";
+import type { PluginManager } from "../plugins/plugin-manager.js";
+import type { PluginPermissionService } from "../plugins/plugin-permission-service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -47,5 +51,9 @@ declare module "fastify" {
     channelConversations: ChannelConversationRepository;
     config: Config;
     browserManager: BrowserSessionManager;
+    computerManager: ComputerSessionManager;
+    plugins: PluginRepository;
+    pluginManager: PluginManager;
+    pluginPermissions: PluginPermissionService;
   }
 }

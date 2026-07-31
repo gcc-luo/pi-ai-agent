@@ -22,7 +22,8 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>("/sessions/:id/browser", async (req, reply) => {
     const session = app.sessions.findById(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    return app.browserManager.status(session.id, session.browserEnabled);
+    const enabled = app.pluginManager.activeForSession(session.id).includes("browser-use");
+    return app.browserManager.status(session.id, enabled);
   });
 
   app.put<{
@@ -34,27 +35,32 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     if (typeof req.body?.enabled !== "boolean") {
       return reply.code(400).send({ error: "enabled must be a boolean" });
     }
-    const project = app.projects.findById(session.projectId);
-    if (!project) return reply.code(404).send({ error: "project not found" });
-
+    app.processManager.revokePluginToken(session.id);
+    app.pluginPermissions.cancelSession(session.id);
     const stopped = await app.processManager.stopAndWait(session.id);
     if (!stopped) {
       return reply.code(409).send({ error: "agent process is still stopping; retry shortly" });
     }
     app.sessionStates.delete(session.id);
-    app.sessions.setBrowserEnabled(session.id, req.body.enabled);
+    const selected = app.plugins.selectedForSession(session.id);
+    const next = req.body.enabled
+      ? [...new Set([...selected, "browser-use"])]
+      : selected.filter((id) => id !== "browser-use");
 
     if (!req.body.enabled) {
+      app.pluginManager.setSessionPlugins(session.id, next);
       await app.browserManager.close(session.id);
       return app.browserManager.status(session.id, false);
     }
 
     try {
-      await app.browserManager.open(session.id, project.workdir);
-    } catch {
-      // Preserve the enabled setting and expose the startup error in status.
-      // browser_open can retry after the local Chromium installation is fixed.
+      app.pluginManager.setSessionPlugins(session.id, next);
+    } catch (error) {
+      return reply.code(409).send({
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+    // Browser runtime remains lazy and starts on the first browser tool call.
     return app.browserManager.status(session.id, true);
   });
 
@@ -62,16 +68,16 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     Params: { id: string };
     Body: { action?: string; args?: Record<string, unknown> };
   }>("/internal/browser/:id/action", async (req, reply) => {
-    const token = req.headers["x-pi-browser-token"];
+    const token = req.headers["x-pi-plugin-token"] ?? req.headers["x-pi-browser-token"];
     if (
       typeof token !== "string"
-      || !app.processManager.validateBrowserToken(req.params.id, token)
+      || !app.processManager.validatePluginToken(req.params.id, token)
     ) {
       return reply.code(403).send({ error: "forbidden" });
     }
     const session = app.sessions.findById(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    if (!session.browserEnabled) {
+    if (!app.pluginManager.activeForSession(session.id).includes("browser-use")) {
       return reply.code(409).send({ error: "browser capability is disabled for this session" });
     }
     const project = app.projects.findById(session.projectId);
@@ -80,16 +86,68 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     if (!action || !ACTIONS.has(action)) {
       return reply.code(400).send({ error: "invalid browser action" });
     }
+    const args = { ...(req.body?.args ?? {}) };
+    delete args.userConfirmed;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.raw.once("aborted", abort);
     try {
-      return await app.browserManager.execute({
+      let result = await app.browserManager.execute({
         sessionId: session.id,
         workdir: project.workdir,
         action: action as Parameters<typeof app.browserManager.execute>[0]["action"],
-        args: req.body?.args,
+        args,
+        signal: controller.signal,
       });
+      const requiresConfirmation = result.requiresConfirmation === true;
+      let approved = !requiresConfirmation;
+      if (requiresConfirmation) {
+        const state = app.sessionStates.get(session.id);
+        approved = state
+          ? await app.pluginPermissions.request({
+              sessionId: session.id,
+              pluginId: "browser-use",
+              action,
+              reason: typeof result.riskReason === "string"
+                ? result.riskReason
+                : "该网页操作可能产生外部或不可逆影响",
+              send: state.send,
+              signal: controller.signal,
+            })
+          : false;
+        if (approved) {
+          result = await app.browserManager.execute({
+            sessionId: session.id,
+            workdir: project.workdir,
+            action: action as Parameters<typeof app.browserManager.execute>[0]["action"],
+            args: { ...args, userConfirmed: true },
+            signal: controller.signal,
+          });
+        } else {
+          result = {
+            ...result,
+            denied: true,
+            message: state
+              ? "用户未确认或确认已超时，操作未执行。"
+              : "当前渠道无法完成交互式权限确认，操作未执行。",
+          };
+        }
+      }
+      app.plugins.appendAudit({
+        pluginId: "browser-use",
+        sessionId: session.id,
+        action,
+        risk: requiresConfirmation ? "sensitive" : "normal",
+        approved,
+        success: approved && result.ok !== false,
+        details: { compatibilityRoute: true, requiresConfirmation },
+      });
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return reply.code(400).send({ error: message });
+    } finally {
+      req.raw.off("aborted", abort);
     }
   });
 };

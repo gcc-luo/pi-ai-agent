@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useSessionStore } from "../../src/stores/session.js";
-import { useAgentStore } from "../../src/stores/agent.js";
+import { partsFromPersisted, useAgentStore } from "../../src/stores/agent.js";
+import { wsClient } from "../../src/api/ws.js";
 
 describe("agent store session_updated event", () => {
   beforeEach(() => {
@@ -10,7 +11,8 @@ describe("agent store session_updated event", () => {
   });
 
   const seedSession = (id: string, title: string | null) => ({
-    id, projectId: "p1", title, parentId: null, expertId: null, browserEnabled: false,
+    id, projectId: "p1", title, parentId: null, expertId: null,
+    selectedPluginIds: [], browserEnabled: false,
     status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
   });
 
@@ -126,5 +128,57 @@ describe("agent store session_updated event", () => {
       estimatedTokensAfter: 22000,
       willRetry: true,
     });
+  });
+
+  it("requires an explicit UI response for sensitive plugin actions", () => {
+    const agent = useAgentStore();
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+    agent.handle({
+      type: "permission_request",
+      sessionId: "s1",
+      requestId: "request-1",
+      pluginId: "computer-use",
+      action: "click",
+      reason: "will submit a form",
+      expiresAt: Date.now() + 60_000,
+    });
+
+    expect(agent.pendingPermissions.s1).toMatchObject({ requestId: "request-1" });
+    agent.respondToPermission("s1", "request-1", true);
+
+    expect(agent.pendingPermissions.s1).toBeUndefined();
+    expect(send).toHaveBeenCalledWith({
+      type: "permission_response",
+      sessionId: "s1",
+      requestId: "request-1",
+      approved: true,
+    });
+  });
+
+  it("merges persisted tool results back into Pi message parts", () => {
+    const parts = partsFromPersisted("", {
+      messageParts: [{
+        type: "toolCall",
+        id: "call-1",
+        name: "bash",
+        arguments: { command: "pnpm dev" },
+      }],
+      toolCalls: [{
+        toolCallId: "call-1",
+        name: "bash",
+        args: { command: "pnpm dev" },
+        status: "complete",
+        result: { isError: true, content: [{ type: "text", text: "Agent stopped" }] },
+      }],
+    });
+
+    expect(parts).toEqual([
+      expect.objectContaining({
+        kind: "tool_call",
+        toolCallId: "call-1",
+        status: "complete",
+        result: expect.objectContaining({ isError: true }),
+      }),
+    ]);
   });
 });

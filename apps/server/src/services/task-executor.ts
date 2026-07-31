@@ -97,7 +97,7 @@ export class TaskExecutor {
       projectId: project.id,
       workdir: project.workdir,
       modelConfig,
-      browserEnabled: session.browserEnabled,
+      activePluginIds: session.selectedPluginIds,
     });
 
     const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);

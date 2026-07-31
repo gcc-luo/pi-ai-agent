@@ -13,6 +13,7 @@ type Row = {
 function toDto(r: Row): SessionDto {
   return {
     id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id, expertId: r.expert_id,
+    selectedPluginIds: [],
     browserEnabled: r.browser_enabled === 1,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
     deletedAt: r.deleted_at,
@@ -31,6 +32,7 @@ export class SessionRepository {
     `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, input.expertId ?? null, now, now);
     return {
       id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
+      selectedPluginIds: [],
       browserEnabled: false,
       status: "active", createdAt: now, updatedAt: now, lastActiveAt: null, deletedAt: null,
     };
@@ -38,15 +40,17 @@ export class SessionRepository {
 
   findById(id: string): SessionDto | null {
     const r = this.db.prepare("SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
-    return r ? toDto(r) : null;
+    return r ? this.withPlugins(toDto(r)) : null;
   }
 
   listByProject(projectId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId) as Row[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM sessions WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId) as Row[])
+      .map((row) => this.withPlugins(toDto(row)));
   }
 
   children(parentId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE parent_id = ? AND deleted_at IS NULL").all(parentId) as Row[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM sessions WHERE parent_id = ? AND deleted_at IS NULL").all(parentId) as Row[])
+      .map((row) => this.withPlugins(toDto(row)));
   }
 
   touch(id: string, status: SessionStatus, opts?: { title?: string; piSessionRef?: string }): void {
@@ -85,6 +89,18 @@ export class SessionRepository {
       .run(enabled ? 1 : 0, Date.now(), id);
   }
 
+  private withPlugins(session: SessionDto): SessionDto {
+    const rows = this.db.prepare(
+      "SELECT plugin_id FROM session_plugins WHERE session_id = ? ORDER BY selected_at, plugin_id",
+    ).all(session.id) as { plugin_id: string }[];
+    const selectedPluginIds = rows.map((row) => row.plugin_id);
+    return {
+      ...session,
+      selectedPluginIds,
+      browserEnabled: selectedPluginIds.includes("browser-use") || session.browserEnabled,
+    };
+  }
+
   markActiveAsCrashed(): void {
     this.db.prepare("UPDATE sessions SET status = 'crashed', updated_at = ? WHERE (status = 'active' OR status = 'idle') AND deleted_at IS NULL").run(Date.now());
   }
@@ -106,6 +122,7 @@ export class SessionRepository {
   }
 
   listDeleted(): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC").all() as Row[]).map(toDto);
+    return (this.db.prepare("SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC").all() as Row[])
+      .map((row) => this.withPlugins(toDto(row)));
   }
 }

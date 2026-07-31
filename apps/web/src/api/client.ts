@@ -5,6 +5,7 @@ import type {
   ScheduledTaskDto, TaskLogDto, TaskType,
   ArtifactItem, ArtifactValidation,
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
+  PluginDto,
 } from "@pi-web-ui/shared";
 
 export interface ModelOption {
@@ -56,6 +57,20 @@ export const api = {
     request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),
   setBrowserCapability: (sessionId: string, enabled: boolean) =>
     request<BrowserCapabilityDto>("PUT", `/sessions/${sessionId}/browser`, { enabled }),
+  listPlugins: () => request<PluginDto[]>("GET", "/plugins"),
+  updatePlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }) =>
+    request<PluginDto>("PUT", `/plugins/${encodeURIComponent(id)}`, patch),
+  getSessionPlugins: (sessionId: string) =>
+    request<{ selectedPluginIds: string[]; availablePlugins: PluginDto[] }>(
+      "GET",
+      `/sessions/${sessionId}/plugins`,
+    ),
+  setSessionPlugins: (sessionId: string, pluginIds: string[]) =>
+    request<{
+      session: SessionDto;
+      selectedPluginIds: string[];
+      availablePlugins: PluginDto[];
+    }>("PUT", `/sessions/${sessionId}/plugins`, { pluginIds }),
   listSkills: () => request<SkillDto[]>("GET", "/skills"),
   importSkill: (data: { name: string; description: string; body: string }) =>
     request<SkillDto>("POST", "/skills", data),

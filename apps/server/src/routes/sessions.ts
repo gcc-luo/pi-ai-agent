@@ -91,9 +91,12 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   app.delete<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
     const s = app.sessions.findById(req.params.id);
     if (!s) return reply.code(404).send({ error: "not found" });
+    app.pluginPermissions?.cancelSession(req.params.id);
+    app.processManager.revokePluginToken(req.params.id);
     app.sessionStates.get(req.params.id)?.process.kill();
     app.sessionStates.delete(req.params.id);
-    await app.browserManager.close(req.params.id);
+    if (app.pluginManager) await app.pluginManager.closeSession(req.params.id);
+    else if (app.browserManager) await app.browserManager.close(req.params.id);
     app.tuiProcessManager.stop(req.params.id);
     app.sessions.delete(req.params.id);
     return reply.code(204).send();

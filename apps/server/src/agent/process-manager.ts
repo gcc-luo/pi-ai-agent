@@ -24,6 +24,10 @@ export interface ProcessManagerOptions {
   sessionRootDir?: string;
   browserExtensionPath?: string;
   browserEndpoint?: string;
+  pluginExtensions?: Record<string, string>;
+  pluginEndpoint?: string;
+  isPluginEnabled?: (pluginId: string) => boolean;
+  validateWorkdir?: boolean;
   logger: FastifyBaseLogger;
 }
 
@@ -136,7 +140,11 @@ export class ProcessManager extends EventEmitter {
   private log: FastifyBaseLogger;
   private browserExtensionPath?: string;
   private browserEndpoint?: string;
-  private browserTokens = new Map<string, string>();
+  private pluginExtensions: Record<string, string>;
+  private pluginEndpoint?: string;
+  private pluginTokens = new Map<string, string>();
+  private isPluginEnabled: (pluginId: string) => boolean;
+  private validateWorkdir: boolean;
 
   constructor(opts: ProcessManagerOptions) {
     super();
@@ -173,6 +181,13 @@ export class ProcessManager extends EventEmitter {
     this.log = opts.logger;
     this.browserExtensionPath = opts.browserExtensionPath;
     this.browserEndpoint = opts.browserEndpoint;
+    this.pluginExtensions = {
+      ...(opts.browserExtensionPath ? { "browser-use": opts.browserExtensionPath } : {}),
+      ...(opts.pluginExtensions ?? {}),
+    };
+    this.pluginEndpoint = opts.pluginEndpoint ?? opts.browserEndpoint;
+    this.isPluginEnabled = opts.isPluginEnabled ?? (() => true);
+    this.validateWorkdir = opts.validateWorkdir ?? true;
   }
 
   async start(input: {
@@ -181,10 +196,28 @@ export class ProcessManager extends EventEmitter {
     workdir: string;
     modelConfig?: ModelConfig;
     browserEnabled?: boolean;
+    activePluginIds?: string[];
   }): Promise<AgentProcess> {
+    if (this.validateWorkdir) {
+      let workdirStat: fs.Stats;
+      try {
+        workdirStat = fs.statSync(input.workdir);
+      } catch {
+        throw new Error(`项目工作目录不存在或不可访问：${input.workdir}`);
+      }
+      if (!workdirStat.isDirectory()) {
+        throw new Error(`项目工作目录不是文件夹：${input.workdir}`);
+      }
+    }
+    const activePluginIds = [...new Set(
+      input.activePluginIds ?? (input.browserEnabled ? ["browser-use"] : []),
+    )].filter((pluginId) => this.isPluginEnabled(pluginId)).sort();
     const existing = this.procs.get(input.sessionId);
     if (existing && existing.status !== "crashed" && existing.status !== "suspended") {
-      if ((existing.browserEnabled ?? false) === (input.browserEnabled ?? false)) {
+      const existingPlugins = [...(existing.activePluginIds ?? (
+        existing.browserEnabled ? ["browser-use"] : []
+      ))].sort();
+      if (JSON.stringify(existingPlugins) === JSON.stringify(activePluginIds)) {
         return existing;
       }
       const stopped = await this.stopAndWait(input.sessionId);
@@ -200,8 +233,9 @@ export class ProcessManager extends EventEmitter {
     if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
       extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl, modelType: cfg.modelType }));
     }
-    if (input.browserEnabled && this.browserExtensionPath) {
-      extraArgs.push("--extension", this.browserExtensionPath);
+    for (const pluginId of activePluginIds) {
+      const extensionPath = this.pluginExtensions[pluginId];
+      if (extensionPath) extraArgs.push("--extension", extensionPath);
     }
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);
@@ -220,15 +254,20 @@ export class ProcessManager extends EventEmitter {
         env.OPENAI_BASE_URL = cfg.apiBaseUrl;
       }
     }
-    let browserToken: string | undefined;
-    if (input.browserEnabled) {
-      browserToken = crypto.randomBytes(32).toString("hex");
-      this.browserTokens.set(input.sessionId, browserToken);
-      env.PI_WEB_UI_BROWSER_ENDPOINT = this.browserEndpoint;
-      env.PI_WEB_UI_BROWSER_TOKEN = browserToken;
+    let pluginToken: string | undefined;
+    if (activePluginIds.length > 0) {
+      pluginToken = crypto.randomBytes(32).toString("hex");
+      this.pluginTokens.set(input.sessionId, pluginToken);
+      env.PI_WEB_UI_PLUGIN_ENDPOINT = this.pluginEndpoint;
+      env.PI_WEB_UI_PLUGIN_TOKEN = pluginToken;
       env.PI_WEB_UI_SESSION_ID = input.sessionId;
+      // Compatibility for the existing Browser Use extension protocol.
+      if (activePluginIds.includes("browser-use")) {
+        env.PI_WEB_UI_BROWSER_ENDPOINT = this.browserEndpoint;
+        env.PI_WEB_UI_BROWSER_TOKEN = pluginToken;
+      }
     } else {
-      this.browserTokens.delete(input.sessionId);
+      this.pluginTokens.delete(input.sessionId);
     }
 
     const envKeys = Object.keys(env).filter(k => k.includes("API_KEY") || k.includes("BASE_URL") || k === "PI_RPC");
@@ -259,7 +298,8 @@ export class ProcessManager extends EventEmitter {
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
       status: "starting" as const,
-      browserEnabled: input.browserEnabled ?? false,
+      activePluginIds,
+      browserEnabled: activePluginIds.includes("browser-use"),
       writeCommand(cmd: object) {
         child.stdin!.write(JSON.stringify(cmd) + "\n");
       },
@@ -288,8 +328,8 @@ export class ProcessManager extends EventEmitter {
       if (exited) return;
       exited = true;
       proc.status = stopRequested || code === 0 ? "suspended" : "crashed";
-      if (browserToken && this.browserTokens.get(input.sessionId) === browserToken) {
-        this.browserTokens.delete(input.sessionId);
+      if (pluginToken && this.pluginTokens.get(input.sessionId) === pluginToken) {
+        this.pluginTokens.delete(input.sessionId);
       }
       (proc as unknown as EventEmitter).emit("exit", code);
     };
@@ -336,15 +376,27 @@ export class ProcessManager extends EventEmitter {
   }
 
   validateBrowserToken(sessionId: string, token: string | undefined): boolean {
+    return this.validatePluginToken(sessionId, token);
+  }
+
+  validatePluginToken(sessionId: string, token: string | undefined): boolean {
     if (!token) return false;
-    const expected = this.browserTokens.get(sessionId);
+    const expected = this.pluginTokens.get(sessionId);
     if (!expected || expected.length !== token.length) return false;
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+  }
+
+  revokePluginToken(sessionId: string): void {
+    this.pluginTokens.delete(sessionId);
+  }
+
+  revokePluginTokens(sessionIds: Iterable<string>): void {
+    for (const sessionId of sessionIds) this.pluginTokens.delete(sessionId);
   }
 
   async shutdown(): Promise<void> {
     for (const p of this.procs.values()) p.kill();
     this.procs.clear();
-    this.browserTokens.clear();
+    this.pluginTokens.clear();
   }
 }

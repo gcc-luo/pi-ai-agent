@@ -9,6 +9,7 @@ export interface ImageAttachment {
 export type ClientEvent =
   | { type: "send"; sessionId: string; content: string; model?: string; images?: ImageAttachment[] }
   | { type: "interrupt"; sessionId: string }
+  | { type: "permission_response"; sessionId: string; requestId: string; approved: boolean }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }
   | { type: "subscribe"; sessionId: string }
@@ -56,7 +57,17 @@ export type ServerEvent =
       durationMs?: number;
       error?: string;
     }
-  | { type: "pong" };
+  | { type: "pong" }
+  | {
+      type: "permission_request";
+      sessionId: string;
+      requestId: string;
+      pluginId: string;
+      action: string;
+      reason: string;
+      intent?: string;
+      expiresAt: number;
+    };
 
 export interface ToolCall {
   toolCallId: string;
@@ -92,6 +103,9 @@ export interface SessionDto {
   title: string | null;
   parentId: string | null;
   expertId: string | null;
+  /** Plugins explicitly exposed to this session's Pi process. */
+  selectedPluginIds: string[];
+  /** @deprecated Compatibility mirror for the legacy Browser capability API. */
   browserEnabled: boolean;
   status: SessionStatus;
   createdAt: number;
@@ -113,6 +127,47 @@ export interface BrowserCapabilityDto {
   pageCount: number;
   currentUrl: string | null;
   error: string | null;
+}
+
+export type PluginStatus =
+  | "disabled"
+  | "enabled"
+  | "starting"
+  | "running"
+  | "error"
+  | "unavailable";
+
+export interface PluginDto {
+  id: string;
+  name: string;
+  icon: string;
+  version: string;
+  description: string;
+  source: string;
+  builtin: boolean;
+  official: boolean;
+  enabled: boolean;
+  status: PluginStatus;
+  tools: string[];
+  skills: string[];
+  capabilities: string[];
+  permissions: string[];
+  supportedPlatforms: string[];
+  settings: Record<string, unknown>;
+  error: string | null;
+  updatedAt: number;
+}
+
+export interface PluginAuditDto {
+  id: string;
+  pluginId: string;
+  sessionId: string | null;
+  action: string;
+  risk: "normal" | "sensitive" | "destructive";
+  approved: boolean;
+  success: boolean;
+  details: Record<string, unknown>;
+  createdAt: number;
 }
 
 export interface TrashItemDto {

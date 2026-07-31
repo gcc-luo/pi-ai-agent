@@ -32,4 +32,64 @@ describe("MessageRepository", () => {
     const list = messages.listBySession(sessionId);
     expect(list.map((m) => m.content)).toEqual(["hi", "hello"]);
   });
+
+  it("finalizes dangling tool calls after an interrupted process", () => {
+    messages.append({
+      sessionId,
+      role: "assistant",
+      content: "",
+      metadata: {
+        toolCalls: [{
+          toolCallId: "call-1",
+          name: "bash",
+          args: { command: "pnpm dev" },
+          status: "running",
+        }],
+        messageParts: [{
+          type: "toolCall",
+          id: "call-1",
+          name: "bash",
+          arguments: { command: "pnpm dev" },
+          status: "running",
+        }],
+      },
+    });
+
+    expect(messages.finishDanglingToolCalls("Agent stopped")).toBe(1);
+
+    const metadata = messages.listBySession(sessionId)[0]!.metadata!;
+    expect(metadata.toolCalls).toEqual([
+      expect.objectContaining({
+        toolCallId: "call-1",
+        status: "complete",
+        result: expect.objectContaining({ isError: true }),
+      }),
+    ]);
+    expect(metadata.messageParts).toEqual([
+      expect.objectContaining({
+        id: "call-1",
+        status: "complete",
+        result: expect.objectContaining({ isError: true }),
+      }),
+    ]);
+  });
+
+  it("does not rewrite completed tool calls that already have a result", () => {
+    messages.append({
+      sessionId,
+      role: "assistant",
+      content: "",
+      metadata: {
+        toolCalls: [{
+          toolCallId: "call-1",
+          name: "read",
+          args: { path: "README.md" },
+          status: "complete",
+          result: { content: "ok" },
+        }],
+      },
+    });
+
+    expect(messages.finishDanglingToolCalls("Agent stopped")).toBe(0);
+  });
 });

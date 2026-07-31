@@ -292,6 +292,42 @@ const MIGRATIONS = [
     `,
     safe: true, // ignore "duplicate column" errors for idempotency
   },
+  {
+    name: "019_plugin_system",
+    sql: `
+      CREATE TABLE plugin_settings (
+        plugin_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        settings TEXT NOT NULL DEFAULT '{}',
+        last_error TEXT,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE session_plugins (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        plugin_id TEXT NOT NULL,
+        selected_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, plugin_id)
+      );
+      CREATE INDEX idx_session_plugins_session ON session_plugins(session_id);
+
+      CREATE TABLE plugin_audit_logs (
+        id TEXT PRIMARY KEY,
+        plugin_id TEXT NOT NULL,
+        session_id TEXT,
+        action TEXT NOT NULL,
+        risk TEXT NOT NULL,
+        approved INTEGER NOT NULL,
+        success INTEGER NOT NULL,
+        details TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_plugin_audit_session ON plugin_audit_logs(session_id, created_at);
+
+      INSERT OR IGNORE INTO session_plugins (session_id, plugin_id, selected_at)
+      SELECT id, 'browser-use', updated_at FROM sessions WHERE browser_enabled = 1;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

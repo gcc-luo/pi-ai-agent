@@ -12,6 +12,8 @@ interface StreamMessage {
   createdAt: number;
 }
 
+type PermissionRequest = Extract<ServerEvent, { type: "permission_request" }>;
+
 function partsFromText(text: string): MessagePart[] {
   return text ? [{ kind: "text", text }] : [];
 }
@@ -26,18 +28,23 @@ function imagePartsFromMeta(metadata: Record<string, unknown> | null): MessagePa
 function partsFromPersisted(content: string | null, metadata: Record<string, unknown> | null): MessagePart[] {
   const imgParts = imagePartsFromMeta(metadata);
   const piParts = Array.isArray(metadata?.messageParts) ? metadata!.messageParts : [];
+  const toolCalls = Array.isArray(metadata?.toolCalls) ? (metadata!.toolCalls as ToolCall[]) : [];
   if (piParts.length) {
     const mapped = piParts.flatMap((part: any): MessagePart[] => {
       if (part?.type === "text" && typeof part.text === "string") return [{ kind: "text", text: part.text }];
       if (part?.type === "thinking" && typeof part.thinking === "string") return [{ kind: "thinking", text: part.thinking }];
       if (part?.type === "toolCall" && part.id && part.name) {
+        // Transcript synchronization restores Pi's original content blocks,
+        // which do not contain execution results. Merge the separately
+        // persisted ToolCall record so history keeps completion/error details.
+        const toolCall = toolCalls.find((candidate) => candidate.toolCallId === part.id);
         return [{
           kind: "tool_call",
           toolCallId: part.id,
           name: part.name,
           args: part.arguments,
-          status: part.status === "running" ? "running" : "complete",
-          result: part.result,
+          status: toolCall?.status ?? (part.status === "running" ? "running" : "complete"),
+          result: toolCall?.result ?? part.result,
         }];
       }
       return [{ kind: "raw", data: part as Record<string, unknown> }];
@@ -45,7 +52,6 @@ function partsFromPersisted(content: string | null, metadata: Record<string, unk
     return [...imgParts, ...mapped];
   }
   const text = content ?? "";
-  const toolCalls = Array.isArray(metadata?.toolCalls) ? (metadata!.toolCalls as ToolCall[]) : [];
   const parts: MessagePart[] = [...imgParts];
   if (text) parts.push({ kind: "text", text });
   for (const tc of toolCalls) {
@@ -96,6 +102,7 @@ export const useAgentStore = defineStore("agent", {
       error?: string;
       at: number;
     }>,
+    pendingPermissions: {} as Record<string, PermissionRequest>,
   }),
   getters: {
     messagesFor: (state) => (sessionId: string): StreamMessage[] => state.streams[sessionId] ?? [],
@@ -178,7 +185,15 @@ export const useAgentStore = defineStore("agent", {
       wsClient.send(event as any);
     },
     interrupt(sessionId: string) {
+      const pending = this.pendingPermissions[sessionId];
+      if (pending) this.respondToPermission(sessionId, pending.requestId, false);
       wsClient.send({ type: "interrupt", sessionId });
+    },
+    respondToPermission(sessionId: string, requestId: string, approved: boolean) {
+      const pending = this.pendingPermissions[sessionId];
+      if (!pending || pending.requestId !== requestId) return;
+      delete this.pendingPermissions[sessionId];
+      wsClient.send({ type: "permission_response", sessionId, requestId, approved });
     },
     subscribe(sessionId: string) {
       wsClient.subscribe(sessionId);
@@ -202,6 +217,16 @@ export const useAgentStore = defineStore("agent", {
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
     },
     handle(e: ServerEvent) {
+      if (e.type === "permission_request") {
+        this.pendingPermissions[e.sessionId] = e;
+        const remaining = Math.max(0, e.expiresAt - Date.now());
+        window.setTimeout(() => {
+          if (this.pendingPermissions[e.sessionId]?.requestId === e.requestId) {
+            delete this.pendingPermissions[e.sessionId];
+          }
+        }, remaining);
+        return;
+      }
       if (e.type === "error") {
         this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
         // A rejected prompt has no `agent_settled` event to close the run.
@@ -209,6 +234,7 @@ export const useAgentStore = defineStore("agent", {
           e.code === "pi_prompt_failed"
           || e.code === "pi_prompt_write_failed"
           || e.code === "pi_model_error"
+          || e.code === "project_workdir_missing"
         )) {
           this.runStates[e.sessionId] = "idle";
           // Provider failures arrive after Pi has emitted message_start. Drop

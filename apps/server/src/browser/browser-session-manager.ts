@@ -14,6 +14,7 @@ import {
 import type {
   ArtifactItem,
   BrowserCapabilityDto,
+  PluginStatus,
 } from "@pi-web-ui/shared";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -76,6 +77,7 @@ export interface BrowserActionInput {
   workdir: string;
   action: BrowserAction;
   args?: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 function asString(value: unknown, name: string, required = false): string | undefined {
@@ -222,6 +224,15 @@ export class BrowserSessionManager {
     };
   }
 
+  runtimeStatus(): { status: PluginStatus; error: string | null } {
+    if (this.starting.size > 0) return { status: "starting", error: null };
+    if (this.sessions.size > 0) return { status: "running", error: null };
+    const error = this.startupErrors.values().next().value as string | undefined;
+    return error
+      ? { status: "error", error }
+      : { status: "enabled", error: null };
+  }
+
   async open(sessionId: string, workdir: string): Promise<BrowserCapabilityDto> {
     return this.exclusive(sessionId, async () => {
       await this.openUnlocked(sessionId, workdir);
@@ -237,6 +248,7 @@ export class BrowserSessionManager {
     await Promise.allSettled([...this.sessions.keys()].map((id) => this.close(id)));
     this.sessions.clear();
     this.queues.clear();
+    this.startupErrors.clear();
   }
 
   async execute(input: BrowserActionInput): Promise<Record<string, unknown>> {
@@ -248,6 +260,10 @@ export class BrowserSessionManager {
       }
 
       const state = await this.openUnlocked(input.sessionId, input.workdir);
+      const abort = () => {
+        void state.browser.close().catch(() => undefined);
+      };
+      input.signal?.addEventListener("abort", abort, { once: true });
       try {
         switch (input.action) {
           case "open":
@@ -284,6 +300,8 @@ export class BrowserSessionManager {
         throw new Error(
           `${message}（当前页面：${state.currentPage.url()}）。如页面已变化，请重新调用 browser_snapshot。`,
         );
+      } finally {
+        input.signal?.removeEventListener("abort", abort);
       }
     });
   }
@@ -636,7 +654,7 @@ export class BrowserSessionManager {
         requiresConfirmation: true,
         riskReason,
         target: targetSummary.slice(0, 160),
-        message: "该点击可能产生不可逆影响。请先向用户说明目标操作并取得明确确认，再以 userConfirmed=true 重试。",
+        message: "该点击可能产生不可逆影响，需要用户在界面中明确确认后才能执行。",
         url: state.currentPage.url(),
       };
     }
@@ -729,7 +747,7 @@ export class BrowserSessionManager {
           ok: false,
           requiresConfirmation: true,
           riskReason,
-          message: "该按键可能提交不可逆操作。取得用户明确确认后，以 userConfirmed=true 重试。",
+          message: "该按键可能提交不可逆操作，需要用户在界面中明确确认后才能执行。",
           url: state.currentPage.url(),
         };
       }

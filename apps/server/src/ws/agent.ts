@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import fs from "node:fs";
 import { ClientEvent, ImageAttachment, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
 import { buildKbContext } from "../kb/inject-context.js";
@@ -38,6 +39,7 @@ export function deriveDefaultTitle(content: string): string | null {
 const FILE_TOOLS = new Set([
   "write", "edit", "write_file", "edit_file", "create_file", "delete_file",
   "mkdir", "mv", "rm", "touch", "browser_screenshot", "browser_click",
+  "computer_screenshot",
 ]);
 
 function bashModifiesFiles(command: string): boolean {
@@ -127,6 +129,23 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         return;
       }
 
+      if (event.type === "permission_response") {
+        const accepted = app.pluginPermissions?.respond(
+          session.id,
+          event.requestId,
+          event.approved,
+        ) ?? false;
+        if (!accepted) {
+          send({
+            type: "error",
+            sessionId: session.id,
+            code: "permission_request_expired",
+            message: "permission request is no longer pending",
+          });
+        }
+        return;
+      }
+
       const requestedModelId = event.type === "send" || event.type === "switchModel"
         ? event.model
         : undefined;
@@ -138,6 +157,23 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
       const project = app.projects.findById(session.projectId);
       if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
+      if (event.type === "send" || event.type === "steer" || event.type === "switchModel") {
+        let workdirAvailable = false;
+        try {
+          workdirAvailable = fs.statSync(project.workdir).isDirectory();
+        } catch {
+          workdirAvailable = false;
+        }
+        if (!workdirAvailable) {
+          send({
+            type: "error",
+            sessionId: event.sessionId,
+            code: "project_workdir_missing",
+            message: `项目工作目录不存在或不可访问：${project.workdir}`,
+          });
+          return;
+        }
+      }
 
       const startAgentState = async (model = requestedModel ?? app.models.getDefault()) => {
         // A Web session has one canonical Pi JSONL timeline. Do not let RPC
@@ -159,7 +195,9 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           projectId: project.id,
           workdir: project.workdir,
           modelConfig,
-          browserEnabled: session.browserEnabled,
+          activePluginIds: app.pluginManager?.activeForSession(session.id)
+            ?? session.selectedPluginIds
+            ?? (session.browserEnabled ? ["browser-use"] : []),
         });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
         const nextState = app.sessionStates.set(
@@ -423,6 +461,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           }
         }
       } else if (event.type === "interrupt") {
+        app.pluginPermissions?.cancelSession(session.id);
         state.runStatus = "idle";
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();

@@ -52,6 +52,11 @@ import { ChannelAgentService } from "./channels/channel-agent-service.js";
 import { ChannelConversationRepository } from "./db/repositories/channel-conversation.js";
 import { BrowserSessionManager } from "./browser/browser-session-manager.js";
 import { browserRoutes } from "./routes/browser.js";
+import { PluginRepository } from "./db/repositories/plugin.js";
+import { ComputerSessionManager } from "./computer/computer-session-manager.js";
+import { PluginManager } from "./plugins/plugin-manager.js";
+import { pluginsRoutes } from "./routes/plugins.js";
+import { PluginPermissionService } from "./plugins/plugin-permission-service.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -64,6 +69,12 @@ export async function buildConfiguredApp(config: Config) {
   const sessions = new SessionRepository(db);
   sessions.markActiveAsCrashed();
   const messages = new MessageRepository(db);
+  const repairedToolCalls = messages.finishDanglingToolCalls(
+    "应用或 Agent 进程已结束，工具调用未完成。",
+  );
+  if (repairedToolCalls > 0) {
+    console.log(`[Session Recovery] finalized ${repairedToolCalls} dangling tool-call messages`);
+  }
   const models = new ModelRepository(db);
   const skills = new SkillService(config.skillsDir);
   const skillStore = new SkillStoreService({
@@ -82,6 +93,7 @@ export async function buildConfiguredApp(config: Config) {
   const taskLogs = new TaskLogRepository(db);
   const channels = new ChannelRepository(db);
   const channelConversations = new ChannelConversationRepository(db);
+  const plugins = new PluginRepository(db);
 
   // Seed preset experts (idempotent — adds only presets not yet present).
   experts.seedPresets([
@@ -120,15 +132,27 @@ export async function buildConfiguredApp(config: Config) {
   const app = await buildApp(config, {
     db, projects, sessions, messages, models, sessionStates, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
-    scheduledTasks, taskLogs, channels, channelConversations, config,
+    scheduledTasks, taskLogs, channels, channelConversations, plugins, config,
   });
   const browserManager = new BrowserSessionManager({ logger: app.log });
   (app as any).browserManager = browserManager;
+  const computerManager = new ComputerSessionManager(app.log);
+  (app as any).computerManager = computerManager;
+  const pluginManager = new PluginManager(plugins, browserManager, computerManager);
+  (app as any).pluginManager = pluginManager;
+  const pluginPermissions = new PluginPermissionService();
+  (app as any).pluginPermissions = pluginPermissions;
   let browserExtensionPath = fileURLToPath(
     new URL("./agent/extensions/browser-tools.js", import.meta.url),
   );
   if (!fs.existsSync(browserExtensionPath)) {
     browserExtensionPath = browserExtensionPath.replace(/\.js$/, ".ts");
+  }
+  let computerExtensionPath = fileURLToPath(
+    new URL("./agent/extensions/computer-tools.js", import.meta.url),
+  );
+  if (!fs.existsSync(computerExtensionPath)) {
+    computerExtensionPath = computerExtensionPath.replace(/\.js$/, ".ts");
   }
   const processManager = new ProcessManager({
     command: config.piCommand,
@@ -140,6 +164,15 @@ export async function buildConfiguredApp(config: Config) {
     sessionRootDir: config.piSessionRootDir,
     browserExtensionPath,
     browserEndpoint: `http://127.0.0.1:${config.port}/api/internal/browser`,
+    pluginExtensions: {
+      "browser-use": browserExtensionPath,
+      "computer-use": computerExtensionPath,
+    },
+    pluginEndpoint: `http://127.0.0.1:${config.port}/api/internal/plugins`,
+    isPluginEnabled: (pluginId) => {
+      const plugin = pluginManager.find(pluginId);
+      return plugin?.enabled === true && plugin.status !== "unavailable";
+    },
     logger: app.log,
   });
   (app as any).processManager = processManager;
@@ -179,18 +212,21 @@ export async function buildConfiguredApp(config: Config) {
     suspendedTimeoutMs: config.suspendedTimeoutMs,
     onIdle: (id) => sessions.setStatus(id, "idle"),
     onSuspend: (id) => {
+      pluginPermissions.cancelSession(id);
+      processManager.revokePluginToken(id);
       const state = sessionStates.get(id);
       if (state) { state.process.kill(); sessionStates.delete(id); }
       tuiProcessManager.stop(id);
-      void browserManager.close(id);
+      void pluginManager.closeSession(id);
       sessions.setStatus(id, "suspended");
     },
   });
   app.addHook("onClose", async () => {
     sweeper.stop();
-    await browserManager.shutdown();
     await processManager.shutdown();
     await tuiProcessManager.shutdown();
+    pluginPermissions.shutdown();
+    await pluginManager.shutdown();
     try {
       const { getRegistry } = await import("./channels/registry.js");
       await getRegistry().stopAll();
@@ -212,6 +248,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(browserRoutes, { prefix: "/api" });
+  await app.register(pluginsRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
   await app.register(channelsRoutes, { prefix: "/api/channels" });

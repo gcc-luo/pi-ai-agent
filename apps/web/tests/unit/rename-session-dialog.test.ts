@@ -28,6 +28,7 @@ describe("RenameSessionDialog", () => {
     title: "old",
     parentId: null,
     expertId: null,
+    selectedPluginIds: [],
     browserEnabled: false,
     status: "active",
     createdAt: 0,

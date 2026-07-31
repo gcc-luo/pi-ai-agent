@@ -34,6 +34,12 @@ describe("ProcessManager", () => {
       sessionRootDir,
       browserExtensionPath: "browser-tools.ts",
       browserEndpoint: "http://127.0.0.1:8080/api/internal/browser",
+      pluginExtensions: {
+        "browser-use": "browser-tools.ts",
+        "computer-use": "computer-tools.ts",
+      },
+      pluginEndpoint: "http://127.0.0.1:8080/api/internal/plugins",
+      validateWorkdir: false,
       logger: logger as any,
     });
   });
@@ -46,6 +52,24 @@ describe("ProcessManager", () => {
     expect(spawner).toHaveBeenCalledWith("pi", [
       "--rpc", "--session-dir", path.join(sessionRootDir, "s1"), "--name", "pi-web-ui:s1",
     ], expect.objectContaining({ cwd: "/tmp" }));
+  });
+
+  it("reports a missing project workdir before spawning the agent", async () => {
+    const validatingManager = new ProcessManager({
+      spawn: spawner as any,
+      command: "pi",
+      args: ["--rpc"],
+      sessionRootDir,
+      logger: logger as any,
+    });
+    const missing = path.join(sessionRootDir, "missing-workdir");
+
+    await expect(validatingManager.start({
+      sessionId: "missing",
+      projectId: "p1",
+      workdir: missing,
+    })).rejects.toThrow(`项目工作目录不存在或不可访问：${missing}`);
+    expect(spawner).not.toHaveBeenCalled();
   });
 
   it("enables native Pi auto-compaction before callers can send a prompt", async () => {
@@ -218,6 +242,19 @@ describe("ProcessManager", () => {
     expect(manager.validateBrowserToken("browser-b", firstToken)).toBe(false);
   });
 
+  it("revokes plugin credentials immediately without waiting for process exit", async () => {
+    await manager.start({
+      sessionId: "plugins", projectId: "p1", workdir: "/tmp", browserEnabled: true,
+    });
+    const env = (spawner.mock.calls[0]![2] as {
+      env: Record<string, string | undefined>;
+    }).env;
+
+    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(true);
+    manager.revokePluginToken("plugins");
+    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(false);
+  });
+
   it("restarts the Pi process when browser tool availability changes", async () => {
     const first = new FakeProcess();
     const second = new FakeProcess();
@@ -232,5 +269,23 @@ describe("ProcessManager", () => {
     expect(first.killed).toBe(true);
     expect(restarted.browserEnabled).toBe(true);
     expect(spawner).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads only the extensions selected for the current session", async () => {
+    const proc = await manager.start({
+      sessionId: "plugins",
+      projectId: "p1",
+      workdir: "/tmp",
+      activePluginIds: ["computer-use"],
+    });
+    const args = spawner.mock.calls[0]![1] as string[];
+    const env = (spawner.mock.calls[0]![2] as {
+      env: Record<string, string | undefined>;
+    }).env;
+    expect(args).toContain("computer-tools.ts");
+    expect(args).not.toContain("browser-tools.ts");
+    expect(proc.activePluginIds).toEqual(["computer-use"]);
+    expect(env.PI_WEB_UI_PLUGIN_ENDPOINT).toContain("/api/internal/plugins");
+    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(true);
   });
 });

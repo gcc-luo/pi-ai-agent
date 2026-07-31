@@ -13,6 +13,9 @@ describe("migrations", () => {
     expect(names).toContain("projects");
     expect(names).toContain("sessions");
     expect(names).toContain("messages");
+    expect(names).toContain("plugin_settings");
+    expect(names).toContain("session_plugins");
+    expect(names).toContain("plugin_audit_logs");
   });
 
   it("is idempotent", () => {

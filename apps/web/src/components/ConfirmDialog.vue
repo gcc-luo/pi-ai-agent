@@ -64,6 +64,7 @@ function handleConfirm() {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
+  white-space: pre-line;
 }
 .dialog-actions {
   display: flex;

@@ -5,6 +5,7 @@ import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import SkillSelect from "./SkillSelect.vue";
+import PluginSelect from "./PluginSelect.vue";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
@@ -18,13 +19,13 @@ import type {
   MessagePart,
   ArtifactItem,
   ArtifactValidation,
-  BrowserCapabilityDto,
 } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
 import ArtifactCard from "./ArtifactCard.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 
 const props = defineProps<{ sessionId: string; projectId: string }>();
 const emit = defineEmits<{ (e: "select-file", path: string): void }>();
@@ -224,92 +225,6 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
-const browser = ref<BrowserCapabilityDto>({
-  enabled: false,
-  status: "disabled",
-  pageCount: 0,
-  currentUrl: null,
-  error: null,
-});
-const browserLoading = ref(false);
-
-async function loadBrowserCapability() {
-  const sessionId = props.sessionId;
-  try {
-    const nextBrowser = await api.getBrowserCapability(sessionId);
-    if (props.sessionId === sessionId) browser.value = nextBrowser;
-  } catch {
-    if (props.sessionId !== sessionId) return;
-    browser.value = {
-      enabled: false,
-      status: "error",
-      pageCount: 0,
-      currentUrl: null,
-      error: t("chat.browserStatusError"),
-    };
-  }
-}
-
-async function toggleBrowserCapability() {
-  if (browserLoading.value || isBusy.value) return;
-  const enabled = !browser.value.enabled;
-  const sessionId = props.sessionId;
-  browserLoading.value = true;
-  browser.value = {
-    ...browser.value,
-    enabled,
-    status: enabled ? "starting" : "disabled",
-    error: null,
-  };
-  try {
-    const nextBrowser = await api.setBrowserCapability(sessionId, enabled);
-    if (props.sessionId === sessionId) browser.value = nextBrowser;
-  } catch (error) {
-    if (props.sessionId !== sessionId) return;
-    browser.value = {
-      ...browser.value,
-      status: "error",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    browserLoading.value = false;
-  }
-}
-
-watch(() => props.sessionId, () => {
-  void loadBrowserCapability();
-}, { immediate: true });
-
-const browserStatusLabel = computed(() => {
-  if (browserLoading.value || browser.value.status === "starting") return t("chat.browserStatusStarting");
-  if (browser.value.status === "running") return t("chat.browserStatusRunning");
-  if (browser.value.status === "error") return t("chat.browserStatusError");
-  if (browser.value.status === "closed") return t("chat.browserStatusClosed");
-  return browser.value.enabled ? t("chat.browserStatusEnabled") : t("chat.browser");
-});
-
-const browserPollTimer = window.setInterval(() => {
-  if (browser.value.enabled && !browserLoading.value && !isBusy.value) {
-    void loadBrowserCapability();
-  }
-}, 3_000);
-onUnmounted(() => window.clearInterval(browserPollTimer));
-
-watch(messages, (items) => {
-  for (let messageIndex = items.length - 1; messageIndex >= 0; messageIndex--) {
-    const parts = items[messageIndex]?.parts ?? [];
-    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
-      const part = parts[partIndex];
-      if (part?.kind !== "tool_call" || !part.name.startsWith("browser_")) continue;
-      if (part.status === "running" && browser.value.enabled) {
-        browser.value = { ...browser.value, status: "running", error: null };
-      } else {
-        void loadBrowserCapability();
-      }
-      return;
-    }
-  }
-}, { deep: true });
 const compaction = computed(() => agent.compactionFor(props.sessionId));
 
 function compactTokenCount(value?: number): string {
@@ -578,11 +493,22 @@ function toolDisplayName(name: string): string {
     browser_console_errors: t("chat.browserToolConsole"),
     browser_network_errors: t("chat.browserToolNetwork"),
     browser_close: t("chat.browserToolClose"),
+    computer_screenshot: t("chat.computerToolScreenshot"),
+    computer_list_windows: t("chat.computerToolWindows"),
+    computer_focus_window: t("chat.computerToolFocus"),
+    computer_click: t("chat.computerToolClick"),
+    computer_double_click: t("chat.computerToolDoubleClick"),
+    computer_type: t("chat.computerToolType"),
+    computer_key: t("chat.computerToolKey"),
+    computer_scroll: t("chat.computerToolScroll"),
+    computer_drag: t("chat.computerToolDrag"),
+    computer_wait: t("chat.computerToolWait"),
+    computer_get_cursor_position: t("chat.computerToolCursor"),
   };
   return labels[name] ?? name;
 }
 
-function browserArtifacts(result: unknown): ArtifactItem[] {
+function toolArtifacts(result: unknown): ArtifactItem[] {
   const found: ArtifactItem[] = [];
   const seen = new Set<unknown>();
   const visit = (value: unknown, depth: number) => {
@@ -597,7 +523,7 @@ function browserArtifacts(result: unknown): ArtifactItem[] {
       typeof record.path === "string"
       && typeof record.name === "string"
       && typeof record.mimeType === "string"
-      && record.path.startsWith("browser/")
+      && (record.path.startsWith("browser/") || record.path.startsWith("computer/"))
     ) {
       found.push({
         path: record.path,
@@ -628,6 +554,12 @@ function toolResultText(result: unknown): string {
     }
   }
   return formatJson(result);
+}
+
+function toolResultFailed(result: unknown): boolean {
+  return !!result
+    && typeof result === "object"
+    && (result as { isError?: unknown }).isError === true;
 }
 
 function send() {
@@ -727,7 +659,7 @@ const allMessages = computed(() => {
         } else {
           newParts.push(p);
           if (p.kind === "tool_call" && p.result !== undefined) {
-            artifacts.push(...browserArtifacts(p.result));
+            artifacts.push(...toolArtifacts(p.result));
           }
         }
       }
@@ -828,6 +760,24 @@ const sessionChunkMap = computed(() => {
 const sessionErrors = computed(() =>
   agent.errors.filter((e) => e.sessionId === props.sessionId),
 );
+const pendingPermission = computed(() => agent.pendingPermissions[props.sessionId] ?? null);
+const permissionMessage = computed(() => {
+  const pending = pendingPermission.value;
+  if (!pending) return "";
+  const intent = pending.intent
+    ? `\n${t("plugins.permissionIntent", { intent: pending.intent })}`
+    : "";
+  return `${pending.reason}\n${t("plugins.permissionAction", {
+    plugin: pending.pluginId,
+    action: pending.action,
+  })}${intent}`;
+});
+
+function respondToPermission(approved: boolean) {
+  const pending = pendingPermission.value;
+  if (!pending) return;
+  agent.respondToPermission(props.sessionId, pending.requestId, approved);
+}
 
 // Label of the tip that will be auto-injected on send when one of the selected
 // skills has an entry in SKILL_TIPS. Drives the inline composer banner so the
@@ -947,8 +897,17 @@ const pendingTipLabel = computed(() => {
                   <span class="trace-gutter">›</span>
                   <span class="tool-name" :title="p.name">{{ toolDisplayName(p.name) }}</span>
                   <span class="tool-preview">{{ toolPreview(p.name, p.args) }}</span>
-                  <span class="tool-status" :class="p.status === 'running' ? 'running' : 'done'">
-                    {{ p.status === 'running' ? t('chat.toolRunning') : t('chat.toolDone') }}
+                  <span
+                    class="tool-status"
+                    :class="p.status === 'running' ? 'running' : toolResultFailed(p.result) ? 'failed' : 'done'"
+                  >
+                    {{
+                      p.status === 'running'
+                        ? t('chat.toolRunning')
+                        : toolResultFailed(p.result)
+                          ? t('chat.toolFailed')
+                          : t('chat.toolDone')
+                    }}
                   </span>
                 </summary>
                 <div class="tool-detail">
@@ -1091,23 +1050,7 @@ const pendingTipLabel = computed(() => {
         />
         <ChatExpertPicker :session-id="sessionId" />
         <ChatKbPicker :session-id="sessionId" />
-        <button
-          type="button"
-          class="browser-capability"
-          :class="[browser.status, { enabled: browser.enabled }]"
-          :disabled="browserLoading || isBusy"
-          :title="browser.error || browser.currentUrl || browserStatusLabel"
-          data-test="browser-capability-toggle"
-          @click="toggleBrowserCapability"
-        >
-          <span v-if="browserLoading || browser.status === 'starting'" class="browser-spinner" />
-          <svg v-else width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.3" />
-            <path d="M1.9 8h12.2M8 1.8c1.7 1.7 2.6 3.8 2.6 6.2S9.7 12.5 8 14.2M8 1.8C6.3 3.5 5.4 5.6 5.4 8s.9 4.5 2.6 6.2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
-          </svg>
-          <span>{{ browserStatusLabel }}</span>
-          <span class="browser-dot" />
-        </button>
+        <PluginSelect :session-id="sessionId" :disabled="isBusy" />
         <span
           v-if="compaction"
           class="compaction-status"
@@ -1168,6 +1111,17 @@ const pendingTipLabel = computed(() => {
       data-test="import-skill-dialog"
       :show="showImportSkill"
       @close="showImportSkill = false"
+    />
+    <ConfirmDialog
+      data-test="plugin-permission-dialog"
+      :show="Boolean(pendingPermission)"
+      :title="t('plugins.permissionTitle')"
+      :message="permissionMessage"
+      :confirm-label="t('plugins.permissionApprove')"
+      :cancel-label="t('plugins.permissionDeny')"
+      danger
+      @confirm="respondToPermission(true)"
+      @close="respondToPermission(false)"
     />
     <Teleport to="body">
       <div v-if="previewImage" class="image-lightbox" @click="closeImagePreview">
@@ -1879,6 +1833,10 @@ const pendingTipLabel = computed(() => {
 
 .tool-status.done {
   color: var(--text-faint, var(--text-muted));
+}
+
+.tool-status.failed {
+  color: var(--danger-color, #e53935);
 }
 
 .tool-detail {
