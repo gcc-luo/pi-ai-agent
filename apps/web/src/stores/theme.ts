@@ -15,7 +15,7 @@ export const useThemeStore = defineStore("theme", {
     mode: ((): ThemeMode => {
       const stored = localStorage.getItem("pi-theme");
       if (stored && VALID_MODES.has(stored)) return stored as ThemeMode;
-      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      return "gray";
     })(),
   }),
 
