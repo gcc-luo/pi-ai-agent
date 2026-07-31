@@ -10,6 +10,7 @@ interface StreamMessage {
   parts: MessagePart[];
   status: "streaming" | "complete" | "error";
   createdAt: number;
+  metadata: Record<string, unknown> | null;
 }
 
 type PermissionRequest = Extract<ServerEvent, { type: "permission_request" }>;
@@ -77,6 +78,7 @@ export const useAgentStore = defineStore("agent", {
     // Kept separately from message streaming: one agent run can produce many
     // assistant messages while it calls tools and resumes generation.
     runStates: {} as Record<string, "working" | "idle">,
+    runStartedAt: {} as Record<string, number>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -116,6 +118,8 @@ export const useAgentStore = defineStore("agent", {
     isSessionBusy: (state) => (sessionId: string): boolean => {
       return state.runStates[sessionId] === "working";
     },
+    runStartedAtFor: (state) => (sessionId: string): number | null =>
+      state.runStartedAt[sessionId] ?? null,
     tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
       state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
     compactionFor: (state) => (sessionId: string) => state.contextCompactions[sessionId] ?? null,
@@ -179,6 +183,7 @@ export const useAgentStore = defineStore("agent", {
     send(sessionId: string, content: string, images?: ImageAttachment[]) {
       this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
+      this.runStartedAt[sessionId] = Date.now();
       const event: Record<string, unknown> = { type: "send", sessionId, content };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
@@ -213,7 +218,14 @@ export const useAgentStore = defineStore("agent", {
         }
       }
       if (content) parts.push({ kind: "text", text: content });
-      const msg: StreamMessage = { id: `u-${Date.now()}`, role: "user", parts, status: "complete", createdAt: Date.now() };
+      const msg: StreamMessage = {
+        id: `u-${Date.now()}`,
+        role: "user",
+        parts,
+        status: "complete",
+        createdAt: Date.now(),
+        metadata: null,
+      };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
     },
     handle(e: ServerEvent) {
@@ -237,6 +249,7 @@ export const useAgentStore = defineStore("agent", {
           || e.code === "project_workdir_missing"
         )) {
           this.runStates[e.sessionId] = "idle";
+          delete this.runStartedAt[e.sessionId];
           // Provider failures arrive after Pi has emitted message_start. Drop
           // the empty placeholder so the visible result is the error banner,
           // not a permanently blank PI Agent message.
@@ -264,10 +277,33 @@ export const useAgentStore = defineStore("agent", {
       const sid = e.sessionId;
       if (e.type === "agent_status") {
         this.runStates[sid] = e.status;
+        if (e.status === "working") {
+          if (!this.runStartedAt[sid]) this.runStartedAt[sid] = Date.now();
+        } else {
+          delete this.runStartedAt[sid];
+        }
+        if (e.status === "idle" && typeof e.durationMs === "number") {
+          const lastAssistant = [...(this.streams[sid] ?? [])]
+            .reverse()
+            .find((message) => message.role === "assistant");
+          if (lastAssistant) {
+            this.streams[sid] = (this.streams[sid] ?? []).map((message) =>
+              message.id === lastAssistant.id
+                ? {
+                    ...message,
+                    metadata: { ...(message.metadata ?? {}), durationMs: e.durationMs },
+                  }
+                : message,
+            );
+          }
+        }
         return;
       }
       if (e.type === "session_status") {
-        if (e.status === "suspended" || e.status === "crashed") this.runStates[sid] = "idle";
+        if (e.status === "suspended" || e.status === "crashed") {
+          this.runStates[sid] = "idle";
+          delete this.runStartedAt[sid];
+        }
         return;
       }
       if (e.type === "context_compaction") {
@@ -284,7 +320,14 @@ export const useAgentStore = defineStore("agent", {
       }
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
-        this.streams[sid] = [...list, { id: e.messageId, role: e.role, parts: [], status: "streaming", createdAt: e.timestamp ?? Date.now() }];
+        this.streams[sid] = [...list, {
+          id: e.messageId,
+          role: e.role,
+          parts: [],
+          status: "streaming",
+          createdAt: e.timestamp ?? Date.now(),
+          metadata: null,
+        }];
       } else if (e.type === "message_delta") {
         this.streams[sid] = list.map((m) =>
           m.id === e.messageId ? { ...m, parts: appendDeltaToKind(m.parts, "text", e.delta) } : m,
@@ -314,7 +357,7 @@ export const useAgentStore = defineStore("agent", {
               parts.push({ kind: "tool_call", toolCallId: tc.toolCallId, name: tc.name, args: tc.args, status: tc.status, result: tc.result });
             }
           }
-          return { ...m, parts, status: "complete" as const };
+          return { ...m, parts, status: "complete" as const, metadata: e.metadata ?? null };
         });
         // Accumulate token usage from the LLM response.
         // The Pi agent normalises provider usage into { input, output, totalTokens, ... }
@@ -377,6 +420,7 @@ export const useAgentStore = defineStore("agent", {
             parts: [{ kind: "raw" as const, data: e.data }],
             status: "complete",
             createdAt: Date.now(),
+            metadata: null,
           };
           this.streams[sid] = [...list, holder];
           return;

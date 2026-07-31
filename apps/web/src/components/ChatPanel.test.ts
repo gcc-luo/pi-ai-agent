@@ -15,4 +15,14 @@ describe("ChatPanel PI Agent avatar", () => {
     expect(source).toContain('alt="PI Agent"');
     expect(source).not.toContain("padding: 2px;");
   });
+
+  it("does not force the conversation to scroll when toggling agent history", async () => {
+    const source = await readFile(componentPath, "utf8");
+    const toggleStart = source.indexOf("function toggleRun(");
+    const toggleEnd = source.indexOf("const compaction =", toggleStart);
+    const toggleSource = source.slice(toggleStart, toggleEnd);
+
+    expect(toggleStart).toBeGreaterThan(-1);
+    expect(toggleSource).not.toContain("scrollToBottom");
+  });
 });

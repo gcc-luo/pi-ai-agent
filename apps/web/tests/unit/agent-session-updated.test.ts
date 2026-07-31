@@ -75,6 +75,26 @@ describe("agent store session_updated event", () => {
     expect(agent.isSessionBusy("s2")).toBe(true);
   });
 
+  it("tracks a live run start and attaches its final duration to the last assistant message", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    expect(agent.runStartedAtFor("s1")).toEqual(expect.any(Number));
+
+    agent.handle({
+      type: "message_start", sessionId: "s1", messageId: "m1", role: "assistant",
+    });
+    agent.handle({
+      type: "message_end", sessionId: "s1", messageId: "m1", content: "done",
+    });
+    agent.handle({
+      type: "agent_status", sessionId: "s1", status: "idle", durationMs: 74_000,
+    });
+
+    expect(agent.runStartedAtFor("s1")).toBeNull();
+    expect(agent.messagesFor("s1")[0]?.metadata).toMatchObject({ durationMs: 74_000 });
+  });
+
   it("clears an empty assistant placeholder when the model request fails", () => {
     const agent = useAgentStore();
 

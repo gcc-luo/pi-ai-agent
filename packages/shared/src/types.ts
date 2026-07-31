@@ -28,7 +28,13 @@ export type ServerEvent =
   // A run spans every model turn and tool execution triggered by one prompt.
   // It deliberately does not mirror `message_start`/`message_end`, because an
   // agent run can contain several assistant messages.
-  | { type: "agent_status"; sessionId: string; status: "working" | "idle" }
+  | {
+      type: "agent_status";
+      sessionId: string;
+      status: "working" | "idle";
+      /** Total time spent by the just-settled agent run. */
+      durationMs?: number;
+    }
   | {
       type: "context_compaction";
       sessionId: string;

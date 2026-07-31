@@ -24,6 +24,7 @@ import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
+import { annotateChatRuns, formatProcessingDuration } from "../utils/chat-run-presentation.js";
 import ArtifactCard from "./ArtifactCard.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
@@ -225,6 +226,45 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
+const expandedRunIds = ref<Set<string>>(new Set());
+const durationClock = ref(Date.now());
+let durationTimer: number | null = null;
+
+const activeElapsedMs = computed(() => {
+  const startedAt = agent.runStartedAtFor(props.sessionId);
+  return isBusy.value && startedAt !== null
+    ? Math.max(0, durationClock.value - startedAt)
+    : null;
+});
+
+function stopDurationTimer() {
+  if (durationTimer !== null) {
+    window.clearInterval(durationTimer);
+    durationTimer = null;
+  }
+}
+
+watch(
+  isBusy,
+  (busy) => {
+    stopDurationTimer();
+    if (!busy) return;
+    durationClock.value = Date.now();
+    durationTimer = window.setInterval(() => {
+      durationClock.value = Date.now();
+    }, 1000);
+  },
+  { immediate: true },
+);
+
+function toggleRun(runId: string | null, canToggle: boolean) {
+  if (!runId || !canToggle) return;
+  const next = new Set(expandedRunIds.value);
+  if (next.has(runId)) next.delete(runId);
+  else next.add(runId);
+  expandedRunIds.value = next;
+}
+
 const compaction = computed(() => agent.compactionFor(props.sessionId));
 
 function compactTokenCount(value?: number): string {
@@ -397,13 +437,17 @@ onMounted(async () => {
 watch(() => props.sessionId, async (sessionId, previousSessionId) => {
   agent.unsubscribe(previousSessionId);
   agent.subscribe(sessionId);
+  expandedRunIds.value = new Set();
   kbSearchByMessage.value = {};
   try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
 });
 
-onUnmounted(() => agent.unsubscribe(props.sessionId));
+onUnmounted(() => {
+  stopDurationTimer();
+  agent.unsubscribe(props.sessionId);
+});
 
 watch(
   () => messages.value.length,
@@ -637,11 +681,10 @@ const allMessages = computed(() => {
     streaming: m.status === "streaming",
     persisted: false,
     createdAt: m.createdAt,
-    metadata: null as Record<string, unknown> | null,
+    metadata: m.metadata,
   }));
   const all = [...persisted, ...live];
-  // Show the AGENT header only on the first message of a consecutive assistant group.
-  return all.map((m, i) => {
+  const decorated = all.map((m) => {
     // Extract <artifacts> blocks from assistant text parts
     let artifacts: ArtifactItem[] = [];
     let parts = m.parts;
@@ -669,11 +712,18 @@ const allMessages = computed(() => {
       ...m,
       parts,
       artifacts,
-      showHeader: m.role !== "assistant" || all[i - 1]?.role !== "assistant",
+      hasNonTextContent: m.role === "assistant"
+        && (parts.some((part) => part.kind !== "text") || artifacts.length > 0),
       kbSearch: kbSearchByMessage.value[m.id] ?? null,
       // Build chunkMap from persisted metadata or live search state for citation rendering
       chunkMap: buildChunkMap(m.id, m.metadata),
     };
+  });
+
+  return annotateChatRuns(decorated, {
+    isBusy: isBusy.value,
+    activeElapsedMs: activeElapsedMs.value,
+    expandedRunIds: expandedRunIds.value,
   });
 });
 
@@ -819,12 +869,35 @@ const pendingTipLabel = computed(() => {
         <p class="empty-text">{{ t('chat.empty') }}</p>
       </div>
 
+      <template v-for="m in allMessages" :key="m.id">
       <div
-        v-for="m in allMessages"
-        :key="m.id"
+        v-if="!m.hidden"
         class="msg"
-        :class="[m.role, { streaming: m.streaming, continued: !m.showHeader }]"
+        :class="[m.role, {
+          streaming: m.streaming,
+          continued: !m.showHeader && !m.statusOnly,
+          'run-status-only': m.statusOnly,
+        }]"
       >
+        <button
+          v-if="m.showRunStatus && m.displayDurationMs !== null"
+          type="button"
+          class="assistant-duration"
+          :class="{ expanded: m.runExpanded, toggleable: m.canToggleRun }"
+          :aria-expanded="m.canToggleRun ? m.runExpanded : undefined"
+          :aria-disabled="!m.canToggleRun"
+          :title="m.canToggleRun
+            ? (m.runExpanded
+              ? t('chat.collapseRunHistory')
+              : t('chat.expandRunHistory'))
+            : undefined"
+          @click="toggleRun(m.runId, m.canToggleRun)"
+        >
+          <span>{{ t('chat.processedDuration', { duration: formatProcessingDuration(m.displayDurationMs) }) }}</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <div v-if="m.role === 'user'" class="msg-avatar-row">
           <span class="msg-avatar-label">user</span>
           <div class="msg-avatar" aria-hidden="true">
@@ -843,10 +916,10 @@ const pendingTipLabel = computed(() => {
             <span /><span /><span />
           </span>
         </div>
-        <div class="msg-body">
+        <div v-if="!m.statusOnly" class="msg-body">
           <template v-for="(p, pi) in m.parts" :key="pi">
             <!-- Image part — show thumbnail in message bubble -->
-            <div v-if="p.kind === 'image'" class="msg-image-wrap">
+            <div v-if="p.kind === 'image' && !m.hideNonTextContent" class="msg-image-wrap">
               <img
                 :src="`data:${p.mediaType};base64,${p.data}`"
                 :alt="p.name"
@@ -885,13 +958,13 @@ const pendingTipLabel = computed(() => {
               </template>
             </template>
             <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
-            <details v-else-if="p.kind === 'thinking'" class="thinking-trace" open>
+            <details v-else-if="p.kind === 'thinking' && !m.hideNonTextContent" class="thinking-trace" open>
               <summary class="thinking-summary">
                 <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
               </summary>
               <div class="thinking-text">{{ p.text }}</div>
             </details>
-            <div v-else-if="p.kind === 'tool_call'" class="tool-trace" :class="{ running: p.status === 'running' }">
+            <div v-else-if="p.kind === 'tool_call' && !m.hideNonTextContent" class="tool-trace" :class="{ running: p.status === 'running' }">
               <details>
                 <summary class="tool-summary">
                   <span class="trace-gutter">›</span>
@@ -928,7 +1001,7 @@ const pendingTipLabel = computed(() => {
               <pre v-if="p.result !== undefined" class="tool-output">{{ truncate(toolResultText(p.result), 280) }}</pre>
               <div v-else-if="p.status === 'running'" class="tool-running-line"><span />{{ t('chat.toolRunning') }}</div>
             </div>
-            <details v-else-if="p.kind === 'raw'" class="raw-trace">
+            <details v-else-if="p.kind === 'raw' && !m.hideNonTextContent" class="raw-trace">
               <summary class="raw-summary">
                 <span class="trace-gutter">·</span><span class="raw-type">{{ String(p.data?.type ?? 'event') }}</span>
               </summary>
@@ -936,7 +1009,7 @@ const pendingTipLabel = computed(() => {
             </details>
           </template>
           <!-- Artifact cards (files delivered by the agent) -->
-          <div v-if="m.artifacts?.length" class="artifact-cards">
+          <div v-if="m.artifacts?.length && !m.hideNonTextContent" class="artifact-cards">
             <ArtifactCard
               v-for="a in m.artifacts"
               :key="a.path"
@@ -951,12 +1024,13 @@ const pendingTipLabel = computed(() => {
         <!-- KB search call card (shown under user messages) -->
         <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
         <div
-          v-if="m.createdAt"
+          v-if="m.createdAt && !m.statusOnly"
           class="msg-time"
           :class="m.role"
           :title="formatTimeFull(m.createdAt)"
         >{{ formatTime(m.createdAt) }}</div>
       </div>
+      </template>
       <div v-if="isBusy" class="generating-indicator" role="status" aria-live="polite">
         <span class="generating-spinner" aria-hidden="true" />
         <span>{{ t('chat.generating') }}</span>
@@ -1407,6 +1481,16 @@ const pendingTipLabel = computed(() => {
   margin-top: -4px;
 }
 
+.msg.assistant.run-status-only {
+  margin-bottom: -8px;
+  padding-bottom: 0;
+  animation: none;
+}
+
+.msg.assistant.run-status-only::before {
+  display: none;
+}
+
 /* chain consecutive assistant rails into a continuous line */
 .msg.assistant.continued::before {
   top: 0;
@@ -1495,6 +1579,51 @@ const pendingTipLabel = computed(() => {
 .msg.assistant .msg-time {
   text-align: left;
   color: var(--text-secondary);
+}
+
+.assistant-duration {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  justify-content: flex-start;
+  width: min(720px, 68vw);
+  max-width: 100%;
+  margin: 0 0 2px;
+  padding: 0 0 9px;
+  border: 0;
+  border-bottom: 1px solid var(--border-default);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: default;
+  opacity: 1;
+}
+
+.assistant-duration svg {
+  flex: none;
+  color: var(--text-faint);
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+
+.assistant-duration.toggleable {
+  cursor: pointer;
+}
+
+.assistant-duration.toggleable:hover {
+  color: var(--text-secondary);
+  border-bottom-color: var(--border-active);
+}
+
+.assistant-duration.toggleable:hover svg {
+  color: var(--text-secondary);
+}
+
+.assistant-duration.expanded svg {
+  transform: rotate(90deg);
 }
 
 /* ─── Typing Indicator ─── */

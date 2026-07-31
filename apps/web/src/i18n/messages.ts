@@ -86,6 +86,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.toolResult": "Result",
     "chat.toolProgress": "Progress",
     "chat.thinking": "Thinking",
+    "chat.processedDuration": "Processed in {duration}",
+    "chat.expandRunHistory": "Show agent process history",
+    "chat.collapseRunHistory": "Hide earlier agent messages",
     "chat.scrollToBottom": "Scroll to bottom",
     "chat.tipLabelFallback": "Skill tip attached",
 
@@ -822,6 +825,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.toolResult": "结果",
     "chat.toolProgress": "过程",
     "chat.thinking": "思考",
+    "chat.processedDuration": "已处理 {duration}",
+    "chat.expandRunHistory": "展开本轮处理过程",
+    "chat.collapseRunHistory": "收起前面的 Agent 消息",
     "chat.scrollToBottom": "滚动到底部",
     "chat.tipLabelFallback": "已附加技能提示",
 

@@ -11,6 +11,7 @@ export class RpcBridge extends EventEmitter {
   private buffer = "";
   private activeAssistantMessageId: string | null = null;
   private activeAssistantTimestamp: number | null = null;
+  private agentStartedAt: number | null = null;
 
   constructor(private proc: RpcProcess, private sessionId: string) {
     super();
@@ -54,11 +55,21 @@ export class RpcBridge extends EventEmitter {
     // occur many times during one prompt while tools are being used.
     if (input?.type === "agent_start") {
       console.log(`[RpcBridge] agent_start: sessionId=${sid}`);
+      this.agentStartedAt = Date.now();
       return [{ type: "agent_status", sessionId: sid, status: "working" }];
     }
     if (input?.type === "agent_settled") {
       console.log(`[RpcBridge] ${input.type}: sessionId=${sid}`);
-      return [{ type: "agent_status", sessionId: sid, status: "idle" }];
+      const durationMs = this.agentStartedAt === null
+        ? undefined
+        : Math.max(0, Date.now() - this.agentStartedAt);
+      this.agentStartedAt = null;
+      return [{
+        type: "agent_status",
+        sessionId: sid,
+        status: "idle",
+        ...(durationMs === undefined ? {} : { durationMs }),
+      }];
     }
     if (input?.type === "agent_end") {
       // One low-level run ended, but Pi may immediately compact and retry.

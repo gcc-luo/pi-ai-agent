@@ -265,7 +265,12 @@ describe("RpcBridge", () => {
     expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
       { type: "agent_status", sessionId: "s1", status: "working" },
       { type: "message_start", sessionId: "s1", messageId: "assistant-555", role: "assistant", timestamp: 555 },
-      { type: "agent_status", sessionId: "s1", status: "idle" },
+      expect.objectContaining({
+        type: "agent_status",
+        sessionId: "s1",
+        status: "idle",
+        durationMs: expect.any(Number),
+      }),
     ]);
   });
 

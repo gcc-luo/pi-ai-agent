@@ -207,8 +207,18 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           modelConfig ? { provider: modelConfig.provider, model: modelConfig.model } : undefined,
         );
         nextState.send = send;
+        let lastAssistantMessage: { id: string; metadata: Record<string, unknown> } | null = null;
         bridge.onEvent((e) => {
-          if (e.type === "agent_status") nextState.runStatus = e.status;
+          if (e.type === "agent_status") {
+            nextState.runStatus = e.status;
+            if (e.status === "working") {
+              lastAssistantMessage = null;
+            } else if (typeof e.durationMs === "number" && lastAssistantMessage) {
+              const metadata = { ...lastAssistantMessage.metadata, durationMs: e.durationMs };
+              app.messages.updateMetadata(lastAssistantMessage.id, metadata);
+              lastAssistantMessage = { ...lastAssistantMessage, metadata };
+            }
+          }
           nextState.send(e);
           if (e.type === "tool_call") {
             if (isFileModifyingTool(e.name, e.args)) {
@@ -243,6 +253,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           } else if (e.type === "message_end") {
             const metadata = e.metadata ?? {};
             const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
+            lastAssistantMessage = { id: saved.id, metadata };
             const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
             for (const toolCall of toolCalls) {
               persistedToolCalls.set(toolCall.toolCallId, {
