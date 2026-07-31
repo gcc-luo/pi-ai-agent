@@ -173,6 +173,83 @@
   --scrollbar-thumb-hover: #5a6577;
 }
 
+
+/* ─── Gray Mode ─── */
+
+[data-theme="gray"] {
+  /* Brand */
+  --primary-color: #2dd4a8;
+  --primary-hover: #3de0b5;
+  --primary-light: rgba(45, 212, 168, 0.12);
+
+  /* Background */
+  --background-page: #2c2c2c;
+  --background-panel: #363636;
+  --background-hover: #404040;
+  --background-selected: rgba(45, 212, 168, 0.10);
+
+  /* Borders */
+  --border-color: #4a4a4a;
+  --border-color-light: #3e3e3e;
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-disabled: #888888;
+
+  /* Status */
+  --danger-color: #f87171;
+  --warning-color: #fbbf24;
+  --success-color: #2dd4a8;
+
+  /* Semantic aliases */
+  --bg-void: #252525;
+  --bg-deep: #2c2c2c;
+  --bg-surface: #363636;
+  --bg-elevated: #404040;
+  --bg-hover: #404040;
+  --bg-active: rgba(45, 212, 168, 0.10);
+
+  --accent: #2dd4a8;
+  --accent-hover: #3de0b5;
+  --accent-pressed: #18b89a;
+  --accent-dim: rgba(45, 212, 168, 0.12);
+  --accent-glow: rgba(45, 212, 168, 0.20);
+
+  --amber: #fbbf24;
+  --amber-dim: rgba(251, 191, 36, 0.12);
+  --rose: #f87171;
+  --rose-dim: rgba(248, 113, 113, 0.12);
+  --green: #2dd4a8;
+  --green-dim: rgba(45, 212, 168, 0.12);
+
+  --text-muted: #888888;
+  --text-faint: #555555;
+  --text-accent: #2dd4a8;
+
+  --border-default: #4a4a4a;
+  --border-subtle: #3e3e3e;
+  --border-active: #5a5a5a;
+  --border-accent: #2dd4a8;
+
+  --chat-user-bg: #3a3a3a;
+  --chat-user-border: #4a4a4a;
+  --chat-user-text: #ffffff;
+  --chat-assistant-bg: #363636;
+  --chat-assistant-border: #4a4a4a;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(45, 212, 168, 0.08);
+
+  --row-hover: rgba(255, 255, 255, 0.04);
+
+  /* Scrollbar (gray) */
+  --scrollbar-thumb: #5a5a5a;
+  --scrollbar-thumb-hover: #777777;
+}
+
 /* ── Reset & Base ─── */
 
 *,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { NModal, NSwitch } from "naive-ui";
+import { NModal } from "naive-ui";
 import { useI18n } from "../i18n/index.js";
-import { useThemeStore } from "../stores/theme.js";
+import { useThemeStore, THEME_OPTIONS, type ThemeMode } from "../stores/theme.js";
 
 defineProps<{ show: boolean }>();
 defineEmits<{ (e: "close"): void }>();
@@ -35,10 +35,20 @@ const themeStore = useThemeStore();
 
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-label">{{ t('settings.darkMode') }}</span>
-            <span class="setting-desc">{{ t('settings.darkModeDesc') }}</span>
+            <span class="setting-label">{{ t('settings.theme') }}</span>
+            <span class="setting-desc">{{ t('settings.themeDesc') }}</span>
           </div>
-          <NSwitch :value="themeStore.isDark" @update:value="themeStore.toggle()" />
+          <div class="theme-switcher">
+            <button
+              v-for="option in THEME_OPTIONS"
+              :key="option.value"
+              class="theme-option"
+              :class="{ active: themeStore.mode === option.value }"
+              @click="themeStore.set(option.value as ThemeMode)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
         </div>
 
       </div>
@@ -143,4 +153,36 @@ const themeStore = useThemeStore();
   color: var(--accent);
 }
 
+.theme-switcher {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.theme-option {
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-right: 1px solid var(--border-default);
+}
+.theme-option:last-child {
+  border-right: none;
+}
+.theme-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.theme-option.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
 </style>

@@ -1,20 +1,33 @@
 import { defineStore } from "pinia";
 
-type ThemeMode = "light" | "dark";
+export type ThemeMode = "light" | "dark" | "gray";
+
+export const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+  { value: "gray", label: "灰色" },
+];
+
+const VALID_MODES: Set<string> = new Set(["light", "dark", "gray"]);
 
 export const useThemeStore = defineStore("theme", {
   state: () => ({
-    mode: (localStorage.getItem("pi-theme") as ThemeMode) ??
-      (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"),
+    mode: ((): ThemeMode => {
+      const stored = localStorage.getItem("pi-theme");
+      if (stored && VALID_MODES.has(stored)) return stored as ThemeMode;
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    })(),
   }),
 
   getters: {
-    isDark: (state) => state.mode === "dark",
+    isDark: (state) => state.mode === "dark" || state.mode === "gray",
   },
 
   actions: {
     toggle() {
-      this.mode = this.mode === "dark" ? "light" : "dark";
+      const order: ThemeMode[] = ["light", "dark", "gray"];
+      const index = order.indexOf(this.mode);
+      this.mode = order[(index + 1) % order.length] ?? "light";
       this.apply();
     },
     set(mode: ThemeMode) {
