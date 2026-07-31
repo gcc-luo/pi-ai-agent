@@ -52,8 +52,8 @@ const MANIFESTS: PluginManifest[] = [
     id: COMPUTER_PLUGIN_ID,
     name: "Computer Use",
     icon: "🖥️",
-    version: "1.0.0",
-    description: "通过窗口信息、桌面截图和坐标操作控制 Windows 本地应用。",
+    version: "1.1.0",
+    description: "通过窗口信息、桌面截图和坐标操作控制 macOS、Windows 与 Linux 本地应用。",
     source: "Pi Web UI",
     builtin: true,
     official: true,
@@ -70,7 +70,7 @@ const MANIFESTS: PluginManifest[] = [
       "查看屏幕", "控制鼠标", "控制键盘", "切换窗口",
       "操作本地应用", "生成截图",
     ],
-    supportedPlatforms: ["win32"],
+    supportedPlatforms: ["win32", "darwin", "linux"],
   },
 ];
 
