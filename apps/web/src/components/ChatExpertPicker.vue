@@ -67,6 +67,7 @@ async function clearExpert() {
           <path d="M3.5 15c.6-3 2.5-4.6 5.5-4.6s4.9 1.6 5.5 4.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
           <path d="M14.1 4.3l.65.65 1.3-1.3" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
+        <span class="expert-trigger-label">{{ t('expert.chat.pick') }}</span>
       </button>
     </template>
 
@@ -116,8 +117,11 @@ async function clearExpert() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: auto;
+  min-width: 78px;
   height: 26px;
+  gap: 5px;
+  padding: 0 8px;
   padding: 0;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -126,6 +130,10 @@ async function clearExpert() {
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+}
+.expert-trigger-label {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .expert-picker-trigger:hover, .expert-picker-trigger.active {
   color: var(--text-primary);

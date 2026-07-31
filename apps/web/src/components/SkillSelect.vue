@@ -48,6 +48,7 @@ async function confirmUninstall() {
           <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
             <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
           </svg>
+          <span class="skill-trigger-label">{{ t('skill.dropdown') }}</span>
         </button>
       </template>
 
@@ -116,8 +117,11 @@ async function confirmUninstall() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: auto;
+  min-width: 68px;
   height: 26px;
+  gap: 5px;
+  padding: 0 8px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -125,6 +129,10 @@ async function confirmUninstall() {
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+}
+.skill-trigger-label {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .skill-trigger:hover {
   color: var(--text-primary);

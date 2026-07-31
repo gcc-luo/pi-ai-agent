@@ -1043,6 +1043,7 @@ const pendingTipLabel = computed(() => {
             <path d="M7 9.5V2M4 4.5L7 1.5l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M2 9v2.5a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
           </svg>
+          <span class="tool-btn-label">{{ t('chat.upload') }}</span>
         </button>
         <SkillSelect
           @select="onSkillSelect"
@@ -1977,8 +1978,11 @@ const pendingTipLabel = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: auto;
+  min-width: 72px;
   height: 26px;
+  gap: 5px;
+  padding: 0 9px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1986,6 +1990,10 @@ const pendingTipLabel = computed(() => {
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+}
+.tool-btn-label {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .tool-btn:hover {
   color: var(--text-primary);

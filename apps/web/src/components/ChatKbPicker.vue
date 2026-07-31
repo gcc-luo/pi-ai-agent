@@ -79,6 +79,7 @@ function getSearchableFiles(kbId: string) {
           <path d="M3 3h4a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H3V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
           <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
         </svg>
+        <span class="kb-trigger-label">{{ t('kb.chat.picker.title') }}</span>
         <span v-if="selectedKbIds.size" class="kb-badge">{{ selectedKbIds.size }}</span>
       </button>
     </template>
@@ -135,8 +136,11 @@ function getSearchableFiles(kbId: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: auto;
+  min-width: 76px;
   height: 26px;
+  gap: 5px;
+  padding: 0 8px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -145,6 +149,10 @@ function getSearchableFiles(kbId: string) {
   transition: all var(--transition-fast);
   position: relative;
   flex-shrink: 0;
+}
+.kb-trigger-label {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .kb-picker-trigger:hover {
   color: var(--text-primary);
