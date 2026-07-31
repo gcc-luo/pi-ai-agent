@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import fs from "node:fs/promises";
 
 const endpoint = process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
 const sessionId = process.env.PI_WEB_UI_SESSION_ID;
@@ -46,8 +47,24 @@ async function invoke(
         isError: true,
       };
     }
+    const textContent = { type: "text" as const, text: JSON.stringify(result, null, 2) };
+    if (action === "screenshot" && typeof result.path === "string") {
+      try {
+        const imageBuffer = await fs.readFile(result.path);
+        const base64 = imageBuffer.toString("base64");
+        return {
+          content: [
+            textContent,
+            { type: "image" as const, data: base64, mimeType: "image/png" },
+          ],
+          details: result,
+        };
+      } catch {
+        // Fall through to text-only if the file can't be read
+      }
+    }
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      content: [textContent],
       details: result,
     };
   } catch (error) {
@@ -68,8 +85,8 @@ const run = (action: string) =>
   ) => invoke(action, params, signal);
 
 const point = {
-  x: Type.Number({ description: "虚拟桌面绝对 X 坐标" }),
-  y: Type.Number({ description: "虚拟桌面绝对 Y 坐标" }),
+  x: Type.Number({ description: "桌面绝对 X 坐标" }),
+  y: Type.Number({ description: "桌面绝对 Y 坐标" }),
 };
 
 const intent = {
@@ -89,7 +106,7 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_screenshot",
     label: "截取桌面",
-    description: "截取整个虚拟桌面或指定窗口，保存到工作区 computer/screenshots 并返回产物。",
+    description: "截取桌面或指定窗口，保存到工作区 computer/screenshots 并返回产物。",
     promptSnippet: "查看当前桌面或目标窗口",
     promptGuidelines: guidelines,
     parameters: Type.Object({
@@ -103,7 +120,7 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_list_windows",
     label: "列出窗口",
-    description: "列出当前可见顶层窗口、进程和屏幕坐标边界。",
+    description: "列出当前可见顶层窗口和屏幕坐标边界。",
     parameters: Type.Object({}),
     executionMode: "sequential",
     execute: run("list_windows"),
@@ -124,7 +141,7 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_click",
     label: "点击桌面",
-    description: "在虚拟桌面绝对坐标执行鼠标单击。",
+    description: "在桌面绝对坐标执行鼠标单击。",
     parameters: Type.Object({ ...point, ...intent }),
     executionMode: "sequential",
     execute: run("click"),
@@ -133,7 +150,7 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_double_click",
     label: "双击桌面",
-    description: "在虚拟桌面绝对坐标执行鼠标双击。",
+    description: "在桌面绝对坐标执行鼠标双击。",
     parameters: Type.Object({ ...point, ...intent }),
     executionMode: "sequential",
     execute: run("double_click"),
