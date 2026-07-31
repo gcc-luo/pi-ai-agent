@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { NInput, NButton, NRadioGroup, NRadio, NSpin, NTag, NTabs, NTabPane } from "naive-ui";
 import { useSkillStoreStore } from "../stores/skill-store.js";
@@ -17,7 +17,7 @@ const { t } = useI18n();
 const localName = ref<string>("");
 const installError = ref<string | null>(null);
 
-const activeTab = ref<"market" | "installed">("market");
+const activeTab = ref<"market" | "installed">("installed");
 
 const showCreateSkill = ref(false);
 const showImportZip = ref(false);
@@ -107,8 +107,8 @@ watch(activeTab, (tab) => {
         <p class="ss-subtitle">{{ t('skillStore.subtitle') }}</p>
       </div>
       <NTabs v-model:value="activeTab" type="line" size="small" class="ss-tabs">
-        <NTabPane name="market" :tab="t('skillStore.tabMarket')" />
         <NTabPane name="installed" :tab="t('skillStore.tabInstalled')" />
+        <NTabPane name="market" :tab="t('skillStore.tabMarket')" />
       </NTabs>
     </header>
 
