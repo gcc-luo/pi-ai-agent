@@ -52,6 +52,7 @@
   /* Semantic Aliases (for backward compatibility) */
   --bg-void: var(--background-page);
   --bg-deep: var(--background-page);
+  --bg-deep-rgb: 245, 247, 249;
   --bg-surface: var(--background-panel);
   --bg-elevated: #f9fafb;
   --bg-hover: var(--background-hover);
@@ -128,6 +129,7 @@
   /* Semantic aliases */
   --bg-void: #0d0f13;
   --bg-deep: #111318;
+  --bg-deep-rgb: 17, 19, 24;
   --bg-surface: #1a1d24;
   --bg-elevated: #22262e;
   --bg-hover: #22262e;
@@ -205,6 +207,7 @@
   /* Semantic aliases */
   --bg-void: #252525;
   --bg-deep: #2c2c2c;
+  --bg-deep-rgb: 44, 44, 44;
   --bg-surface: #363636;
   --bg-elevated: #404040;
   --bg-hover: #404040;

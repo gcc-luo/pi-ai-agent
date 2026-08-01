@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, reactive, onBeforeUnmount } from "vue";
+import { api } from "../api/client.js";
 import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
 import { useAgentStore } from "../stores/agent.js";
@@ -9,7 +10,7 @@ import RenameProjectDialog from "./RenameProjectDialog.vue";
 import RenameSessionDialog from "./RenameSessionDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
-import type { ProjectDto, SessionDto } from "@pi-web-ui/shared";
+import type { ProjectDto, SessionDto, MessageDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -62,6 +63,108 @@ const filteredSessions = computed(() => {
   if (!q) return sessionStore.sessions;
   return sessionStore.sessions.filter((s) => (s.title ?? "").toLowerCase().includes(q));
 });
+
+type SessionPreviewState = {
+  status: "loading" | "ready" | "empty" | "error";
+  content: string;
+};
+
+const previewCache = reactive<Record<string, SessionPreviewState>>({});
+const previewSessionId = ref<string | null>(null);
+const previewAnchorRect = ref<DOMRect | null>(null);
+const previewCardHovered = ref(false);
+let previewHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+const previewSession = computed(() =>
+  sessionStore.sessions.find((session) => session.id === previewSessionId.value) ?? null,
+);
+const previewState = computed(() =>
+  previewSessionId.value ? previewCache[previewSessionId.value] ?? null : null,
+);
+const previewVisible = computed(() => Boolean(previewSession.value && previewAnchorRect.value));
+const previewStyle = computed(() => {
+  const rect = previewAnchorRect.value;
+  if (!rect) return {};
+
+  const cardWidth = Math.min(620, Math.max(280, window.innerWidth - 24));
+  let left = rect.right + 12;
+  if (left + cardWidth > window.innerWidth - 12) {
+    left = Math.max(12, window.innerWidth - cardWidth - 12);
+  }
+
+  const cardHeight = 236;
+  const top = Math.min(Math.max(12, rect.top - 4), Math.max(12, window.innerHeight - cardHeight - 12));
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${cardWidth}px`,
+  };
+});
+
+function clearPreviewHideTimer() {
+  if (previewHideTimer) {
+    clearTimeout(previewHideTimer);
+    previewHideTimer = undefined;
+  }
+}
+
+function normalizePreviewContent(content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  return normalized.length > 360 ? `${normalized.slice(0, 360).trimEnd()}…` : normalized;
+}
+
+function latestPreviewMessage(messages: MessageDto[]): MessageDto | null {
+  return [...messages]
+    .reverse()
+    .find((message) => (message.role === "user" || message.role === "assistant") && message.content?.trim()) ?? null;
+}
+
+async function loadSessionPreview(sessionId: string) {
+  const existing = previewCache[sessionId];
+  if (existing && existing.status !== "error") return;
+
+  previewCache[sessionId] = { status: "loading", content: "" };
+  try {
+    const message = latestPreviewMessage(await api.listMessages(sessionId));
+    previewCache[sessionId] = message
+      ? { status: "ready", content: normalizePreviewContent(message.content ?? "") }
+      : { status: "empty", content: "" };
+  } catch {
+    previewCache[sessionId] = { status: "error", content: "" };
+  }
+}
+
+function showSessionPreview(session: SessionDto, event: Event) {
+  const anchor = event.currentTarget;
+  if (!(anchor instanceof HTMLElement)) return;
+
+  clearPreviewHideTimer();
+  previewCardHovered.value = false;
+  previewSessionId.value = session.id;
+  previewAnchorRect.value = anchor.getBoundingClientRect();
+  void loadSessionPreview(session.id);
+}
+
+function hideSessionPreview() {
+  clearPreviewHideTimer();
+  previewHideTimer = setTimeout(() => {
+    if (previewCardHovered.value) return;
+    previewSessionId.value = null;
+    previewAnchorRect.value = null;
+  }, 140);
+}
+
+function enterPreviewCard() {
+  clearPreviewHideTimer();
+  previewCardHovered.value = true;
+}
+
+function leavePreviewCard() {
+  previewCardHovered.value = false;
+  hideSessionPreview();
+}
+
+onBeforeUnmount(clearPreviewHideTimer);
 
 function handleCreateProject(name: string, workdir: string) {
   emit("create-project", name, workdir);
@@ -192,6 +295,15 @@ function startDeleteSession(s: SessionDto) {
           :key="s.id"
           class="list-item"
           :class="{ active: s.id === selectedSessionId }"
+          role="button"
+          tabindex="0"
+          :aria-label="s.title ?? t('sidebar.newSession')"
+          @mouseenter="showSessionPreview(s, $event)"
+          @mouseleave="hideSessionPreview"
+          @focusin="showSessionPreview(s, $event)"
+          @focusout="hideSessionPreview"
+          @keydown.enter.stop.prevent="emit('select-session', s.id)"
+          @keydown.space.stop.prevent="emit('select-session', s.id)"
           @click="emit('select-session', s.id)"
         >
           <span class="item-icon">
@@ -226,6 +338,33 @@ function startDeleteSession(s: SessionDto) {
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="previewVisible"
+        class="session-preview"
+        :style="previewStyle"
+        role="tooltip"
+        @mouseenter="enterPreviewCard"
+        @mouseleave="leavePreviewCard"
+      >
+        <div class="session-preview-title truncate">
+          {{ previewSession?.title ?? t('sidebar.newSession') }}
+        </div>
+        <div class="session-preview-content">
+          <span v-if="previewState?.status === 'loading'" class="session-preview-muted">
+            {{ t('sidebar.previewLoading') }}
+          </span>
+          <span v-else-if="previewState?.status === 'empty'" class="session-preview-muted">
+            {{ t('sidebar.previewEmpty') }}
+          </span>
+          <span v-else-if="previewState?.status === 'error'" class="session-preview-muted">
+            {{ t('sidebar.previewError') }}
+          </span>
+          <span v-else class="session-preview-message">{{ previewState?.content }}</span>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Files Section -->
     <div class="sidebar-section sidebar-files" :class="{ collapsed: filesCollapsed }" v-if="selectedProjectId">
@@ -460,6 +599,10 @@ function startDeleteSession(s: SessionDto) {
 .list-item:hover {
   background: var(--background-hover);
 }
+.list-item:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
 .list-item.active {
   background: var(--background-selected);
 }
@@ -553,6 +696,65 @@ function startDeleteSession(s: SessionDto) {
 .status-dot.running {
   background: var(--primary-color);
   animation: pulse 1.5s ease infinite;
+}
+
+/* ─── Session History Preview ─── */
+
+.session-preview {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 236px;
+  padding: 20px 18px;
+  overflow: hidden;
+  border: 1px solid var(--border-active);
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22), 0 4px 14px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  pointer-events: auto;
+  animation: session-preview-in 140ms var(--ease-out);
+}
+
+.session-preview-title {
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.session-preview-content {
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.session-preview-message {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.session-preview-muted {
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+@keyframes session-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes pulse {

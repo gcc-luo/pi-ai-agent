@@ -467,6 +467,48 @@ function scrollToBottom() {
 // ─── Scroll-to-bottom button ───────────────────────────────────────────
 const showScrollButton = ref(false);
 
+// ─── Conversation outline (user questions) ─────────────────────────────
+const showOutline = ref(false);
+
+interface OutlineItem {
+  id: string;
+  text: string;
+  index: number;
+  createdAt: number | null;
+}
+
+const userQuestions = computed<OutlineItem[]>(() => {
+  let idx = 0;
+  return allMessages.value
+    .filter((m) => m.role === "user")
+    .map((m) => {
+      const textPart = m.parts.find((p) => p.kind === "text");
+      let text = textPart ? textPart.text : "";
+      // Strip skill tip wrappers
+      const split = splitSkillsFromText(text);
+      text = split.text.trim();
+      // Truncate long questions
+      if (text.length > 80) text = text.substring(0, 80) + "…";
+      return { id: m.id, text: text || "—", index: ++idx, createdAt: m.createdAt ?? null };
+    });
+});
+
+function scrollToMessage(msgId: string) {
+  const container = messagesEl.value;
+  if (!container) return;
+  const el = container.querySelector(`[data-msg-id="${msgId}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  showOutline.value = false;
+}
+
+function closeOutlineOnOutsideClick(event: MouseEvent) {
+  if (!showOutline.value) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest(".outline-panel, .outline-entry")) return;
+  showOutline.value = false;
+}
+
 // Copy-message button (ChatGPT-style): shows a check briefly after copying
 const copiedMsgId = ref<string | null>(null);
 let copiedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -898,7 +940,7 @@ const pendingTipLabel = computed(() => {
 });</script>
 
 <template>
-  <div class="chat-panel">
+  <div class="chat-panel" @click="closeOutlineOnOutsideClick">
     <!-- Error Banner -->
     <div v-if="sessionErrors.length" class="error-banner">
       <div v-for="(err, i) in sessionErrors" :key="i" class="error-item">
@@ -913,6 +955,59 @@ const pendingTipLabel = computed(() => {
 
     <!-- Messages wrapper (scroll + button) -->
     <div class="messages-wrap">
+      <div
+        v-if="userQuestions.length"
+        class="outline-entry"
+      >
+        <button
+          class="outline-toggle-btn"
+          :class="{ active: showOutline }"
+          :title="t('chat.outline')"
+          :aria-label="t('chat.outline')"
+          :aria-expanded="showOutline"
+          aria-controls="conversation-outline-panel"
+          @click.stop="showOutline = !showOutline"
+        >
+          <span class="outline-handle" aria-hidden="true" />
+          <span class="outline-toggle-content">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.4" />
+              <path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="outline-toggle-label">{{ t('chat.outline') }}</span>
+          </span>
+        </button>
+      </div>
+
+      <Transition name="outline-slide">
+        <aside v-if="showOutline" id="conversation-outline-panel" class="outline-panel">
+          <div class="outline-header">
+            <span class="outline-title">{{ t('chat.outline') }}</span>
+            <button class="outline-close" @click="showOutline = false">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="outline-timeline">
+            <div
+              v-for="q in userQuestions"
+              :key="q.id"
+              class="timeline-node"
+              @click="scrollToMessage(q.id)"
+            >
+              <div class="timeline-dot" />
+              <div class="timeline-content">
+                <div class="timeline-time" v-if="q.createdAt">
+                  {{ formatTime(q.createdAt) }}
+                </div>
+                <div class="timeline-text">{{ q.text }}</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </Transition>
+
     <div class="messages" ref="messagesEl" @scroll="onMessagesScroll">
       <div v-if="!allMessages.length" class="empty-state">
         <div class="empty-icon">
@@ -933,6 +1028,7 @@ const pendingTipLabel = computed(() => {
       <div
         v-if="!m.hidden"
         class="msg"
+        :data-msg-id="m.id"
         :class="[m.role, {
           streaming: m.streaming,
           continued: !m.showHeader && !m.statusOnly,
@@ -1290,6 +1386,7 @@ const pendingTipLabel = computed(() => {
 
 <style scoped>
 .chat-panel {
+  --chat-content-gutter: clamp(40px, 5vw, 96px);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1358,7 +1455,7 @@ const pendingTipLabel = computed(() => {
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px;
+  padding: 24px var(--chat-content-gutter) 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2062,7 +2159,7 @@ const pendingTipLabel = computed(() => {
 
 .trace-gutter {
   display: inline-flex;
-  width: 12px;
+  width: 10px;
   justify-content: center;
   color: var(--text-faint, var(--text-muted));
   font-family: var(--font-mono);
@@ -2248,8 +2345,7 @@ const pendingTipLabel = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 20px 16px;
-  border-top: 1px solid var(--border-default);
+  padding: 12px var(--chat-content-gutter) 16px;
   background: var(--bg-surface);
   flex-shrink: 0;
 }
@@ -2723,4 +2819,217 @@ const pendingTipLabel = computed(() => {
   object-fit: contain;
   border-radius: var(--radius-md);
 }
+/* ─── Conversation Outline (Timeline) ─── */
+
+.outline-toggle-btn {
+  width: 28px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 28%, var(--border-default));
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  box-shadow: -4px 0 18px color-mix(in srgb, var(--primary-color) 8%, transparent), var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  transition: width var(--transition-normal), color var(--transition-fast),
+    background var(--transition-fast), border-color var(--transition-fast);
+}
+.outline-entry {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 10;
+  width: 40px;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  transform: translateY(-50%);
+}
+.outline-entry:hover .outline-toggle-btn,
+.outline-toggle-btn:focus-visible,
+.outline-toggle-btn.active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-surface));
+}
+.outline-entry:hover .outline-toggle-btn,
+.outline-toggle-btn:focus-visible,
+.outline-toggle-btn.active {
+  border-color: color-mix(in srgb, var(--primary-color) 62%, var(--border-default));
+  box-shadow: -6px 0 22px color-mix(in srgb, var(--primary-color) 14%, transparent), var(--shadow-sm);
+}
+.outline-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+.outline-toggle-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 1;
+  transition: opacity var(--transition-fast);
+}
+.outline-toggle-content svg {
+  position: static;
+  flex-shrink: 0;
+}
+.outline-toggle-label {
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+.outline-handle {
+  display: none;
+}
+.outline-toggle-btn.active {
+  color: var(--primary-color);
+}
+
+.outline-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, 88vw);
+  max-width: none;
+  background: rgba(var(--bg-deep-rgb), 0.92);
+  backdrop-filter: blur(12px);
+  border-left: 1px solid var(--border-default);
+  box-shadow: -18px 0 42px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.outline-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.outline-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.outline-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.outline-timeline {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 12px 20px;
+  position: relative;
+}
+.outline-timeline::before {
+  content: "";
+  position: absolute;
+  left: 26px;
+  top: 20px;
+  bottom: 20px;
+  width: 1px;
+  background: var(--border-default);
+}
+
+.timeline-node {
+  position: relative;
+  padding: 8px 0 8px 20px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.timeline-node:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.timeline-dot {
+  position: absolute;
+  left: 2px;
+  top: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  border: 2px solid var(--bg-deep);
+  z-index: 1;
+}
+.timeline-node:hover .timeline-dot {
+  transform: scale(1.3);
+  transition: transform var(--transition-fast);
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.timeline-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.timeline-node:hover .timeline-text {
+  color: var(--text-primary);
+}
+
+/* Outline slide transition */
+.outline-slide-enter-active,
+.outline-slide-leave-active {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.outline-slide-enter-from,
+.outline-slide-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
 </style>
