@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { NInput, NButton, NRadioGroup, NRadio, NSpin, NTag, NTabs, NTabPane } from "naive-ui";
+import { NInput, NButton, NRadioGroup, NRadio, NSpin, NTag, NTabs, NTabPane, useMessage } from "naive-ui";
 import { useSkillStoreStore } from "../stores/skill-store.js";
 import { useSkillStore } from "../stores/skill.js";
 import { useI18n } from "../i18n/index.js";
@@ -13,6 +13,7 @@ import ConfirmDialog from "./ConfirmDialog.vue";
 const store = useSkillStoreStore();
 const installed = useSkillStore();
 const { t } = useI18n();
+const message = useMessage();
 
 const localName = ref<string>("");
 const installError = ref<string | null>(null);
@@ -64,7 +65,7 @@ async function confirmBatchUninstall() {
       await installed.remove(name);
     }
   } catch (e: any) {
-    alert(e?.message ?? "batch uninstall failed");
+    message.error(e?.message ?? "批量卸载失败");
   } finally {
     batchUninstallLoading.value = false;
     showBatchUninstallConfirm.value = false;
@@ -125,7 +126,7 @@ async function confirmUninstall() {
   try {
     await installed.remove(uninstallTarget.value);
   } catch (e: any) {
-    alert(e?.message ?? "uninstall failed");
+    message.error(e?.message ?? "卸载失败");
   } finally {
     uninstallTarget.value = null;
   }

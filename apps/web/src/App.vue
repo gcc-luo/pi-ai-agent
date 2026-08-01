@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from "vue";
-import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS } from "naive-ui";
+import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS, createDiscreteApi } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 const TuiTerminalPanel = defineAsyncComponent(() => import("./components/TuiTerminalPanel.vue"));
@@ -31,6 +31,7 @@ const sessionStore = useSessionStore();
 const connection = useConnectionStore();
 const agent = useAgentStore();
 const trashStore = useTrashStore();
+const { message } = createDiscreteApi(["message"]);
 const themeStore = useThemeStore();
 const modeStore = useModeStore();
 const { t, currentLocale } = useI18n();
@@ -78,7 +79,7 @@ async function createProject(name: string, workdir: string) {
     selectedProjectId.value = p.id;
   } catch (e: any) {
     console.error("Failed to create project:", e);
-    alert(`${e.message}`);
+    message.error(`创建项目失败: ${e.message}`);
   }
 }
 
@@ -93,7 +94,7 @@ async function renameProject(id: string, name: string) {
     await projectStore.update(id, name);
   } catch (e: any) {
     console.error("Failed to rename project:", e);
-    alert(`${e.message}`);
+    message.error(`重命名失败: ${e.message}`);
   }
 }
 
@@ -106,9 +107,10 @@ async function deleteProject(id: string) {
     }
     // 刷新回收站数据，确保删除的项目会显示在回收站中
     await trashStore.load();
+    message.success("已移至回收站");
   } catch (e: any) {
     console.error("Failed to delete project:", e);
-    alert(`${e.message}`);
+    message.error(`删除失败: ${e.message}`);
   }
 }
 
@@ -117,7 +119,7 @@ async function renameSession(id: string, title: string) {
     await sessionStore.update(id, title);
   } catch (e: any) {
     console.error("Failed to rename session:", e);
-    alert(`${e.message}`);
+    message.error(`重命名失败: ${e.message}`);
   }
 }
 
@@ -131,9 +133,10 @@ async function deleteSession(id: string) {
     }
     // 刷新回收站数据，确保删除的会话会显示在回收站中
     await trashStore.load();
+    message.success("已移至回收站");
   } catch (e: any) {
     console.error("Failed to delete session:", e);
-    alert(`${e.message}`);
+    message.error(`删除失败: ${e.message}`);
   }
 }
 

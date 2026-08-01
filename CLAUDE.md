@@ -87,3 +87,42 @@ feat: 会话默认标题取首句内容并优化新建会话展示
 
 - Claude 在本仓库创建提交时，默认按本规范书写 commit message，中文描述 + 英文 type。
 - 生成提交消息时末尾附 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+
+## 打 Tag 规范
+
+提交完成后，**AI 自主判断**是否需要在同一轮操作中顺便打一个 tag。
+
+### 何时打 Tag
+
+满足以下任一条件时，应在 commit 推送后打 tag：
+
+- 提交类型为 `feat`（新功能）
+- 提交类型为 `fix` 且修复了**面向用户的缺陷**
+- 包含 `BREAKING CHANGE`（不兼容变更）
+- 用户明确要求打 tag
+
+**不打 Tag 的情况**：`docs`、`style`、`test`、`ci`、`chore`、`refactor`（非公开 API 变更）等内部改动不打 tag。
+
+### 版本号格式
+
+固定三位语义化版本：`vMAJOR.MINOR.PATCH`
+
+- `feat` 提交 → `MINOR` +1，`PATCH` 归零（如 `v1.2.0` → `v1.3.0`）
+- `fix` 提交 → `PATCH` +1（如 `v1.2.0` → `v1.2.1`）
+- `BREAKING CHANGE` → `MAJOR` +1，其余归零（如 `v1.2.0` → `v2.0.0`）
+
+### 操作流程
+
+1. 通过 `git tag --sort=-v:refname | head -1` 获取当前最新 tag
+2. 按上述规则计算新版本号
+3. 打带注释的 tag 并推送：
+
+```bash
+git tag -a v1.2.1 -m "v1.2.1: <简述本次变更>"
+git push origin v1.2.1
+```
+
+### 备注
+
+- tag 的 `-m` 消息格式为 `vX.Y.Z: <一句话中文简述>`
+- 无需为 tag 单独创建 commit，tag 打在刚推送的那个 commit 上

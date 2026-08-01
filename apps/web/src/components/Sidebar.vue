@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
 import { useAgentStore } from "../stores/agent.js";
@@ -45,6 +45,24 @@ const deleteTarget = ref<ProjectDto | null>(null);
 const renameSessionTarget = ref<SessionDto | null>(null);
 const deleteSessionTarget = ref<SessionDto | null>(null);
 
+// Search
+const projectQuery = ref("");
+const sessionQuery = ref("");
+
+const filteredProjects = computed(() => {
+  const q = projectQuery.value.trim().toLowerCase();
+  if (!q) return projectStore.projects;
+  return projectStore.projects.filter(
+    (p) => p.name.toLowerCase().includes(q) || p.workdir.toLowerCase().includes(q)
+  );
+});
+
+const filteredSessions = computed(() => {
+  const q = sessionQuery.value.trim().toLowerCase();
+  if (!q) return sessionStore.sessions;
+  return sessionStore.sessions.filter((s) => (s.title ?? "").toLowerCase().includes(q));
+});
+
 function handleCreateProject(name: string, workdir: string) {
   emit("create-project", name, workdir);
   showNewProject.value = false;
@@ -86,9 +104,22 @@ function startDeleteSession(s: SessionDto) {
         </button>
       </div>
 
+      <div v-if="projectStore.projects.length > 3 && !projectsCollapsed" class="section-search">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <input
+          v-model="projectQuery"
+          type="text"
+          class="section-search-input"
+          :placeholder="t('sidebar.searchProjects')"
+        />
+      </div>
+
       <div class="section-list" v-show="!projectsCollapsed">
         <div
-          v-for="p in projectStore.projects"
+          v-for="p in filteredProjects"
           :key="p.id"
           class="list-item"
           :class="{ active: p.id === selectedProjectId }"
@@ -119,6 +150,9 @@ function startDeleteSession(s: SessionDto) {
         <div v-if="!projectStore.projects.length" class="empty-hint">
           {{ t('sidebar.noProjects') }}
         </div>
+        <div v-else-if="!filteredProjects.length" class="empty-hint">
+          {{ t('sidebar.noResults') }}
+        </div>
       </div>
     </div>
 
@@ -139,9 +173,22 @@ function startDeleteSession(s: SessionDto) {
         </button>
       </div>
 
+      <div v-if="sessionStore.sessions.length > 3 && !sessionsCollapsed" class="section-search">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+          <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <input
+          v-model="sessionQuery"
+          type="text"
+          class="section-search-input"
+          :placeholder="t('sidebar.searchSessions')"
+        />
+      </div>
+
       <div class="section-list" v-show="!sessionsCollapsed">
         <div
-          v-for="s in sessionStore.sessions"
+          v-for="s in filteredSessions"
           :key="s.id"
           class="list-item"
           :class="{ active: s.id === selectedSessionId }"
@@ -173,6 +220,9 @@ function startDeleteSession(s: SessionDto) {
         <div v-if="!sessionStore.sessions.length" class="empty-state">
           <span class="empty-text">{{ t('sidebar.noSessionsForProject') }}</span>
           <button class="empty-action" @click="emit('create-session')">{{ t('sidebar.newSession') }}</button>
+        </div>
+        <div v-else-if="!filteredSessions.length" class="empty-hint">
+          {{ t('sidebar.noResults') }}
         </div>
       </div>
     </div>
@@ -350,6 +400,38 @@ function startDeleteSession(s: SessionDto) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* ─── Search ─── */
+
+.section-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--background-hover);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.section-search svg {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.section-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.section-search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 /* ─── List Items ─── */
