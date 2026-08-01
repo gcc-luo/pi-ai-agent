@@ -922,7 +922,7 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "nav.chat": "对话",
     "nav.model": "模型",
-    "nav.skillStore": "技能商店",
+    "nav.skillStore": "技能",
     "nav.plugins": "插件",
     "plugins.title": "插件管理",
     "plugins.subtitle": "管理 Agent 全局可用的能力、运行状态和权限。",
@@ -976,8 +976,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "plugins.manifest.computer-use.permission.4": "操作本地应用",
     "plugins.manifest.computer-use.permission.5": "生成截图",
 
-    "skillStore.title": "技能商店",
-    "skillStore.subtitle": "从 skills.sh 与 SkillsMP 发现并安装技能",
+    "skillStore.title": "技能",
+    "skillStore.subtitle": "管理和安装来自 skills.sh 与 SkillsMP 的技能",
     "skillStore.searchPlaceholder": "搜索技能…",
     "skillStore.modeKeyword": "关键词",
     "skillStore.modeAi": "AI",
