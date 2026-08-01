@@ -467,6 +467,66 @@ function scrollToBottom() {
 // ─── Scroll-to-bottom button ───────────────────────────────────────────
 const showScrollButton = ref(false);
 
+// Copy-message button (ChatGPT-style): shows a check briefly after copying
+const copiedMsgId = ref<string | null>(null);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+function messagePlainText(m: { role: string; parts: MessagePart[] }): string {
+  const texts: string[] = [];
+  for (const part of m.parts) {
+    if (part.kind !== "text") continue;
+    // For user messages, strip skill-tip / file-attachment wrappers so the
+    // copied text matches what's visually rendered in the bubble.
+    texts.push(m.role === "user" ? splitSkillsFromText(part.text).text : part.text);
+  }
+  return texts.join("\n").trim();
+}
+
+async function copyMessage(m: { id: string; role: string; parts: MessagePart[] }) {
+  const text = messagePlainText(m);
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for non-secure contexts
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+  copiedMsgId.value = m.id;
+  if (copiedTimer) clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => { copiedMsgId.value = null; }, 2000);
+}
+
+// Event delegation for code-block copy buttons rendered inside v-html.
+// The button markup is produced by renderMarkdown (wrapCodeBlocks).
+async function onMsgContentClick(e: MouseEvent) {
+  const btn = (e.target as HTMLElement).closest?.(".code-copy-btn");
+  if (!btn) return;
+  const wrap = btn.closest(".code-block-wrap");
+  const code = wrap?.querySelector("pre code")?.textContent ?? "";
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = code;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+  btn.classList.add("copied");
+  setTimeout(() => btn.classList.remove("copied"), 2000);
+}
+
 function onMessagesScroll() {
   const el = messagesEl.value;
   if (!el) return;
@@ -954,10 +1014,10 @@ const pendingTipLabel = computed(() => {
                     <span class="chip-name">{{ fname }}</span>
                   </span>
                 </div>
-                <div v-if="split.text" class="msg-content" v-html="renderMarkdown(split.text)"></div>
+                <div v-if="split.text" class="msg-content" @click="onMsgContentClick" v-html="renderMarkdown(split.text)"></div>
               </template>
             </template>
-            <div v-else-if="p.kind === 'text'" class="msg-content" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
+            <div v-else-if="p.kind === 'text'" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
             <details v-else-if="p.kind === 'thinking' && !m.hideNonTextContent" class="thinking-trace" open>
               <summary class="thinking-summary">
                 <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
@@ -1024,11 +1084,33 @@ const pendingTipLabel = computed(() => {
         <!-- KB search call card (shown under user messages) -->
         <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
         <div
-          v-if="m.createdAt && !m.statusOnly"
-          class="msg-time"
+          v-if="!m.statusOnly"
+          class="msg-actions"
           :class="m.role"
-          :title="formatTimeFull(m.createdAt)"
-        >{{ formatTime(m.createdAt) }}</div>
+        >
+          <button
+            v-if="messagePlainText(m)"
+            type="button"
+            class="msg-copy-btn"
+            :class="{ copied: copiedMsgId === m.id }"
+            :title="copiedMsgId === m.id ? t('chat.copied') : t('chat.copy')"
+            :aria-label="copiedMsgId === m.id ? t('chat.copied') : t('chat.copy')"
+            @click="copyMessage(m)"
+          >
+            <svg v-if="copiedMsgId === m.id" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2.5 7.5 5.5 10.5 11.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <rect x="4.5" y="4.5" width="8" height="8" rx="2" stroke="currentColor" stroke-width="1.3" />
+              <path d="M9.5 4.5v-1a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h1" stroke="currentColor" stroke-width="1.3" />
+            </svg>
+          </button>
+          <div
+            v-if="m.createdAt"
+            class="msg-time"
+            :title="formatTimeFull(m.createdAt)"
+          >{{ formatTime(m.createdAt) }}</div>
+        </div>
       </div>
       </template>
       <div v-if="isBusy" class="generating-indicator" role="status" aria-live="polite">
@@ -1552,10 +1634,16 @@ const pendingTipLabel = computed(() => {
   height: 100%;
 }
 
-/* ─── Message Time (below the body, role-aligned) ─── */
+/* ─── Message actions row (copy button + timestamp, role-aligned) ─── */
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
 
 .msg-time {
-  margin-top: 5px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
@@ -1563,22 +1651,53 @@ const pendingTipLabel = computed(() => {
   line-height: 1.2;
   white-space: nowrap;
   opacity: 0.7;
+  color: var(--text-secondary);
 }
 
-/* User timestamp floats below the bubble, right-aligned to its right edge —
-   the bubble shrinks to body width instead of expanding to fit the timestamp. */
-.msg.user .msg-time {
+/* User actions float below the bubble, right-aligned to its right edge —
+   the bubble shrinks to body width instead of expanding to fit the row. */
+.msg.user .msg-actions {
   position: absolute;
   top: 100%;
   right: 0;
+  flex-direction: row-reverse;
   margin-top: 7px;
-  text-align: right;
-  color: var(--text-secondary);
 }
 
-.msg.assistant .msg-time {
+.msg.assistant .msg-actions {
   text-align: left;
+}
+
+/* Copy button: hidden until the message row is hovered (ChatGPT-style) */
+.msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-faint, var(--text-secondary));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.msg:hover .msg-copy-btn,
+.msg-copy-btn:focus-visible,
+.msg-copy-btn.copied {
+  opacity: 1;
+}
+
+.msg-copy-btn:hover {
   color: var(--text-secondary);
+  background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+}
+
+.msg-copy-btn.copied {
+  color: var(--accent);
 }
 
 .assistant-duration {
@@ -1785,6 +1904,45 @@ const pendingTipLabel = computed(() => {
   padding: 0;
   font-size: 12px;
   color: var(--text-primary);
+}
+
+/* Code-block copy button — injected by renderMarkdown (wrapCodeBlocks) */
+.msg-content :deep(.code-block-wrap) {
+  position: relative;
+}
+.msg-content :deep(.code-block-wrap pre) {
+  /* keep original pre styles; already applied to nested pre via selector above */
+}
+.msg-content :deep(.code-copy-btn) {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint, var(--text-secondary));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+.msg-content :deep(.code-block-wrap:hover .code-copy-btn),
+.msg-content :deep(.code-copy-btn:focus-visible),
+.msg-content :deep(.code-copy-btn.copied) {
+  opacity: 1;
+}
+.msg-content :deep(.code-copy-btn:hover) {
+  color: var(--text-secondary);
+  background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+}
+.msg-content :deep(.code-copy-btn.copied) {
+  color: var(--accent);
 }
 
 .msg-content :deep(table) {

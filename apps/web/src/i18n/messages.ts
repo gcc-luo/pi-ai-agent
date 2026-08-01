@@ -91,6 +91,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.collapseRunHistory": "Hide earlier agent messages",
     "chat.scrollToBottom": "Scroll to bottom",
     "chat.tipLabelFallback": "Skill tip attached",
+    "chat.copy": "Copy",
+    "chat.copied": "Copied",
 
     // File viewer
     "viewer.selectFile": "Select a file to view",
@@ -830,6 +832,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.collapseRunHistory": "收起前面的 Agent 消息",
     "chat.scrollToBottom": "滚动到底部",
     "chat.tipLabelFallback": "已附加技能提示",
+    "chat.copy": "复制",
+    "chat.copied": "已复制",
 
     "viewer.selectFile": "选择一个文件查看",
     "viewer.unsupportedHint": "此文件类型暂不支持预览。",
