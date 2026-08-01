@@ -246,6 +246,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "skillStore.uninstall": "Uninstall",
     "skillStore.uninstallConfirmTitle": "Uninstall skill",
     "skillStore.uninstallConfirmMessage": "Uninstall this skill? This cannot be undone.",
+    "skillStore.selectAll": "Select all",
+    "skillStore.selectedCount": "{n} selected",
+    "skillStore.clearSelection": "Clear",
+    "skillStore.batchUninstall": "Uninstall {n}",
+    "skillStore.batchUninstallTitle": "Batch uninstall",
+    "skillStore.batchUninstallMessage": "Uninstall {n} skills? This cannot be undone.",
 
     // New Project Dialog
     "newProject.title": "New Project",
@@ -997,6 +1003,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "skillStore.uninstall": "卸载",
     "skillStore.uninstallConfirmTitle": "卸载技能",
     "skillStore.uninstallConfirmMessage": "确认卸载该技能？此操作不可撤销。",
+    "skillStore.selectAll": "全选",
+    "skillStore.selectedCount": "已选 {n} 项",
+    "skillStore.clearSelection": "清空",
+    "skillStore.batchUninstall": "卸载 {n}",
+    "skillStore.batchUninstallTitle": "批量卸载",
+    "skillStore.batchUninstallMessage": "确认卸载 {n} 个技能？此操作不可撤销。",
 
     "newProject.title": "新建项目",
     "newProject.loading": "加载中...",

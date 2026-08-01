@@ -23,6 +23,55 @@ const showCreateSkill = ref(false);
 const showImportZip = ref(false);
 const uninstallTarget = ref<string | null>(null);
 
+// Batch selection
+const selectedNames = ref<Set<string>>(new Set());
+const showBatchUninstallConfirm = ref(false);
+const batchUninstallLoading = ref(false);
+
+const selectedCount = computed(() => selectedNames.value.size);
+const allSelected = computed(
+  () => filteredInstalledSkills.value.length > 0 &&
+    filteredInstalledSkills.value.every((s) => selectedNames.value.has(s.name)),
+);
+const someSelected = computed(
+  () => selectedNames.value.size > 0 && !allSelected.value,
+);
+
+function toggleSelectAll(checked: boolean) {
+  if (checked) {
+    selectedNames.value = new Set(filteredInstalledSkills.value.map((s) => s.name));
+  } else {
+    selectedNames.value = new Set();
+  }
+}
+
+function toggleSelect(name: string, checked: boolean) {
+  const next = new Set(selectedNames.value);
+  if (checked) next.add(name);
+  else next.delete(name);
+  selectedNames.value = next;
+}
+
+function clearSelection() {
+  selectedNames.value = new Set();
+}
+
+async function confirmBatchUninstall() {
+  batchUninstallLoading.value = true;
+  const names = [...selectedNames.value];
+  try {
+    for (const name of names) {
+      await installed.remove(name);
+    }
+  } catch (e: any) {
+    alert(e?.message ?? "batch uninstall failed");
+  } finally {
+    batchUninstallLoading.value = false;
+    showBatchUninstallConfirm.value = false;
+    selectedNames.value = new Set();
+  }
+}
+
 // 已安装技能模糊搜索
 const installedQuery = ref("");
 const filteredInstalledSkills = computed(() => {
@@ -273,6 +322,36 @@ watch(activeTab, (tab) => {
         </NButton>
       </div>
 
+      <div v-if="filteredInstalledSkills.length" class="ss-batch-bar">
+        <label class="ss-select-all">
+          <input
+            type="checkbox"
+            :checked="allSelected"
+            :indeterminate="someSelected"
+            @change="toggleSelectAll(($event.target as HTMLInputElement).checked)"
+          />
+          <span>{{ t('skillStore.selectAll') }}</span>
+        </label>
+        <span v-if="selectedCount > 0" class="ss-selected-count">
+          {{ t('skillStore.selectedCount', { n: selectedCount }) }}
+        </span>
+        <div class="ss-installed-spacer" />
+        <NButton
+          v-if="selectedCount > 0"
+          size="small"
+          type="error"
+          ghost
+          :loading="batchUninstallLoading"
+          @click="showBatchUninstallConfirm = true"
+        >{{ t('skillStore.batchUninstall', { n: selectedCount }) }}</NButton>
+        <NButton
+          v-if="selectedCount > 0"
+          size="small"
+          quaternary
+          @click="clearSelection"
+        >{{ t('skillStore.clearSelection') }}</NButton>
+      </div>
+
       <div v-if="installed.loading && !installed.skills.length" class="ss-state"><NSpin size="small" /></div>
       <div v-else-if="!installed.skills.length" class="ss-state empty">{{ t('skillStore.installedEmpty') }}</div>
       <div v-else-if="!filteredInstalledSkills.length" class="ss-state empty">{{ t('skillStore.noResults') }}</div>
@@ -281,8 +360,16 @@ watch(activeTab, (tab) => {
           v-for="s in filteredInstalledSkills"
           :key="s.name"
           class="ss-card"
+          :class="{ selected: selectedNames.has(s.name) }"
           data-test="installed-card"
         >
+          <label class="ss-card-checkbox">
+            <input
+              type="checkbox"
+              :checked="selectedNames.has(s.name)"
+              @change="toggleSelect(s.name, ($event.target as HTMLInputElement).checked)"
+            />
+          </label>
           <div class="ss-card-head">
             <span class="ss-card-name truncate">{{ s.name }}</span>
           </div>
@@ -312,6 +399,16 @@ watch(activeTab, (tab) => {
       :danger="true"
       @close="uninstallTarget = null"
       @confirm="confirmUninstall"
+    />
+    <ConfirmDialog
+      :show="showBatchUninstallConfirm"
+      :title="t('skillStore.batchUninstallTitle')"
+      :message="t('skillStore.batchUninstallMessage', { n: selectedCount })"
+      :confirm-label="t('skillStore.batchUninstall', { n: selectedCount })"
+      :cancel-label="t('skillStore.close')"
+      :danger="true"
+      @close="showBatchUninstallConfirm = false"
+      @confirm="confirmBatchUninstall"
     />
   </main>
 </template>
@@ -594,7 +691,7 @@ watch(activeTab, (tab) => {
   padding: 16px 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   background: var(--bg-void);
 }
 .ss-installed-actions {
@@ -609,6 +706,60 @@ watch(activeTab, (tab) => {
 }
 .ss-installed-spacer {
   flex: 1;
+}
+
+/* Batch bar */
+.ss-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+}
+.ss-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.ss-select-all input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ss-selected-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Card checkbox overlay */
+.ss-card-checkbox {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+}
+.ss-card-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ss-card {
+  position: relative;
+}
+.ss-card.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-deep));
 }
 
 /* ─── Slide transition ─── */
