@@ -72,6 +72,15 @@ export class ProjectRepository {
     this.db.prepare("DELETE FROM projects WHERE id = ?").run(id);
   }
 
+  /** Permanently delete projects (and their sessions) trashed before `cutoff`. */
+  purgeDeletedOlderThan(cutoff: number): string[] {
+    const rows = this.db.prepare(
+      "SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?"
+    ).all(cutoff) as { id: string }[];
+    for (const r of rows) this.destroyPermanently(r.id);
+    return rows.map((r) => r.id);
+  }
+
   listDeleted(): ProjectDto[] {
     return (this.db.prepare(
       "SELECT * FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"

@@ -10,6 +10,7 @@ import { ProcessManager } from "./agent/process-manager.js";
 import { TuiProcessManager } from "./agent/tui-process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
+import { TrashSweeper } from "./services/trash-sweeper.js";
 import { SkillService } from "./agent/skill-service.js";
 import { SkillStoreService } from "./skill-store/skill-store-service.js";
 import { KnowledgeBaseRepository } from "./db/repositories/knowledge-base.js";
@@ -272,6 +273,11 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(scheduledTasksRoutes, { prefix: "/api/scheduled-tasks" });
   app.addHook("onReady", async () => taskScheduler.start());
   app.addHook("onClose", async () => taskScheduler.stop());
+
+  // Trash auto-purge: permanently delete items past the retention period
+  const trashSweeper = new TrashSweeper(projects, sessions, config.trashRetentionMs, app.log);
+  app.addHook("onReady", async () => trashSweeper.start());
+  app.addHook("onClose", async () => trashSweeper.stop());
 
   // LibreOffice → PDF conversion for Office file previews
   const loService = new LibreOfficeService({

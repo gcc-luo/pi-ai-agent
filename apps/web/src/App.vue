@@ -140,6 +140,13 @@ async function deleteSession(id: string) {
 // Navigate from a non-chat view (e.g. ExpertView) to a specific session in
 // the chat view. Used when the user summons an expert — we need to switch to
 // chat, select the right project and session, and open it.
+// After restoring a project from trash, jump back to the chat view with that
+// project selected so the user sees where it went.
+function navigateToProject(projectId: string) {
+  activeNav.value = "chat";
+  selectedProjectId.value = projectId;
+}
+
 async function navigateToSession(payload: { projectId: string; sessionId: string }) {
   activeNav.value = "chat";
   if (selectedProjectId.value !== payload.projectId) {
@@ -388,7 +395,7 @@ function closePreview() {
       <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
       <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToSession" />
       <ChannelView v-else-if="activeNav === 'channels'" />
-      <TrashView v-else-if="activeNav === 'trash'" />
+      <TrashView v-else-if="activeNav === 'trash'" @restore-project="navigateToProject" />
     </div>
     </NMessageProvider>
   </NConfigProvider>

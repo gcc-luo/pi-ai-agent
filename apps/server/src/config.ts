@@ -16,6 +16,7 @@ export interface Config {
   idleTimeoutMs: number;
   suspendedTimeoutMs: number;
   noResponseTimeoutMs: number;
+  trashRetentionMs: number;
   piProvider: string;
   piModel: string;
   piAutoCompaction: boolean;
@@ -72,6 +73,8 @@ export function loadConfig(): Config {
     idleTimeoutMs: Number(process.env.IDLE_TIMEOUT_MS ?? 5 * 60 * 1000),
     suspendedTimeoutMs: Number(process.env.SUSPENDED_TIMEOUT_MS ?? 30 * 60 * 1000),
     noResponseTimeoutMs: Number(process.env.NO_RESPONSE_TIMEOUT_MS ?? 30 * 1000),
+    // Items in trash are permanently deleted after this retention period.
+    trashRetentionMs: Number(process.env.TRASH_RETENTION_DAYS ?? 30) * 24 * 60 * 60 * 1000,
     kbFilesDir: process.env.PI_KB_FILES_DIR ?? path.join(root, "kb-files"),
     libreOfficeBinary: process.env.LIBREOFFICE_BINARY ?? "",
     loConvertTimeoutMs: Number(process.env.LO_CONVERT_TIMEOUT_MS ?? 60_000),

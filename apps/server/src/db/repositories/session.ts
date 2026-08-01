@@ -121,6 +121,15 @@ export class SessionRepository {
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   }
 
+  /** Permanently delete sessions trashed before `cutoff`. */
+  purgeDeletedOlderThan(cutoff: number): string[] {
+    const rows = this.db.prepare(
+      "SELECT id FROM sessions WHERE deleted_at IS NOT NULL AND deleted_at < ?"
+    ).all(cutoff) as { id: string }[];
+    for (const r of rows) this.destroyPermanently(r.id);
+    return rows.map((r) => r.id);
+  }
+
   listDeleted(): SessionDto[] {
     return (this.db.prepare("SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC").all() as Row[])
       .map((row) => this.withPlugins(toDto(row)));
