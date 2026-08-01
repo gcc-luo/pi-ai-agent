@@ -87,6 +87,7 @@ feat: 会话默认标题取首句内容并优化新建会话展示
 
 - Claude 在本仓库创建提交时，默认按本规范书写 commit message，中文描述 + 英文 type。
 - 生成提交消息时末尾附 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+- **不要自动提交**：完成代码改动后不自动执行 `git commit`，需等用户明确指示后再提交并推送。
 
 ## 打 Tag 规范
 
