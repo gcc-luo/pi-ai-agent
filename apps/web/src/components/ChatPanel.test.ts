@@ -25,4 +25,15 @@ describe("ChatPanel PI Agent avatar", () => {
     expect(toggleStart).toBeGreaterThan(-1);
     expect(toggleSource).not.toContain("scrollToBottom");
   });
+
+  it("does not follow tool-part updates and delegates process rendering to AgentActivity", async () => {
+    const source = await readFile(componentPath, "utf8");
+
+    expect(source).toContain('import AgentActivity from "./AgentActivity.vue"');
+    expect(source).toContain("<AgentActivity");
+    expect(source).toContain("artifactsByRun");
+    expect(source).toContain("m.runArtifacts?.length");
+    expect(source).not.toContain("messages.value.map((m) => m.parts.length)");
+    expect(source).toContain("liveTextSignature");
+  });
 });

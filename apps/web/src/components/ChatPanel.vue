@@ -27,6 +27,7 @@ import { parseArtifacts } from "../utils/artifacts.js";
 import { annotateChatRuns, formatProcessingDuration } from "../utils/chat-run-presentation.js";
 import ArtifactCard from "./ArtifactCard.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import AgentActivity from "./AgentActivity.vue";
 
 const props = defineProps<{ sessionId: string; projectId: string }>();
 const emit = defineEmits<{ (e: "select-file", path: string): void }>();
@@ -451,11 +452,23 @@ onUnmounted(() => {
 
 watch(
   () => messages.value.length,
-  () => nextTick(scrollToBottom),
+  () => {
+    if (followLiveOutput.value) nextTick(scrollToBottom);
+  },
 );
+
+const liveTextSignature = computed(() => messages.value.map((message) =>
+  message.parts
+    .filter((part) => part.kind === "text")
+    .map((part) => part.kind === "text" ? part.text.length : 0)
+    .join(","),
+).join("|"));
+
 watch(
-  () => JSON.stringify(messages.value.map((m) => m.parts.length)),
-  () => nextTick(scrollToBottom),
+  liveTextSignature,
+  () => {
+    if (followLiveOutput.value) nextTick(scrollToBottom);
+  },
 );
 
 function scrollToBottom() {
@@ -466,6 +479,7 @@ function scrollToBottom() {
 
 // ─── Scroll-to-bottom button ───────────────────────────────────────────
 const showScrollButton = ref(false);
+const followLiveOutput = ref(true);
 
 // ─── Conversation outline (user questions) ─────────────────────────────
 const showOutline = ref(false);
@@ -575,23 +589,14 @@ function onMessagesScroll() {
   // Show when user has scrolled up more than 200px from the bottom
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
   showScrollButton.value = distanceFromBottom > 200;
+  followLiveOutput.value = distanceFromBottom < 64;
 }
 
 function handleClickScrollToBottom() {
   const el = messagesEl.value;
   if (!el) return;
+  followLiveOutput.value = true;
   el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-}
-
-function formatJson(v: unknown): string {
-  if (v === undefined || v === null) return "";
-  if (typeof v === "string") return v;
-  try { return JSON.stringify(v, null, 2); } catch { return String(v); }
-}
-
-function truncate(value: string, limit = 180): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
 }
 
 function formatTime(ts: number): string {
@@ -610,48 +615,6 @@ function formatTimeFull(ts: number): string {
     second: "2-digit",
     timeZoneName: "short",
   });
-}
-
-function toolPreview(name: string, args: unknown): string {
-  if (!args || typeof args !== "object") return truncate(formatJson(args));
-  const value = args as Record<string, unknown>;
-  if (typeof value.command === "string") return `$ ${truncate(value.command)}`;
-  if (typeof value.path === "string") return truncate(value.path);
-  if (typeof value.query === "string") return truncate(value.query);
-  if (typeof value.url === "string") return truncate(value.url);
-  return truncate(formatJson(args));
-}
-
-function toolDisplayName(name: string): string {
-  const labels: Record<string, string> = {
-    browser_open: t("chat.browserToolOpen"),
-    browser_navigate: t("chat.browserToolNavigate"),
-    browser_snapshot: t("chat.browserToolSnapshot"),
-    browser_click: t("chat.browserToolClick"),
-    browser_fill: t("chat.browserToolFill"),
-    browser_select: t("chat.browserToolSelect"),
-    browser_press: t("chat.browserToolPress"),
-    browser_hover: t("chat.browserToolHover"),
-    browser_scroll: t("chat.browserToolScroll"),
-    browser_wait: t("chat.browserToolWait"),
-    browser_tabs: t("chat.browserToolTabs"),
-    browser_screenshot: t("chat.browserToolScreenshot"),
-    browser_console_errors: t("chat.browserToolConsole"),
-    browser_network_errors: t("chat.browserToolNetwork"),
-    browser_close: t("chat.browserToolClose"),
-    computer_screenshot: t("chat.computerToolScreenshot"),
-    computer_list_windows: t("chat.computerToolWindows"),
-    computer_focus_window: t("chat.computerToolFocus"),
-    computer_click: t("chat.computerToolClick"),
-    computer_double_click: t("chat.computerToolDoubleClick"),
-    computer_type: t("chat.computerToolType"),
-    computer_key: t("chat.computerToolKey"),
-    computer_scroll: t("chat.computerToolScroll"),
-    computer_drag: t("chat.computerToolDrag"),
-    computer_wait: t("chat.computerToolWait"),
-    computer_get_cursor_position: t("chat.computerToolCursor"),
-  };
-  return labels[name] ?? name;
 }
 
 function toolArtifacts(result: unknown): ArtifactItem[] {
@@ -683,29 +646,6 @@ function toolArtifacts(result: unknown): ArtifactItem[] {
   return found.filter((item, index) =>
     found.findIndex((candidate) => candidate.path === item.path) === index,
   );
-}
-
-function toolResultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (Array.isArray(result)) return result.map(toolResultText).join("\n");
-  if (result && typeof result === "object") {
-    const value = result as Record<string, unknown>;
-    if (typeof value.content === "string") return value.content;
-    if (Array.isArray(value.content)) {
-      const text = value.content
-        .filter((part): part is { text: string } => !!part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string")
-        .map((part) => part.text)
-        .join("\n");
-      if (text) return text;
-    }
-  }
-  return formatJson(result);
-}
-
-function toolResultFailed(result: unknown): boolean {
-  return !!result
-    && typeof result === "object"
-    && (result as { isError?: unknown }).isError === true;
 }
 
 function send() {
@@ -816,22 +756,44 @@ const allMessages = computed(() => {
       artifacts,
       hasNonTextContent: m.role === "assistant"
         && (parts.some((part) => part.kind !== "text") || artifacts.length > 0),
+      hasVisibleContent: m.role === "assistant"
+        && (parts.some((part) => part.kind === "image" || (part.kind === "text" && part.text.trim().length > 0))
+          || artifacts.length > 0),
       kbSearch: kbSearchByMessage.value[m.id] ?? null,
       // Build chunkMap from persisted metadata or live search state for citation rendering
       chunkMap: buildChunkMap(m.id, m.metadata),
     };
   });
 
-  return annotateChatRuns(decorated, {
+  const annotated = annotateChatRuns(decorated, {
     isBusy: isBusy.value,
     activeElapsedMs: activeElapsedMs.value,
     expandedRunIds: expandedRunIds.value,
+    outcome: agent.runOutcomeFor(props.sessionId),
   });
+
+  const artifactsByRun = new Map<string, ArtifactItem[]>();
+  for (const message of annotated) {
+    if (!message.runId || message.role !== "assistant") continue;
+    const existing = artifactsByRun.get(message.runId) ?? [];
+    for (const artifact of message.artifacts) {
+      if (!existing.some((item) => item.path === artifact.path)) existing.push(artifact);
+    }
+    artifactsByRun.set(message.runId, existing);
+  }
+
+  return annotated.map((message) => ({
+    ...message,
+    runArtifacts: message.showActivity && message.runId
+      ? (artifactsByRun.get(message.runId) ?? [])
+      : [],
+    artifacts: message.showActivity ? [] : message.artifacts,
+  }));
 });
 
 // Validate artifact files exist on disk
 watch(allMessages, async (msgs) => {
-  const items = msgs.flatMap((m) => m.artifacts);
+  const items = msgs.flatMap((m) => [...m.artifacts, ...m.runArtifacts]);
   if (!items.length) return;
   const toValidate = items.filter((i) => !(i.path in artifactValidation.value));
   if (!toValidate.length) return;
@@ -1035,8 +997,25 @@ const pendingTipLabel = computed(() => {
           'run-status-only': m.statusOnly,
         }]"
       >
+        <AgentActivity
+          v-if="m.showActivity && m.activity"
+          :activity="m.activity"
+          :expanded="m.runExpanded"
+          @toggle="toggleRun(m.runId, m.canToggleRun)"
+        />
+        <div v-if="m.runArtifacts?.length" class="artifact-cards run-artifacts">
+          <ArtifactCard
+            v-for="a in m.runArtifacts"
+            :key="a.path"
+            :project-id="projectId"
+            :artifact="a"
+            :exists="artifactValidation[a.path]?.exists ?? true"
+            :size="artifactValidation[a.path]?.size ?? null"
+            @preview="(p) => emit('select-file', p)"
+          />
+        </div>
         <button
-          v-if="m.showRunStatus && m.displayDurationMs !== null"
+          v-else-if="m.showRunStatus && m.displayDurationMs !== null"
           type="button"
           class="assistant-duration"
           :class="{ expanded: m.runExpanded, toggleable: m.canToggleRun }"
@@ -1114,55 +1093,6 @@ const pendingTipLabel = computed(() => {
               </template>
             </template>
             <div v-else-if="p.kind === 'text'" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
-            <details v-else-if="p.kind === 'thinking' && !m.hideNonTextContent" class="thinking-trace" open>
-              <summary class="thinking-summary">
-                <span class="trace-gutter">·</span>{{ t('chat.thinking') }}
-              </summary>
-              <div class="thinking-text">{{ p.text }}</div>
-            </details>
-            <div v-else-if="p.kind === 'tool_call' && !m.hideNonTextContent" class="tool-trace" :class="{ running: p.status === 'running' }">
-              <details>
-                <summary class="tool-summary">
-                  <span class="trace-gutter">›</span>
-                  <span class="tool-name" :title="p.name">{{ toolDisplayName(p.name) }}</span>
-                  <span class="tool-preview">{{ toolPreview(p.name, p.args) }}</span>
-                  <span
-                    class="tool-status"
-                    :class="p.status === 'running' ? 'running' : toolResultFailed(p.result) ? 'failed' : 'done'"
-                  >
-                    {{
-                      p.status === 'running'
-                        ? t('chat.toolRunning')
-                        : toolResultFailed(p.result)
-                          ? t('chat.toolFailed')
-                          : t('chat.toolDone')
-                    }}
-                  </span>
-                </summary>
-                <div class="tool-detail">
-                  <div class="tool-section">
-                    <div class="tool-label">{{ t('chat.toolArgs') }}</div>
-                    <pre class="tool-code">{{ formatJson(p.args) }}</pre>
-                  </div>
-                  <div v-if="p.progress && p.progress.length" class="tool-section">
-                    <div class="tool-label">{{ t('chat.toolProgress') }}</div>
-                    <pre class="tool-code">{{ formatJson(p.progress) }}</pre>
-                  </div>
-                  <div v-if="p.result !== undefined" class="tool-section">
-                    <div class="tool-label">{{ t('chat.toolResult') }}</div>
-                    <pre class="tool-code">{{ toolResultText(p.result) }}</pre>
-                  </div>
-                </div>
-              </details>
-              <pre v-if="p.result !== undefined" class="tool-output">{{ truncate(toolResultText(p.result), 280) }}</pre>
-              <div v-else-if="p.status === 'running'" class="tool-running-line"><span />{{ t('chat.toolRunning') }}</div>
-            </div>
-            <details v-else-if="p.kind === 'raw' && !m.hideNonTextContent" class="raw-trace">
-              <summary class="raw-summary">
-                <span class="trace-gutter">·</span><span class="raw-type">{{ String(p.data?.type ?? 'event') }}</span>
-              </summary>
-              <pre class="tool-code">{{ formatJson(p.data) }}</pre>
-            </details>
           </template>
           <!-- Artifact cards (files delivered by the agent) -->
           <div v-if="m.artifacts?.length && !m.hideNonTextContent" class="artifact-cards">
@@ -2093,204 +2023,6 @@ const pendingTipLabel = computed(() => {
   gap: 6px;
 }
 
-/* ─── Agent trace (Claude Code / Pi CLI-inspired) ─── */
-
-.thinking-trace,
-.raw-trace,
-.tool-trace {
-  margin: 1px 0;
-  font-size: 12px;
-}
-
-.thinking-summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 0;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-}
-
-.thinking-summary::-webkit-details-marker {
-  display: none;
-}
-
-.thinking-text {
-  margin: 3px 0 8px 14px;
-  padding: 2px 0 2px 12px;
-  border-left: 1px solid var(--border-default);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-muted);
-  font-style: italic;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 4.5em;
-  overflow-y: auto;
-}
-
-.raw-summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 0;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.raw-summary::-webkit-details-marker {
-  display: none;
-}
-
-.raw-type {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-faint, var(--text-muted));
-}
-
-.trace-gutter {
-  display: inline-flex;
-  width: 10px;
-  justify-content: center;
-  color: var(--text-faint, var(--text-muted));
-  font-family: var(--font-mono);
-  font-size: 15px;
-  line-height: 1;
-}
-
-.tool-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 5px 0;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-
-.tool-summary::-webkit-details-marker {
-  display: none;
-}
-
-.tool-icon {
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.tool-name {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--text-primary);
-  flex-shrink: 0;
-}
-
-.tool-preview {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.tool-status {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.tool-status.running {
-  color: var(--accent);
-}
-
-.tool-status.done {
-  color: var(--text-faint, var(--text-muted));
-}
-
-.tool-status.failed {
-  color: var(--danger-color, #e53935);
-}
-
-.tool-detail {
-  margin: 2px 0 7px 14px;
-  padding: 7px 0 7px 12px;
-  border-left: 1px solid var(--border-default);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tool-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.tool-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-}
-
-.tool-code {
-  margin: 0;
-  padding: 7px 9px;
-  background: var(--bg-void, rgba(0, 0, 0, 0.035));
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.tool-output {
-  margin: 0 0 6px 20px;
-  padding: 6px 10px;
-  border-left: 2px solid var(--border-default);
-  color: var(--text-muted);
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* Hide tool output and running line when details is collapsed */
-.tool-trace details:not([open]) + .tool-output,
-.tool-trace details:not([open]) + .tool-running-line {
-  display: none;
-}
-
-.tool-running-line {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 6px 20px;
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .compaction-status {
   display: inline-flex;
   align-items: center;
@@ -2325,18 +2057,6 @@ const pendingTipLabel = computed(() => {
 
 @keyframes compaction-spin {
   to { transform: rotate(360deg); }
-}
-
-.tool-running-line span {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: currentColor;
-  animation: tracePulse 1.1s ease-in-out infinite;
-}
-
-@keyframes tracePulse {
-  50% { opacity: 0.25; transform: scale(0.7); }
 }
 
 /* ─── Composer ─── */

@@ -95,6 +95,19 @@ describe("agent store session_updated event", () => {
     expect(agent.messagesFor("s1")[0]?.metadata).toMatchObject({ durationMs: 74_000 });
   });
 
+  it("keeps an interrupted outcome until the next run starts", () => {
+    const agent = useAgentStore();
+    vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.interrupt("s1");
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle", durationMs: 3_000 });
+    expect(agent.runOutcomeFor("s1")).toBe("interrupted");
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    expect(agent.runOutcomeFor("s1")).toBeNull();
+  });
+
   it("clears an empty assistant placeholder when the model request fails", () => {
     const agent = useAgentStore();
 

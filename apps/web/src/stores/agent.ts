@@ -79,6 +79,7 @@ export const useAgentStore = defineStore("agent", {
     // assistant messages while it calls tools and resumes generation.
     runStates: {} as Record<string, "working" | "idle">,
     runStartedAt: {} as Record<string, number>,
+    runOutcomes: {} as Record<string, "interrupted" | undefined>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -120,6 +121,8 @@ export const useAgentStore = defineStore("agent", {
     },
     runStartedAtFor: (state) => (sessionId: string): number | null =>
       state.runStartedAt[sessionId] ?? null,
+    runOutcomeFor: (state) => (sessionId: string): "interrupted" | null =>
+      state.runOutcomes[sessionId] ?? null,
     tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
       state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
     compactionFor: (state) => (sessionId: string) => state.contextCompactions[sessionId] ?? null,
@@ -184,6 +187,7 @@ export const useAgentStore = defineStore("agent", {
       this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
       this.runStartedAt[sessionId] = Date.now();
+      delete this.runOutcomes[sessionId];
       const event: Record<string, unknown> = { type: "send", sessionId, content };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
@@ -192,6 +196,7 @@ export const useAgentStore = defineStore("agent", {
     interrupt(sessionId: string) {
       const pending = this.pendingPermissions[sessionId];
       if (pending) this.respondToPermission(sessionId, pending.requestId, false);
+      this.runOutcomes[sessionId] = "interrupted";
       wsClient.send({ type: "interrupt", sessionId });
     },
     respondToPermission(sessionId: string, requestId: string, approved: boolean) {
@@ -278,6 +283,7 @@ export const useAgentStore = defineStore("agent", {
       if (e.type === "agent_status") {
         this.runStates[sid] = e.status;
         if (e.status === "working") {
+          delete this.runOutcomes[sid];
           if (!this.runStartedAt[sid]) this.runStartedAt[sid] = Date.now();
         } else {
           delete this.runStartedAt[sid];
