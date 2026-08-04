@@ -3,3 +3,5 @@ dist/
 out/
 node_modules/
 *.log
+resources/server-runtime.tar.gz
+resources/server-runtime.sha256

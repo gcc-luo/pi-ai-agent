@@ -35,8 +35,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/pi-server"
-    ]
+    "externalBin": ["binaries/pi-node"],
+    "resources": {
+      "../resources/server-runtime.tar.gz": "server-runtime.tar.gz",
+      "../resources/server-runtime.sha256": "server-runtime.sha256"
+    }
   }
 }
