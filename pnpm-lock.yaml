@@ -177,6 +177,9 @@ importers:
       '@pi-web-ui/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@tauri-apps/api':
+        specifier: ^2.2.0
+        version: 2.11.1
       '@tauri-apps/plugin-notification':
         specifier: ^2.2.0
         version: 2.3.3

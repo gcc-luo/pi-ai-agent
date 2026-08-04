@@ -192,13 +192,15 @@ pnpm --dir apps/desktop prepare-sidecar
 pnpm --dir apps/desktop build
 ```
 
-`prepare-sidecar` 会自动重新构建后端，并使用 `pkg` 生成当前操作系统与 CPU 架构的
-sidecar。首次执行时如果本地没有 `pkg`，脚本会通过 `npx` 获取。
+`prepare-sidecar` 会自动重新构建后端，使用 `pnpm deploy --prod` 生成生产依赖目录，
+并复制当前 Node.js 可执行文件作为 Tauri sidecar。打包需要 Node.js 22.19 或更高版本。
+脚本结束前会实际启动生成的运行时并检查 `/healthz`，然后将运行目录归档为保留
+pnpm 依赖链接的资源文件。应用首次启动或运行时版本变化时会将其展开到缓存目录。
 
-桌面安装包内的后端 sidecar 同时包含 `pi-coding-agent` 运行时。安装包启动后，
-Agent 会复用这个内置可执行文件，不会调用用户电脑上的 `node`、`npm`、`pnpm` 或
-`npx`，因此终端用户不需要安装 Node.js 环境。开发环境仍使用默认的 `npx` 启动
-方式，便于热更新和调试。
+桌面安装包内包含 Node.js、服务端生产依赖和 `pi-coding-agent`。安装包启动后，
+服务端和 Agent 会复用内置 Node.js，不会调用用户电脑上的 `node`、`npm`、`pnpm`
+或 `npx`，因此终端用户不需要安装 Node.js 环境。开发环境仍使用默认的 `npx`
+启动方式，便于热更新和调试。
 
 以下能力仍可能需要额外的系统组件：
 
