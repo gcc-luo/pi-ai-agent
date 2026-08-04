@@ -7,6 +7,7 @@ import type {
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
   PluginDto,
 } from "@pi-web-ui/shared";
+import { apiUrl } from "./endpoints.js";
 
 export interface ModelOption {
   id: string;
@@ -20,10 +21,8 @@ export interface ConfigDto {
   models: ModelOption[];
 }
 
-const BASE = "/api";
-
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+  const res = await fetch(apiUrl(path), {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -77,7 +76,7 @@ export const api = {
   importSkillZip: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return fetch(BASE + "/skills/import-zip", { method: "POST", body: form }).then(async (res) => {
+    return fetch(apiUrl("/skills/import-zip"), { method: "POST", body: form }).then(async (res) => {
       const text = await res.text();
       let data: any = null;
       if (text) try { data = JSON.parse(text); } catch { data = { error: text }; }
@@ -101,7 +100,7 @@ export const api = {
   // URL (not fetch) for binary previews — <img>/<video>/<iframe> need a
   // plain URL they can stream from, including Range requests for seeking.
   rawFileUrl: (projectId: string, path: string) =>
-    `${BASE}/files/${projectId}/raw?path=${encodeURIComponent(path)}`,
+    apiUrl(`/files/${projectId}/raw?path=${encodeURIComponent(path)}`),
   createFile: (projectId: string, path: string, type: "file" | "directory") =>
     request<{ path: string }>("POST", `/files/${projectId}/create`, { path, type }),
   renameFile: (projectId: string, from: string, to: string) =>
@@ -113,7 +112,7 @@ export const api = {
 
   // Office → PDF via LibreOffice
   officePdfUrl: (projectId: string, path: string) =>
-    `${BASE}/files/${projectId}/office-pdf?path=${encodeURIComponent(path)}`,
+    apiUrl(`/files/${projectId}/office-pdf?path=${encodeURIComponent(path)}`),
   checkOfficeAvailability: () =>
     request<{ available: boolean }>("GET", "/files/office-status"),
   validateArtifacts: (projectId: string, items: ArtifactItem[]) =>
@@ -159,7 +158,7 @@ export const api = {
   importKbFiles: (kbId: string, files: File[]) => {
     const form = new FormData();
     for (const f of files) form.append("file", f);
-    return fetch(BASE + `/knowledge-bases/${kbId}/files/import`, { method: "POST", body: form }).then(async (res) => {
+    return fetch(apiUrl(`/knowledge-bases/${kbId}/files/import`), { method: "POST", body: form }).then(async (res) => {
       const data = await res.json().catch(() => ({ error: "parse_failed" }));
       if (!res.ok) throw new Error((data as any)?.error ?? `import failed: ${res.status}`);
       return data as { imported: KbFileDto[]; errors: { name: string; error: string }[] };

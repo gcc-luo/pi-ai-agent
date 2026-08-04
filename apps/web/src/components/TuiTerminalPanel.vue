@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { webSocketUrl } from "../api/endpoints.js";
 
 const props = defineProps<{ sessionId: string }>();
 
@@ -26,8 +27,7 @@ let disposeInput: (() => void) | undefined;
 let allowReconnect = true;
 
 function socketUrl() {
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${location.host}/ws/terminal`;
+  return webSocketUrl("/ws/terminal");
 }
 
 function send(event: Record<string, unknown>) {

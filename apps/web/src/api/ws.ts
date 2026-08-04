@@ -1,4 +1,5 @@
 import type { ClientEvent, ServerEvent } from "@pi-web-ui/shared";
+import { webSocketUrl } from "./endpoints.js";
 
 type Listener = (e: ServerEvent) => void;
 type Status = "disconnected" | "connecting" | "connected";
@@ -15,8 +16,7 @@ export class WsClient {
   connect() {
     if (this.ws) return;
     this.setStatus("connecting");
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    this.ws = new WebSocket(`${proto}://${location.host}/ws/agent`);
+    this.ws = new WebSocket(webSocketUrl("/ws/agent"));
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.setStatus("connected");
