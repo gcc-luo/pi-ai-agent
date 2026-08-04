@@ -2,14 +2,9 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
-const isPackagedRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
-
 function splitArgs(value: string | undefined): string[] | undefined {
-  return value === undefined ? undefined : value.split(" ").filter(Boolean);
-}
-
-function resolveEmbeddedAgentCommand(): string {
-  return process.execPath;
+  const args = value?.split(" ").filter(Boolean);
+  return args?.length ? args : undefined;
 }
 
 export interface Config {
@@ -58,13 +53,30 @@ function withoutRpcMode(args: string[]): string[] {
 export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
   fs.mkdirSync(root, { recursive: true });
-  const embeddedAgent = isPackagedRuntime && !process.env.PI_COMMAND;
+  const bundledRuntimeDir = process.env.PI_BUNDLED_RUNTIME_DIR;
+  const bundledAgentEntry = bundledRuntimeDir
+    ? path.join(
+        bundledRuntimeDir,
+        "node_modules",
+        "@earendil-works",
+        "pi-coding-agent",
+        "dist",
+        "cli.js",
+      )
+    : undefined;
+  const customPiCommand = process.env.PI_COMMAND || undefined;
+  const embeddedAgent = Boolean(bundledAgentEntry) && !customPiCommand;
   const configuredPiArgs = splitArgs(process.env.PI_ARGS);
-  const piCommand = process.env.PI_COMMAND
-    ?? (embeddedAgent ? resolveEmbeddedAgentCommand() : "npx");
+  const piCommand =
+    customPiCommand ?? (embeddedAgent ? process.execPath : "npx");
   const piArgs = embeddedAgent
-    ? ["--pi-agent", ...(configuredPiArgs ?? ["--mode", "rpc"])]
-    : (configuredPiArgs ?? ["-y", "@earendil-works/pi-coding-agent", "--mode", "rpc"]);
+    ? [bundledAgentEntry!, ...(configuredPiArgs ?? ["--mode", "rpc"])]
+    : (configuredPiArgs ?? [
+        "-y",
+        "@earendil-works/pi-coding-agent",
+        "--mode",
+        "rpc",
+      ]);
   const configuredTuiArgs = splitArgs(process.env.PI_TUI_ARGS);
   return {
     port: Number(process.env.PORT ?? 8080),
@@ -77,7 +89,7 @@ export function loadConfig(): Config {
     // The web terminal runs Pi's normal interactive interface, not its JSON-RPC mode.
     // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
     piTuiArgs: embeddedAgent
-      ? ["--pi-agent", ...(configuredTuiArgs ?? [])]
+      ? [bundledAgentEntry!, ...(configuredTuiArgs ?? [])]
       : (configuredTuiArgs ?? withoutRpcMode(piArgs)),
     piNpmRegistry: process.env.PI_NPM_REGISTRY ?? "https://registry.npmjs.org/",
     // One private Pi JSONL directory per Web UI session. Keep the original
