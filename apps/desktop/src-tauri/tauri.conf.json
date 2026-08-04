@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-ios/develop/Tauri%20Schema.json",
+  "productName": "PI AI Agent",
+  "version": "1.2.4",
+  "identifier": "com.pi.agent",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "cd ../web && pnpm build",
+    "beforeDevCommand": "cd ../web && pnpm dev"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PI AI Agent",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/pi-server"
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+[package]
+name = "pi-agent"
+version = "1.2.4"
+description = "PI AI Agent 桌面客户端"
+authors = ["PI Team"]
+edition = "2021"
+
+[lib]
+name = "pi_agent_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+tauri-plugin-store = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"

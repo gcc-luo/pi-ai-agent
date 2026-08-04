@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
+    "start": "pnpm --parallel --filter @pi-web-ui/server --filter @pi-web-ui/desktop run dev",
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",

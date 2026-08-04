@@ -151,15 +151,69 @@
 ```bash
 pnpm install
 cp .env.example .env   # 然后填入你的 API Key
-pnpm dev
+pnpm start
 ```
 
 启动后：
 
+- `pnpm start` 会同时启动后端服务与桌面端；桌面端会自动启动共享的浏览器端 Vite 服务
 - 前端开发服务器：`http://localhost:3000`（Vite）
 - 后端 API 服务：`http://127.0.0.1:8080`（Fastify）
 - 前端已配置代理，`/api` 与 `/ws` 自动转发到后端
 - 浏览器打开 `http://localhost:3000` 即可使用
+
+### 分开启动
+
+如需分别调试某一端，可使用以下命令：
+
+```bash
+pnpm --dir apps/server dev    # 仅启动后端
+pnpm --dir apps/web dev       # 仅启动浏览器端
+pnpm --dir apps/desktop dev   # 启动桌面端，并自动启动浏览器端 Vite
+```
+
+桌面端开发通常只需要运行 `pnpm start`。不要同时运行独立的浏览器端命令，
+否则可能与 Tauri 自动启动的 Vite 服务争用 `3000` 端口。
+
+### 构建与打安装包
+
+浏览器端和后端可以分别构建：
+
+```bash
+pnpm --dir apps/web build
+pnpm --dir apps/server build
+```
+
+构建桌面端安装包前，需要先准备后端 sidecar。sidecar 会把后端打包成桌面端可携带的
+独立可执行文件：
+
+```bash
+pnpm --dir apps/desktop prepare-sidecar
+pnpm --dir apps/desktop build
+```
+
+`prepare-sidecar` 会自动重新构建后端，并使用 `pkg` 生成当前操作系统与 CPU 架构的
+sidecar。首次执行时如果本地没有 `pkg`，脚本会通过 `npx` 获取。
+
+桌面端安装包输出在：
+
+```text
+apps/desktop/src-tauri/target/release/bundle/
+```
+
+其中会按平台生成对应产物，例如 macOS 的 `.dmg` / `.app`、Windows 的 `.msi` / `.exe`
+以及 Linux 的 `.deb` / `.AppImage`。如需生成调试版桌面包：
+
+```bash
+pnpm --dir apps/desktop build:debug
+```
+
+也可以使用以下命令构建所有 workspace；但桌面端打包前仍建议先执行
+`prepare-sidecar`：
+
+```bash
+pnpm build
+```
 
 ### 环境变量
 
@@ -209,8 +263,12 @@ GOOGLE_API_KEY=
 
 | 命令 | 说明 |
 |---|---|
-| `pnpm dev` | 并行启动前后端开发服务器 |
-| `pnpm build` | 构建所有 workspace |
+| `pnpm start` | 全量启动后端、桌面端和浏览器端开发服务 |
+| `pnpm dev` | 并行执行各 workspace 的 `dev` 脚本 |
+| `pnpm build` | 构建所有 workspace；桌面端打包前需先准备 sidecar |
+| `pnpm --dir apps/desktop prepare-sidecar` | 生成当前平台的后端 sidecar |
+| `pnpm --dir apps/desktop build` | 构建桌面端生产安装包 |
+| `pnpm --dir apps/desktop build:debug` | 构建桌面端调试安装包 |
 | `pnpm test` | 运行所有测试（vitest） |
 | `pnpm typecheck` | 全仓 TypeScript 类型检查 |
 | `pnpm lint` | 运行 lint |

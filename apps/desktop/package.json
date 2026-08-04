@@ -1,0 +1,33 @@
+{
+  "name": "@pi-web-ui/desktop",
+  "productName": "PI AI Agent",
+  "version": "1.2.4",
+  "description": "PI AI Agent 桌面客户端",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:debug": "tauri build --debug",
+    "typecheck": "vue-tsc --noEmit",
+    "tauri": "tauri",
+    "prepare-sidecar": "node scripts/prepare-sidecar.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-shell": "^2.2.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-notification": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-process": "^2.2.0",
+    "@tauri-apps/plugin-store": "^2.2.0",
+    "@tauri-apps/plugin-window-state": "^2.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0",
+    "@vitejs/plugin-vue": "^5.0.5",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.3",
+    "vue": "^3.4.31",
+    "vue-tsc": "^2.0.26"
+  }
+}
