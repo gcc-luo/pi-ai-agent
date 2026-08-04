@@ -195,6 +195,17 @@ pnpm --dir apps/desktop build
 `prepare-sidecar` 会自动重新构建后端，并使用 `pkg` 生成当前操作系统与 CPU 架构的
 sidecar。首次执行时如果本地没有 `pkg`，脚本会通过 `npx` 获取。
 
+桌面安装包内的后端 sidecar 同时包含 `pi-coding-agent` 运行时。安装包启动后，
+Agent 会复用这个内置可执行文件，不会调用用户电脑上的 `node`、`npm`、`pnpm` 或
+`npx`，因此终端用户不需要安装 Node.js 环境。开发环境仍使用默认的 `npx` 启动
+方式，便于热更新和调试。
+
+以下能力仍可能需要额外的系统组件：
+
+- 浏览器自动化需要 Playwright 浏览器运行时；
+- Office 转 PDF 需要安装 LibreOffice；
+- Agent 调用模型仍需要配置对应 Provider 的 API Key，并且通常需要网络连接。
+
 桌面端安装包输出在：
 
 ```text
@@ -231,7 +242,7 @@ PI_MODEL=                  # 留空使用 provider 默认模型
 PI_AUTO_COMPACTION=true    # 接近上下文上限时自动压缩，默认 true
 GOOGLE_API_KEY=
 
-# Agent 进程（可选，覆盖默认启动命令）
+# Agent 进程（可选，覆盖默认启动命令；开发环境默认使用 npx）
 # PI_COMMAND=npx
 # PI_ARGS=-y @earendil-works/pi-coding-agent --mode rpc
 # PI_NPM_REGISTRY=https://registry.npmjs.org/

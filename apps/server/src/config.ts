@@ -2,6 +2,16 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
+const isPackagedRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
+
+function splitArgs(value: string | undefined): string[] | undefined {
+  return value === undefined ? undefined : value.split(" ").filter(Boolean);
+}
+
+function resolveEmbeddedAgentCommand(): string {
+  return process.execPath;
+}
+
 export interface Config {
   port: number;
   host: string;
@@ -48,18 +58,27 @@ function withoutRpcMode(args: string[]): string[] {
 export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
   fs.mkdirSync(root, { recursive: true });
-  const piArgs = (process.env.PI_ARGS ?? "-y @earendil-works/pi-coding-agent --mode rpc").split(" ");
+  const embeddedAgent = isPackagedRuntime && !process.env.PI_COMMAND;
+  const configuredPiArgs = splitArgs(process.env.PI_ARGS);
+  const piCommand = process.env.PI_COMMAND
+    ?? (embeddedAgent ? resolveEmbeddedAgentCommand() : "npx");
+  const piArgs = embeddedAgent
+    ? ["--pi-agent", ...(configuredPiArgs ?? ["--mode", "rpc"])]
+    : (configuredPiArgs ?? ["-y", "@earendil-works/pi-coding-agent", "--mode", "rpc"]);
+  const configuredTuiArgs = splitArgs(process.env.PI_TUI_ARGS);
   return {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "127.0.0.1",
     dbPath: path.join(root, "pi-web-ui.sqlite"),
     logLevel: process.env.LOG_LEVEL ?? "info",
     logFile: process.env.LOG_FILE ?? path.join(root, "logs", "server.log"),
-    piCommand: process.env.PI_COMMAND ?? "npx",
+    piCommand,
     piArgs,
     // The web terminal runs Pi's normal interactive interface, not its JSON-RPC mode.
     // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
-    piTuiArgs: (process.env.PI_TUI_ARGS?.split(" ") ?? withoutRpcMode(piArgs)),
+    piTuiArgs: embeddedAgent
+      ? ["--pi-agent", ...(configuredTuiArgs ?? [])]
+      : (configuredTuiArgs ?? withoutRpcMode(piArgs)),
     piNpmRegistry: process.env.PI_NPM_REGISTRY ?? "https://registry.npmjs.org/",
     // One private Pi JSONL directory per Web UI session. Keep the original
     // tui-sessions location so existing Coding conversations remain usable.

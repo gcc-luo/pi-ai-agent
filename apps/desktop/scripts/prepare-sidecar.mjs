@@ -45,11 +45,18 @@ if (!pkgTarget) {
   process.exit(1);
 }
 
-// Tauri sidecar naming convention: <name>-<arch>-<os>
-const tauriArch = arch === 'arm64' ? 'aarch64' : 'x86_64';
-const tauriOs = platform === 'darwin' ? 'darwin' : platform === 'win32' ? 'windows' : 'linux';
+// Tauri sidecar naming convention: <name>-<target-triple>
+const tauriTargetMap = {
+  'darwin-x64': 'x86_64-apple-darwin',
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'linux-x64': 'x86_64-unknown-linux-gnu',
+  'linux-arm64': 'aarch64-unknown-linux-gnu',
+  'win32-x64': 'x86_64-pc-windows-msvc',
+  'win32-arm64': 'aarch64-pc-windows-msvc',
+};
+const tauriTarget = tauriTargetMap[triple];
 const ext = platform === 'win32' ? '.exe' : '';
-const sidecarName = `pi-server-${tauriArch}-${tauriOs}${ext}`;
+const sidecarName = `pi-server-${tauriTarget}${ext}`;
 
 console.log(`\n📦 Preparing sidecar for ${triple}`);
 console.log(`   pkg target: ${pkgTarget}`);

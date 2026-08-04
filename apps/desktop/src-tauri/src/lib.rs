@@ -1,5 +1,5 @@
 
-use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 #[tauri::command]
 fn get_server_port() -> u16 {
@@ -31,7 +31,37 @@ fn start_server_sidecar(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
     match shell.sidecar("pi-server") {
         Ok(cmd) => {
             log::info!("Starting sidecar server: pi-server");
-            cmd.spawn().map_err(|e| format!("Failed to start server sidecar: {e}"))?;
+            let (mut events, child) = cmd
+                .spawn()
+                .map_err(|e| format!("Failed to start server sidecar: {e}"))?;
+            log::info!("Server sidecar started with pid={}", child.pid());
+
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) = events.recv().await {
+                    match event {
+                        CommandEvent::Stdout(line) => {
+                            log::info!("[server] {}", String::from_utf8_lossy(&line).trim_end());
+                        }
+                        CommandEvent::Stderr(line) => {
+                            log::error!("[server] {}", String::from_utf8_lossy(&line).trim_end());
+                        }
+                        CommandEvent::Error(error) => {
+                            log::error!("Server sidecar error: {error}");
+                        }
+                        CommandEvent::Terminated(payload) => {
+                            log::error!(
+                                "Server sidecar terminated: code={:?}, signal={:?}",
+                                payload.code,
+                                payload.signal
+                            );
+                            break;
+                        }
+                        _ => {
+                            log::debug!("Received an unhandled server sidecar event");
+                        }
+                    }
+                }
+            });
         }
         Err(_) => {
             log::warn!(
