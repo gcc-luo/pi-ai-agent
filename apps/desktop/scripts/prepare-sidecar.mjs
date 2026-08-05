@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 /**
  * Prepare the desktop server runtime.
@@ -25,13 +25,18 @@ import net from "node:net";
 import os from "node:os";
 import path, { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  backupNativeArtifacts,
+  copyRuntimeTree,
+  restoreNativeArtifacts,
+} from "./runtime-files.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDir, "../../..");
 const serverDir = resolve(root, "apps/server");
 const binariesDir = resolve(scriptDir, "../src-tauri/binaries");
 const resourcesDir = resolve(scriptDir, "../resources");
-const runtimeDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-runtime-"));
+const deployDir = mkdtempSync(path.join(scriptDir, ".deploy-"));
 const runtimeArchive = resolve(resourcesDir, "server-runtime.tar.gz");
 const runtimeChecksum = resolve(resourcesDir, "server-runtime.sha256");
 
@@ -69,13 +74,13 @@ console.log(`  Node runtime: ${process.execPath} (${process.version})`);
 console.log(`  Tauri target: ${tauriTarget}`);
 
 console.log("\nBuilding server...");
-execFileSync(pnpmCommand, ["build"], { cwd: serverDir, stdio: "inherit" });
+execFileSync(pnpmCommand, ["build"], { cwd: serverDir, stdio: "inherit", shell: true });
 
 console.log("\nCreating production dependency deployment...");
 execFileSync(
   pnpmCommand,
-  ["--filter", "@pi-web-ui/server", "deploy", "--prod", runtimeDir],
-  { cwd: root, stdio: "inherit" },
+  ["--filter", ".", "deploy", "--prod", path.relative(serverDir, deployDir)],
+  { cwd: serverDir, stdio: "inherit", shell: true },
 );
 
 // pnpm deploy copies the complete workspace package. Only dist, package.json
@@ -87,8 +92,35 @@ for (const entry of [
   "tsconfig.build.json",
   "vitest.config.ts",
 ]) {
-  rmSync(resolve(runtimeDir, entry), { recursive: true, force: true });
+  rmSync(resolve(deployDir, entry), { recursive: true, force: true });
 }
+
+// The deploy output is still isolated-linker based. Reinstall the generated
+// package with hoisting so the archive only needs to materialize one root
+// dependency tree. The workspace-only shared package is type-only in dist.
+const deploymentPackagePath = resolve(deployDir, "package.json");
+const deploymentPackage = JSON.parse(readFileSync(deploymentPackagePath, "utf8"));
+delete deploymentPackage.dependencies?.["@pi-web-ui/shared"];
+writeFileSync(deploymentPackagePath, `${JSON.stringify(deploymentPackage, null, 2)}\n`);
+const nativeBackupDir = mkdtempSync(path.join(scriptDir, ".native-"));
+backupNativeArtifacts(deployDir, nativeBackupDir);
+console.log("\nHoisting production dependencies...");
+execFileSync(
+  pnpmCommand,
+  ["install", "--prod", "--shamefully-hoist", "--ignore-workspace", "--force"],
+  { cwd: deployDir, stdio: "inherit", shell: true },
+);
+restoreNativeArtifacts(deployDir, nativeBackupDir);
+rmSync(nativeBackupDir, { recursive: true, force: true });
+copyFileSync(
+  resolve(serverDir, "node_modules/@amaster.ai/pi-channels/package.json"),
+  resolve(deployDir, "node_modules/@amaster.ai/pi-channels/package.json"),
+);
+
+console.log("\nCreating archive-safe production runtime...");
+const runtimeDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-runtime-"));
+copyRuntimeTree(deployDir, runtimeDir);
+rmSync(deployDir, { recursive: true, force: true });
 
 console.log("\nCopying Node.js sidecar...");
 mkdirSync(binariesDir, { recursive: true });
@@ -108,7 +140,7 @@ for (const requiredPath of [serverEntry, agentEntry, nodeSidecarPath]) {
 console.log("\nChecking embedded pi-coding-agent...");
 execFileSync(nodeSidecarPath, [agentEntry, "--version"], {
   stdio: "inherit",
-  timeout: 15_000,
+  timeout: 60_000,
 });
 
 console.log("\nStarting packaged server smoke test...");
@@ -175,7 +207,12 @@ async function smokeTestServer(nodePath, entryPath, bundledRuntimeDir) {
     );
   } finally {
     child.kill();
-    rmSync(dataDir, { recursive: true, force: true });
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
+    try {
+      rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 1000 });
+    } catch {
+      // best-effort cleanup on Windows
+    }
   }
 }
 

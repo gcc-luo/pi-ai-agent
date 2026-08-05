@@ -37,7 +37,8 @@
     "qrcode": "1.5.4",
     "typebox": "1.1.38",
     "ulid": "2.3.0",
-    "unpdf": "1.6.2"
+    "unpdf": "1.6.2",
+    "ws": "8.18.0"
   },
   "devDependencies": {
     "@types/adm-zip": "0.5.8",
@@ -47,7 +48,6 @@
     "@types/ws": "8.5.10",
     "tsx": "4.16.2",
     "typescript": "5.5.4",
-    "vitest": "1.6.0",
-    "ws": "8.18.0"
+    "vitest": "1.6.0"
   }
 }

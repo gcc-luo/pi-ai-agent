@@ -193,9 +193,10 @@ pnpm --dir apps/desktop build
 ```
 
 `prepare-sidecar` 会自动重新构建后端，使用 `pnpm deploy --prod` 生成生产依赖目录，
-并复制当前 Node.js 可执行文件作为 Tauri sidecar。打包需要 Node.js 22.19 或更高版本。
-脚本结束前会实际启动生成的运行时并检查 `/healthz`，然后将运行目录归档为保留
-pnpm 依赖链接的资源文件。应用首次启动或运行时版本变化时会将其展开到缓存目录。
+并复制当前 Node.js 可执行文件作为 Tauri sidecar，同时将 pnpm 部署目录转换为不依赖
+Windows junction 的真实文件树。打包需要 Node.js 22.19 或更高版本。
+脚本结束前会实际启动生成的运行时并检查 `/healthz`，然后将真实文件树归档为资源
+文件。应用首次启动或运行时版本变化时会将其展开到缓存目录。
 
 桌面安装包内包含 Node.js、服务端生产依赖和 `pi-coding-agent`。安装包启动后，
 服务端和 Agent 会复用内置 Node.js，不会调用用户电脑上的 `node`、`npm`、`pnpm`

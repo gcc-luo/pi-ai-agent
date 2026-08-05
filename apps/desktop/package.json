@@ -8,6 +8,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:debug": "tauri build --debug",
+    "test": "node --test scripts/*.test.mjs",
     "typecheck": "vue-tsc --noEmit",
     "tauri": "tauri",
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs"

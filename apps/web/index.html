@@ -11,9 +11,60 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Sora:wght@300;400;500;600&display=swap"
       rel="stylesheet"
     />
+    <style>
+      html, body, #app { width: 100%; min-width: 100%; min-height: 100%; margin: 0; }
+      .startup-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        color: #eaf8f5;
+        background: #111716;
+        font-family: "Sora", "Microsoft YaHei UI", sans-serif;
+      }
+      .startup-screen::before {
+        position: absolute;
+        width: min(62vw, 760px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(41, 202, 167, .17), transparent 67%);
+        content: "";
+        animation: startup-glow 2.8s ease-in-out infinite;
+      }
+      .startup-card { position: relative; display: grid; justify-items: center; gap: 18px; text-align: center; }
+      .startup-mark {
+        display: grid;
+        place-items: center;
+        width: 54px;
+        height: 54px;
+        border: 1px solid rgba(104, 232, 197, .45);
+        border-radius: 16px;
+        box-shadow: 0 0 0 7px rgba(74, 213, 176, .08), 0 14px 42px rgba(0, 0, 0, .28);
+        color: #73edc9;
+        font: 700 18px/1 "IBM Plex Mono", Consolas, monospace;
+      }
+      .startup-title { margin: 3px 0 0; font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+      .startup-message { margin: 0; color: #9aaca7; font-size: 13px; }
+      .startup-dots { display: flex; gap: 7px; margin-top: 5px; }
+      .startup-dots i { width: 6px; height: 6px; border-radius: 50%; background: #62e4bf; animation: startup-dot 1.05s ease-in-out infinite; }
+      .startup-dots i:nth-child(2) { animation-delay: .16s; }.startup-dots i:nth-child(3) { animation-delay: .32s; }
+      @keyframes startup-glow { 50% { transform: scale(1.1); opacity: .7; } }
+      @keyframes startup-dot { 50% { transform: translateY(-5px); opacity: .35; } }
+      @media (prefers-reduced-motion: reduce) { .startup-screen::before, .startup-dots i { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="startup-screen" data-startup-screen aria-busy="true" aria-live="polite">
+        <section class="startup-card">
+          <div class="startup-mark" aria-hidden="true">π</div>
+          <h1 class="startup-title">PI AI Agent</h1>
+          <p class="startup-message" data-startup-message>正在启动本地服务</p>
+          <div class="startup-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
