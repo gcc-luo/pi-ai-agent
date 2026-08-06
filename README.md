@@ -1,8 +1,15 @@
-# pi-web-ui
+﻿# PI AI Agent
 
-[pi](https://github.com/earendil-works/pi)（pi-coding-agent）的 Web UI —— 让你通过浏览器使用 pi 的 coding agent 能力，无需在本地装终端。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.2.5-green.svg)](https://github.com/gcc-luo/pi-web-ui/releases)
 
-后端用 Fastify 以子进程方式托管 pi-coding-agent（RPC over stdio），前端用 Vue 3 提供聊天、项目/会话管理、文件预览、知识库、技能、专家、定时任务、消息渠道等完整功能。
+**PI AI Agent** 是一款基于 [pi-coding-agent](https://github.com/earendil-works/pi) 的桌面端 AI 编程助手，让你通过直观的图形界面使用 pi 的强大 coding agent 能力，无需在本地配置终端环境。
+
+后端使用 Fastify 以子进程方式托管 pi-coding-agent（RPC over stdio），前端使用 Vue 3 提供完整的聊天、项目管理、文件预览、知识库、技能商店、专家中心、定时任务、消息渠道等功能。
+
+## 主界面预览
+
+![PI AI Agent 主界面](docs/images/main.png)
 
 ## 功能特性
 
@@ -96,146 +103,70 @@
 
 ### 通用
 
-- **深色/浅色主题**：跟随系统偏好，可手动切换，持久化到 localStorage
+- **深色/灰色/浅色主题**：三种主题自由切换，持久化到 localStorage
 - **中英文国际化**：运行时切换，持久化到 localStorage
 - **连接状态指示**：WebSocket 连接状态实时显示（已连接/连接中/已断开）
-- **空闲回收**：空闲 5 分钟标记 idle，挂起 30 分钟自动回收 agent 子进程
-
-## 架构
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Frontend (Vue 3 + Naive UI + Vite + Pinia)          │
-│  WebSocket client · REST client · 12 Pinia stores    │
-└────────────────────────┬─────────────────────────────┘
-                         │ WebSocket (/ws/agent, /ws/terminal)
-                         │ REST (/api/*)
-┌────────────────────────▼─────────────────────────────┐
-│  Backend (Fastify + TypeScript)                       │
-│  · REST API: 项目/会话/文件/模型/技能/知识库/          │
-│              专家/定时任务/渠道/回收站                  │
-│  · WS: agent 事件流 + 终端                            │
-│  · ProcessManager + RPC Bridge: WS ↔ pi stdio        │
-│  · TaskScheduler: croner 定时任务调度                  │
-│  · Channel Registry: 微信/钉钉渠道适配器              │
-│  · better-sqlite3: 14 张表 + FTS5 全文索引            │
-└────────────────────────┬─────────────────────────────┘
-                         │ child_process.spawn
-┌────────────────────────▼─────────────────────────────┐
-│  pi-coding-agent (RPC 模式, stdio)                    │
-│  每个活跃 session 一个独立子进程                       │
-└──────────────────────────────────────────────────────┘
-```
+- **空闲回收**：空闲 5 分钟标记 idle，挂起 30 分钟自动回收子进程释放资源
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端 | Vue 3 · Naive UI · Pinia · Vite · marked / highlight.js / DOMPurify |
-| 后端 | Fastify · TypeScript · better-sqlite3 · pino · tsx · croner |
-| 共享 | `@pi-web-ui/shared` —— 跨端共享的 TypeScript 类型 |
-| 渠道 | @wechatbot/wechatbot · @amaster.ai/pi-channels |
-| 构建/测试 | pnpm workspace · vitest |
+| 层级 | 技术 |
+|------|------|
+| 前端 | Vue 3 + TypeScript + Pinia + Vite |
+| 后端 | Fastify + TypeScript + SQLite (better-sqlite3) |
+| 桌面端 | Tauri 2.0 (Rust) |
+| Agent | pi-coding-agent (Node.js, RPC over stdio) |
+| 搜索 | FTS5 + jieba 中文分词 |
+| 文件转换 | LibreOffice (可选) |
 
 ## 快速开始
 
-### 前置要求
+### 环境要求
 
-- Node.js `>=20`
-- pnpm `9.6.0`
-- 至少一个 LLM Provider 的 API Key
-- pi-coding-agent 可用（默认通过 `npx -y @earendil-works/pi-coding-agent --mode rpc` 拉起）
+- Node.js >= 18
+- pnpm >= 8
+- Rust (仅桌面端构建需要)
 
-### 安装与运行
+### 安装依赖
 
-```bash
+`ash
 pnpm install
-cp .env.example .env   # 然后填入你的 API Key
+`
+
+### 启动开发服务
+
+`ash
 pnpm start
-```
+`
 
-启动后：
+这会同时启动后端服务（默认 http://localhost:8080）和前端开发服务器（默认 http://localhost:5173），以及桌面端开发窗口。
 
-- `pnpm start` 会同时启动后端服务与桌面端；桌面端会自动启动共享的浏览器端 Vite 服务
-- 前端开发服务器：`http://localhost:3000`（Vite）
-- 后端 API 服务：`http://127.0.0.1:8080`（Fastify）
-- 前端已配置代理，`/api` 与 `/ws` 自动转发到后端
-- 浏览器打开 `http://localhost:3000` 即可使用
+### 构建生产版本
 
-### 分开启动
+`ash
+# 构建所有 workspace
+pnpm build
 
-如需分别调试某一端，可使用以下命令：
-
-```bash
-pnpm --dir apps/server dev    # 仅启动后端
-pnpm --dir apps/web dev       # 仅启动浏览器端
-pnpm --dir apps/desktop dev   # 启动桌面端与 Vite，需同时运行 8080 端口的后端
-```
-
-桌面端开发通常只需要运行 `pnpm start`。不要同时运行独立的浏览器端命令，
-否则可能与 Tauri 自动启动的 Vite 服务争用 `3000` 端口。开发脚本会让 Tauri
-连接 `8080` 端口上的源码后端，以便服务端修改立即生效；开发模式不会启动打包时
-生成的 sidecar。未设置开发服务端口的正式安装包仍会启动内置 sidecar。
-
-### 构建与打安装包
-
-浏览器端和后端可以分别构建：
-
-```bash
-pnpm --dir apps/web build
-pnpm --dir apps/server build
-```
-
-构建桌面端安装包前，需要先准备后端 sidecar。sidecar 会把后端打包成桌面端可携带的
-独立可执行文件：
-
-```bash
-pnpm --dir apps/desktop prepare-sidecar
+# 仅构建桌面端安装包
 pnpm --dir apps/desktop build
-```
 
-`prepare-sidecar` 会自动重新构建后端，使用 `pnpm deploy --prod` 生成生产依赖目录，
-并复制当前 Node.js 可执行文件作为 Tauri sidecar，同时将 pnpm 部署目录转换为不依赖
-Windows junction 的真实文件树。打包需要 Node.js 22.19 或更高版本。
-脚本结束前会实际启动生成的运行时并检查 `/healthz`，然后将真实文件树归档为资源
-文件。应用首次启动或运行时版本变化时会将其展开到缓存目录。
-
-桌面安装包内包含 Node.js、服务端生产依赖和 `pi-coding-agent`。安装包启动后，
-服务端和 Agent 会复用内置 Node.js，不会调用用户电脑上的 `node`、`npm`、`pnpm`
-或 `npx`，因此终端用户不需要安装 Node.js 环境。开发环境仍使用默认的 `npx`
-启动方式，便于热更新和调试。
-
-以下能力仍可能需要额外的系统组件：
-
-- 浏览器自动化需要 Playwright 浏览器运行时；
-- Office 转 PDF 需要安装 LibreOffice；
-- Agent 调用模型仍需要配置对应 Provider 的 API Key，并且通常需要网络连接。
+# 构建桌面端调试版
+pnpm --dir apps/desktop build:debug
+`
 
 桌面端安装包输出在：
 
-```text
+`	ext
 apps/desktop/src-tauri/target/release/bundle/
-```
+`
 
-其中会按平台生成对应产物，例如 macOS 的 `.dmg` / `.app`、Windows 的 `.msi` / `.exe`
-以及 Linux 的 `.deb` / `.AppImage`。如需生成调试版桌面包：
-
-```bash
-pnpm --dir apps/desktop build:debug
-```
-
-也可以使用以下命令构建所有 workspace；但桌面端打包前仍建议先执行
-`prepare-sidecar`：
-
-```bash
-pnpm build
-```
+按平台生成对应产物，例如 Windows 的 .msi / .exe、macOS 的 .dmg / .app、Linux 的 .deb / .AppImage。
 
 ### 环境变量
 
-复制 `.env.example` 为 `.env` 并按需修改：
+复制 .env.example 为 .env 并按需修改：
 
-```bash
+`ash
 # 服务监听
 PORT=8080
 HOST=127.0.0.1
@@ -262,36 +193,36 @@ GOOGLE_API_KEY=
 
 # LibreOffice（可选，用于预览旧版 Office 文档）
 # LIBREOFFICE_BINARY=
-```
+`
 
-### 数据存储
+## 数据存储
 
-数据目录默认 `~/.pi-web-ui`（可通过 `PI_WEB_UI_ROOT` 覆盖）：
+数据目录默认 ~/.pi-web-ui（可通过 PI_WEB_UI_ROOT 覆盖）：
 
 | 文件 | 说明 |
 |------|------|
-| `pi-web-ui.sqlite` | SQLite 数据库（14 张表） |
-| `logs/server.log` | 服务端日志 |
-| `kb-files/` | 知识库上传的文件 |
-| `wechat-session/` | 微信登录会话凭据 |
+| pi-web-ui.sqlite | SQLite 数据库（14 张表） |
+| logs/server.log | 服务端日志 |
+| kb-files/ | 知识库上传的文件 |
+| wechat-session/ | 微信登录会话凭据 |
 
 ## 常用脚本
 
 | 命令 | 说明 |
 |---|---|
-| `pnpm start` | 全量启动后端、桌面端和浏览器端开发服务 |
-| `pnpm dev` | 并行执行各 workspace 的 `dev` 脚本 |
-| `pnpm build` | 构建所有 workspace；桌面端打包前需先准备 sidecar |
-| `pnpm --dir apps/desktop prepare-sidecar` | 生成当前平台的后端 sidecar |
-| `pnpm --dir apps/desktop build` | 构建桌面端生产安装包 |
-| `pnpm --dir apps/desktop build:debug` | 构建桌面端调试安装包 |
-| `pnpm test` | 运行所有测试（vitest） |
-| `pnpm typecheck` | 全仓 TypeScript 类型检查 |
-| `pnpm lint` | 运行 lint |
+| pnpm start | 全量启动后端、桌面端和浏览器端开发服务 |
+| pnpm dev | 并行执行各 workspace 的 dev 脚本 |
+| pnpm build | 构建所有 workspace；桌面端打包前需先准备 sidecar |
+| pnpm --dir apps/desktop prepare-sidecar | 生成当前平台的后端 sidecar |
+| pnpm --dir apps/desktop build | 构建桌面端生产安装包 |
+| pnpm --dir apps/desktop build:debug | 构建桌面端调试安装包 |
+| pnpm test | 运行所有测试（vitest） |
+| pnpm typecheck | 全仓 TypeScript 类型检查 |
+| pnpm lint | 运行 lint |
 
 ## 仓库结构
 
-```
+`
 pi-web-ui/
 ├── apps/
 │   ├── web/                     # Vue 3 前端
@@ -311,26 +242,38 @@ pi-web-ui/
 │   │       ├── services/        # 定时任务调度 / LibreOffice 转换
 │   │       ├── skill-store/     # 技能市场服务
 │   │       └── ws/              # WebSocket（agent + terminal）
+│   └── desktop/                 # Tauri 2.0 桌面端
+│       └── src-tauri/           # Rust 后端 + sidecar
 ├── packages/
 │   └── shared/                  # 跨端共享 TypeScript 类型
+├── docs/
+│   └── images/                  # 文档图片资源
 └── patches/                     # 第三方包补丁
-```
+`
 
 ## 数据库表结构
 
 | 表 | 说明 |
 |---|---|
-| `projects` | 项目（支持软删除） |
-| `sessions` | 会话（父子线程 + 专家绑定 + 软删除） |
-| `messages` | 消息历史（序列号排序） |
-| `models` | LLM 模型配置 |
-| `experts` | 专家角色（预设 + 自定义） |
-| `knowledge_bases` | 知识库定义 |
-| `kb_files` | 知识库文件（解析状态追踪） |
-| `kb_chunks` | 文本分块 |
-| `kb_chunks_fts` | FTS5 全文搜索索引 |
-| `session_kb_bindings` | 会话 ↔ 知识库绑定 |
-| `scheduled_tasks` | 定时任务定义 |
-| `task_logs` | 任务执行日志 |
-| `channels` | 渠道配置（微信/钉钉等） |
-| `channel_conversations` | 渠道用户 ↔ 会话绑定 |
+| projects | 项目（支持软删除） |
+| sessions | 会话（父子线程 + 专家绑定 + 软删除） |
+| messages | 消息历史（序列号排序） |
+| models | LLM 模型配置 |
+| experts | 专家角色（预设 + 自定义） |
+| knowledge_bases | 知识库定义 |
+| kb_files | 知识库文件（解析状态追踪） |
+| kb_chunks | 文本分块 |
+| kb_chunks_fts | FTS5 全文搜索索引 |
+| session_kb_bindings | 会话 ↔ 知识库绑定 |
+| scheduled_tasks | 定时任务定义 |
+| 	ask_logs | 任务执行日志 |
+| channels | 渠道配置（微信/钉钉等） |
+| channel_conversations | 渠道用户 ↔ 会话绑定 |
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 许可证
+
+MIT License
