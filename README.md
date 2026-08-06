@@ -169,11 +169,13 @@ pnpm start
 ```bash
 pnpm --dir apps/server dev    # 仅启动后端
 pnpm --dir apps/web dev       # 仅启动浏览器端
-pnpm --dir apps/desktop dev   # 启动桌面端，并自动启动浏览器端 Vite
+pnpm --dir apps/desktop dev   # 启动桌面端与 Vite，需同时运行 8080 端口的后端
 ```
 
 桌面端开发通常只需要运行 `pnpm start`。不要同时运行独立的浏览器端命令，
-否则可能与 Tauri 自动启动的 Vite 服务争用 `3000` 端口。
+否则可能与 Tauri 自动启动的 Vite 服务争用 `3000` 端口。开发脚本会让 Tauri
+连接 `8080` 端口上的源码后端，以便服务端修改立即生效；开发模式不会启动打包时
+生成的 sidecar。未设置开发服务端口的正式安装包仍会启动内置 sidecar。
 
 ### 构建与打安装包
 

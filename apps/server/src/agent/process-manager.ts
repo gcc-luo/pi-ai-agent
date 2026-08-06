@@ -126,6 +126,16 @@ function isIgnorableStderr(line: string): boolean {
     || /^npm warn deprecated /.test(line);
 }
 
+export function shouldUseWindowsShell(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== "win32") return false;
+
+  const extension = path.win32.extname(command).toLowerCase();
+  return !path.win32.isAbsolute(command) || extension === ".cmd" || extension === ".bat";
+}
+
 export class ProcessManager extends EventEmitter {
   private procs = new Map<string, AgentProcess>();
   private spawn: Spawner;
@@ -278,9 +288,10 @@ export class ProcessManager extends EventEmitter {
       cwd: input.workdir,
       stdio: ["pipe", "pipe", "pipe"],
       env,
-      // Windows resolves `npx`/`pnpm` as .cmd shims that spawn() cannot open
-      // without a shell; enabling it here avoids `spawn npx ENOENT`.
-      shell: process.platform === "win32",
+      // Windows resolves bare commands and .cmd/.bat shims through cmd.exe.
+      // The bundled node.exe is an absolute path and must bypass cmd.exe so
+      // installation directories containing spaces remain a single argument.
+      shell: shouldUseWindowsShell(this.command),
       // Give the agent and every command it starts one process group on POSIX,
       // allowing session shutdown to terminate the complete descendant tree.
       detached: process.platform !== "win32",

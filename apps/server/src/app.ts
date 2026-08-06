@@ -24,7 +24,11 @@ export async function buildApp(config: Config, deps?: AppDeps): Promise<FastifyI
     },
   });
 
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  });
   await app.register(websocket);
   // Multipart upload for skill .zip imports — 50MB ceiling covers any skill
   // bundle including supporting scripts/assets.

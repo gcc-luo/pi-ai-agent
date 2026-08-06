@@ -25,6 +25,8 @@ struct ServerPort(AtomicU16);
 #[derive(Default)]
 struct ServerStartupError(Mutex<Option<String>>);
 
+const EXTERNAL_SERVER_PORT_ENV: &str = "PI_DESKTOP_SERVER_PORT";
+
 #[tauri::command]
 fn get_server_port(
     port: tauri::State<'_, ServerPort>,
@@ -54,6 +56,20 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_server_port])
         .setup(|app| {
             let app_handle = app.handle().clone();
+            let external_port = parse_external_server_port(
+                std::env::var(EXTERNAL_SERVER_PORT_ENV).ok().as_deref(),
+            )
+            .map_err(io::Error::other)?;
+
+            if let Some(port) = external_port {
+                log::info!("Using external development server on port={port}");
+                app_handle
+                    .state::<ServerPort>()
+                    .0
+                    .store(port, Ordering::SeqCst);
+                return Ok(());
+            }
+
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(error) = start_server_sidecar(&app_handle) {
                     let message = format!("Failed to start server sidecar: {error}");
@@ -85,6 +101,21 @@ pub fn run() {
             }
         }
     });
+}
+
+fn parse_external_server_port(value: Option<&str>) -> Result<Option<u16>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let port = value
+        .parse::<u16>()
+        .map_err(|_| format!("{EXTERNAL_SERVER_PORT_ENV} must be a port from 1 to 65535"))?;
+    if port == 0 {
+        return Err(format!(
+            "{EXTERNAL_SERVER_PORT_ENV} must be a port from 1 to 65535"
+        ));
+    }
+    Ok(Some(port))
 }
 
 fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -268,7 +299,7 @@ fn remove_dir_if_exists(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{wait_for_server_port, ServerPort, ServerStartupError};
+    use super::{parse_external_server_port, wait_for_server_port, ServerPort, ServerStartupError};
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
@@ -294,5 +325,17 @@ mod tests {
                 Ok(43123),
             );
         });
+    }
+
+    #[test]
+    fn uses_the_external_server_port_configured_for_desktop_development() {
+        assert_eq!(parse_external_server_port(Some("8080")), Ok(Some(8080)));
+        assert_eq!(parse_external_server_port(None), Ok(None));
+    }
+
+    #[test]
+    fn rejects_an_invalid_external_server_port() {
+        assert!(parse_external_server_port(Some("0")).is_err());
+        assert!(parse_external_server_port(Some("not-a-port")).is_err());
     }
 }

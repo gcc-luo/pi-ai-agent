@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ProcessManager } from "../../src/agent/process-manager.js";
+import { ProcessManager, shouldUseWindowsShell } from "../../src/agent/process-manager.js";
 
 class FakeProcess extends EventEmitter {
   stdin = new PassThrough();
@@ -45,6 +45,15 @@ describe("ProcessManager", () => {
   });
 
   afterEach(() => fs.rmSync(sessionRootDir, { recursive: true, force: true }));
+
+  it("does not use cmd.exe for a bundled Node path containing spaces", () => {
+    expect(shouldUseWindowsShell("D:\\pi\\PI AI Agent\\pi-node.exe", "win32")).toBe(false);
+  });
+
+  it("keeps shell support for Windows npx command shims", () => {
+    expect(shouldUseWindowsShell("npx", "win32")).toBe(true);
+    expect(shouldUseWindowsShell("C:\\tools\\npx.cmd", "win32")).toBe(true);
+  });
 
   it("spawns a process on start", async () => {
     const p = await manager.start({ sessionId: "s1", projectId: "p1", workdir: "/tmp" });
