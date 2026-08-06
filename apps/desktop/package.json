@@ -6,8 +6,8 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "tauri build",
-    "build:debug": "tauri build --debug",
+    "build": "pnpm prepare-sidecar && tauri build",
+    "build:debug": "pnpm prepare-sidecar && tauri build --debug",
     "test": "node --test scripts/*.test.mjs",
     "typecheck": "vue-tsc --noEmit",
     "tauri": "tauri",

@@ -194,13 +194,29 @@ async function smokeTestServer(nodePath, entryPath, bundledRuntimeDir) {
           `Packaged server exited with code ${child.exitCode}\n${output.join("")}`,
         );
       }
+      let response;
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/healthz`);
-        if (response.ok && (await response.json()).ok === true) return;
+        response = await fetch(`http://127.0.0.1:${port}/healthz`);
       } catch {
         // Server is still starting.
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+        continue;
       }
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+      if (!response.ok || (await response.json()).ok !== true) continue;
+
+      const preflight = await fetch(`http://127.0.0.1:${port}/api/config`, {
+        method: "OPTIONS",
+        headers: {
+          Origin: "http://tauri.localhost",
+          "Access-Control-Request-Method": "PUT",
+          "Access-Control-Request-Headers": "content-type",
+        },
+      });
+      const allowedMethods = preflight.headers.get("access-control-allow-methods") ?? "";
+      if (preflight.status === 204 && allowedMethods.includes("PUT")) return;
+      throw new Error(
+        `Packaged server CORS preflight rejected PUT (status ${preflight.status}; methods: ${allowedMethods})`,
+      );
     }
     throw new Error(
       `Packaged server health check timed out\n${output.join("")}`,

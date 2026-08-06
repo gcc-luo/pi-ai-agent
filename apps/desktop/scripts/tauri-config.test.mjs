@@ -17,3 +17,10 @@ test("uses a space-free product name for generated install artifacts", () => {
   assert.equal(/\s/.test(config.productName), false);
   assert.equal(config.app.windows[0].title, "PI AI Agent");
 });
+
+test("refreshes the bundled server runtime before packaging", () => {
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+
+  assert.match(packageJson.scripts.build, /^pnpm prepare-sidecar && tauri build$/);
+  assert.match(packageJson.scripts["build:debug"], /^pnpm prepare-sidecar && tauri build --debug$/);
+});
