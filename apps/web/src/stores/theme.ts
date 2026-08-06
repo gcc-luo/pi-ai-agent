@@ -1,14 +1,15 @@
 import { defineStore } from "pinia";
 
-export type ThemeMode = "light" | "dark" | "gray";
+export type ThemeMode = "light" | "dark" | "gray" | "silver";
 
 export const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: "light", label: "浅色" },
   { value: "dark", label: "深色" },
   { value: "gray", label: "灰色" },
+  { value: "silver", label: "浅灰" },
 ];
 
-const VALID_MODES: Set<string> = new Set(["light", "dark", "gray"]);
+const VALID_MODES: Set<string> = new Set(["light", "dark", "gray", "silver"]);
 
 export const useThemeStore = defineStore("theme", {
   state: () => ({
@@ -25,7 +26,7 @@ export const useThemeStore = defineStore("theme", {
 
   actions: {
     toggle() {
-      const order: ThemeMode[] = ["light", "dark", "gray"];
+      const order: ThemeMode[] = ["light", "dark", "gray", "silver"];
       const index = order.indexOf(this.mode);
       this.mode = order[(index + 1) % order.length] ?? "light";
       this.apply();
