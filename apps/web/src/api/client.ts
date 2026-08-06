@@ -21,15 +21,38 @@ export interface ConfigDto {
   models: ModelOption[];
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+const TRANSIENT_RETRY_MS = 1_000;
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(apiUrl(path), {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, TRANSIENT_RETRY_MS));
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const res = await fetch(apiUrl(path), {
+          method,
+          headers: body ? { "Content-Type": "application/json" } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
+        if (res.status === 204) return undefined as T;
+        return (await res.json()) as T;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (error) {
+      lastError = error;
+      const isTransient =
+        (error instanceof DOMException && error.name === "AbortError")
+        || (error instanceof TypeError && /fetch/i.test(error.message));
+      if (!isTransient || attempt === 1) throw error;
+    }
+  }
+  throw lastError;
 }
 
 export const api = {
