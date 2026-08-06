@@ -1,8 +1,8 @@
-import { ref, computed } from "vue";
+﻿import { ref, computed } from "vue";
 import { messages, type Locale } from "./messages";
 
 const locale = ref<Locale>(
-  (localStorage.getItem("pi-locale") as Locale) ?? "en",
+  (localStorage.getItem("pi-locale") as Locale) ?? "zh",
 );
 
 export function useI18n() {
