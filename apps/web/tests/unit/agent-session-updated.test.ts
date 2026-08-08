@@ -108,6 +108,30 @@ describe("agent store session_updated event", () => {
     expect(agent.runOutcomeFor("s1")).toBeNull();
   });
 
+  it("does not mark a normally suspended session as a failed run", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s1", status: "suspended" });
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.runOutcomeFor("s1")).toBeNull();
+  });
+
+  it("marks a process crash as failed only when it interrupts an active run", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s1", status: "crashed" });
+    expect(agent.runOutcomeFor("s1")).toBe("failed");
+
+    agent.handle({ type: "agent_status", sessionId: "s2", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s2", status: "crashed" });
+    expect(agent.runOutcomeFor("s2")).toBeNull();
+  });
+
   it("clears an empty assistant placeholder when the model request fails", () => {
     const agent = useAgentStore();
 

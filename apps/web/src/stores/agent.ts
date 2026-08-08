@@ -88,6 +88,7 @@ export const useAgentStore = defineStore("agent", {
     runStates: {} as Record<string, "working" | "idle">,
     runStartedAt: {} as Record<string, number>,
     runOutcomes: {} as Record<string, "interrupted" | "failed" | undefined>,
+    runEndedFromWorking: {} as Record<string, boolean>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -340,11 +341,14 @@ export const useAgentStore = defineStore("agent", {
       if (!("sessionId" in e) || !e.sessionId) return;
       const sid = e.sessionId;
       if (e.type === "agent_status") {
+        const wasWorking = this.runStates[sid] === "working";
         this.runStates[sid] = e.status;
         if (e.status === "working") {
+          delete this.runEndedFromWorking[sid];
           delete this.runOutcomes[sid];
           if (!this.runStartedAt[sid]) this.runStartedAt[sid] = Date.now();
         } else {
+          this.runEndedFromWorking[sid] = wasWorking;
           delete this.runStartedAt[sid];
         }
         if (e.status === "idle" && typeof e.durationMs === "number") {
@@ -367,7 +371,16 @@ export const useAgentStore = defineStore("agent", {
       if (e.type === "session_status") {
         if (e.status === "suspended" || e.status === "crashed") {
           this.runStates[sid] = "idle";
-          this.runOutcomes[sid] = "failed";
+          if (e.status === "crashed" && this.runEndedFromWorking[sid] === true) {
+            this.runOutcomes[sid] = "failed";
+          } else if (
+            e.status === "suspended"
+            && this.runOutcomes[sid] === "failed"
+            && !(this.streams[sid] ?? []).some((message) => message.role === "user" && message.status === "error")
+          ) {
+            delete this.runOutcomes[sid];
+          }
+          delete this.runEndedFromWorking[sid];
           delete this.runStartedAt[sid];
         }
         return;
