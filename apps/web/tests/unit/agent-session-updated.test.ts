@@ -16,6 +16,18 @@ describe("agent store session_updated event", () => {
     status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
   });
 
+  it("registers the streaming event listener only once", () => {
+    const agent = useAgentStore();
+    const onEvent = vi.spyOn(wsClient, "onEvent");
+    vi.spyOn(agent, "loadConfig").mockResolvedValue();
+
+    agent.init();
+    agent.init();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(agent.loadConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("replaces the matching session in the list and keeps current in sync", async () => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
       status, headers: { "Content-Type": "application/json" },
@@ -93,6 +105,22 @@ describe("agent store session_updated event", () => {
 
     expect(agent.runStartedAtFor("s1")).toBeNull();
     expect(agent.messagesFor("s1")[0]?.metadata).toMatchObject({ durationMs: 74_000 });
+  });
+
+  it("ignores a repeated message_start boundary for the same assistant message", () => {
+    const agent = useAgentStore();
+    const start = {
+      type: "message_start" as const,
+      sessionId: "s1",
+      messageId: "assistant-1000",
+      role: "assistant" as const,
+      timestamp: 1_000,
+    };
+
+    agent.handle(start);
+    agent.handle(start);
+
+    expect(agent.messagesFor("s1")).toHaveLength(1);
   });
 
   it("keeps an interrupted outcome until the next run starts", () => {

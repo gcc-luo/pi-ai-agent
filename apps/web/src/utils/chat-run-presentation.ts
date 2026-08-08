@@ -9,6 +9,73 @@ export interface ChatRunSource {
   parts?: MessagePart[];
 }
 
+interface ChatMessageSource {
+  id: string;
+  role: "user" | "assistant";
+  createdAt: number;
+  parts?: MessagePart[];
+}
+
+function userMessageSignature(message: ChatMessageSource): string | null {
+  const visibleParts = (message.parts ?? []).flatMap((part) => {
+    if (part.kind === "text") return [`text:${part.text}`];
+    if (part.kind === "image") {
+      return [`image:${part.name}:${part.mediaType}:${part.data}`];
+    }
+    return [];
+  });
+  return visibleParts.length ? JSON.stringify(visibleParts) : null;
+}
+
+/**
+ * A completed assistant turn can exist in both collections after history is
+ * reloaded: the database row has its own id, while the live copy keeps Pi's
+ * stream id. Pi's message timestamp is preserved when the row is persisted,
+ * so use that timestamp as the stable identity and prefer the authoritative
+ * persisted copy.
+ */
+export function mergeChatMessageSources<T extends ChatMessageSource>(
+  persisted: T[],
+  live: T[],
+): T[] {
+  const persistedAssistantTimestamps = new Set(
+    persisted
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.createdAt),
+  );
+  const userPairs: Array<{ persistedIndex: number; liveIndex: number; distance: number }> = [];
+  persisted.forEach((candidate, persistedIndex) => {
+    if (candidate.role !== "user") return;
+    const signature = userMessageSignature(candidate);
+    if (!signature) return;
+    live.forEach((message, liveIndex) => {
+      if (message.role !== "user" || userMessageSignature(message) !== signature) return;
+      const distance = Math.abs(candidate.createdAt - message.createdAt);
+      if (distance <= 10_000) userPairs.push({ persistedIndex, liveIndex, distance });
+    });
+  });
+  userPairs.sort((left, right) => left.distance - right.distance);
+  const matchedPersistedUsers = new Set<number>();
+  const matchedLiveUsers = new Set<number>();
+  for (const pair of userPairs) {
+    if (
+      matchedPersistedUsers.has(pair.persistedIndex)
+      || matchedLiveUsers.has(pair.liveIndex)
+    ) continue;
+    matchedPersistedUsers.add(pair.persistedIndex);
+    matchedLiveUsers.add(pair.liveIndex);
+  }
+
+  const uniqueLive = live.filter((message, liveIndex) => {
+    if (message.role === "assistant") {
+      return !persistedAssistantTimestamps.has(message.createdAt);
+    }
+    return !matchedLiveUsers.has(liveIndex);
+  });
+
+  return [...persisted, ...uniqueLive];
+}
+
 export type AgentActivityLabel =
   | "analyzeRequest"
   | "searchCode"

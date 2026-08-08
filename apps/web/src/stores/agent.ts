@@ -82,6 +82,7 @@ function appendDeltaToKind(parts: MessagePart[], kind: "text" | "thinking", delt
 
 export const useAgentStore = defineStore("agent", {
   state: () => ({
+    initialized: false,
     streams: {} as Record<string, StreamMessage[]>,
     // Kept separately from message streaming: one agent run can produce many
     // assistant messages while it calls tools and resumes generation.
@@ -138,6 +139,12 @@ export const useAgentStore = defineStore("agent", {
   },
   actions: {
     init() {
+      // App.vue can be remounted by development HMR. Registering another
+      // listener on every mount makes each streaming delta append repeatedly
+      // (for example, "Codex" becomes "CodCodCodexexex") until message_end
+      // replaces it with the authoritative final response.
+      if (this.initialized) return;
+      this.initialized = true;
       wsClient.onEvent((e) => this.handle(e));
       this.loadConfig();
     },
@@ -399,6 +406,10 @@ export const useAgentStore = defineStore("agent", {
       }
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
+        // Replayed/repeated transport boundaries must be idempotent. Updating
+        // every later delta by id would otherwise make duplicate rows evolve
+        // into the same visible assistant response.
+        if (list.some((message) => message.id === e.messageId)) return;
         this.streams[sid] = [...list, {
           id: e.messageId,
           role: e.role,

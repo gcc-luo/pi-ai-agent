@@ -4,6 +4,7 @@ import {
   annotateChatRuns,
   buildAgentActivity,
   formatProcessingDuration,
+  mergeChatMessageSources,
 } from "./chat-run-presentation.js";
 
 const user = (id: string) => ({ id, role: "user" as const, metadata: null });
@@ -247,5 +248,56 @@ describe("formatProcessingDuration", () => {
     expect(formatProcessingDuration(1_000)).toBe("1s");
     expect(formatProcessingDuration(74_000)).toBe("1m 14s");
     expect(formatProcessingDuration(3_661_000)).toBe("1h 1m 1s");
+  });
+});
+
+describe("mergeChatMessageSources", () => {
+  it("prefers a persisted assistant message over its live stream copy", () => {
+    const persisted = [{ id: "db-a1", role: "assistant" as const, createdAt: 1_000 }];
+    const live = [
+      { id: "assistant-1000", role: "assistant" as const, createdAt: 1_000 },
+      { id: "assistant-2000", role: "assistant" as const, createdAt: 2_000 },
+    ];
+
+    expect(mergeChatMessageSources(persisted, live).map((message) => message.id)).toEqual([
+      "db-a1",
+      "assistant-2000",
+    ]);
+  });
+
+  it("removes a persisted user message's optimistic live copy", () => {
+    const persisted = [{
+      id: "db-u1",
+      role: "user" as const,
+      createdAt: 1_100,
+      parts: [{ kind: "text" as const, text: "你好" }],
+    }];
+    const live = [{
+      id: "local-u1",
+      role: "user" as const,
+      createdAt: 1_000,
+      parts: [{ kind: "text" as const, text: "你好" }],
+    }];
+
+    expect(mergeChatMessageSources(persisted, live).map((message) => message.id)).toEqual(["db-u1"]);
+  });
+
+  it("matches repeated user text one-to-one without deleting a new prompt", () => {
+    const userMessage = (id: string, createdAt: number) => ({
+      id,
+      role: "user" as const,
+      createdAt,
+      parts: [{ kind: "text" as const, text: "你好" }],
+    });
+    const persisted = [userMessage("db-u1", 1_100)];
+    const live = [
+      userMessage("local-u1", 1_000),
+      userMessage("local-u2", 2_000),
+    ];
+
+    expect(mergeChatMessageSources(persisted, live).map((message) => message.id)).toEqual([
+      "db-u1",
+      "local-u2",
+    ]);
   });
 });

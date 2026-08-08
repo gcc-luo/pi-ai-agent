@@ -24,7 +24,11 @@ import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
-import { annotateChatRuns, formatProcessingDuration } from "../utils/chat-run-presentation.js";
+import {
+  annotateChatRuns,
+  formatProcessingDuration,
+  mergeChatMessageSources,
+} from "../utils/chat-run-presentation.js";
 import ArtifactCard from "./ArtifactCard.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import AgentActivity from "./AgentActivity.vue";
@@ -754,7 +758,7 @@ const allMessages = computed(() => {
     failed: m.status === "error",
     error: m.error,
   }));
-  const all = [...persisted, ...live];
+  const all = mergeChatMessageSources(persisted, live);
   const decorated = all.map((m) => {
     // Extract <artifacts> blocks from assistant text parts
     let artifacts: ArtifactItem[] = [];
@@ -1152,7 +1156,7 @@ const pendingTipLabel = computed(() => {
           :class="m.role"
         >
           <button
-            v-if="messagePlainText(m)"
+            v-if="!m.streaming && messagePlainText(m)"
             type="button"
             class="msg-copy-btn"
             :class="{ copied: copiedMsgId === m.id }"
@@ -1169,7 +1173,7 @@ const pendingTipLabel = computed(() => {
             </svg>
           </button>
           <div
-            v-if="m.createdAt"
+            v-if="m.createdAt && !m.streaming"
             class="msg-time"
             :title="formatTimeFull(m.createdAt)"
           >{{ formatTime(m.createdAt) }}</div>
@@ -1726,6 +1730,39 @@ const pendingTipLabel = computed(() => {
 
 .msg.assistant .msg-actions {
   text-align: left;
+}
+
+/* Match Codex's live-answer rhythm: keep transient metadata out of the way
+   while content is arriving and use one quiet caret as the only text-level
+   progress affordance. The run header remains the primary status indicator. */
+.msg.assistant.streaming .msg-content:last-of-type :deep(p:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(li:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h1:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h2:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h3:last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 13px;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  vertical-align: -2px;
+  animation: streamingCaret 1s steps(2, jump-none) infinite;
+}
+
+@keyframes streamingCaret {
+  50% { opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant.streaming .msg-content:last-of-type :deep(p:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(li:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h1:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h2:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h3:last-child)::after {
+    animation: none;
+  }
 }
 
 /* Copy button: hidden until the message row is hovered (ChatGPT-style) */
