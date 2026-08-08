@@ -1765,7 +1765,7 @@ const pendingTipLabel = computed(() => {
   }
 }
 
-/* Copy button: hidden until the message row is hovered (ChatGPT-style) */
+/* Copy button: always visible in the message actions row */
 .msg-copy-btn {
   display: inline-flex;
   align-items: center;
@@ -1778,11 +1778,10 @@ const pendingTipLabel = computed(() => {
   background: transparent;
   color: var(--text-faint, var(--text-secondary));
   cursor: pointer;
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
-.msg:hover .msg-copy-btn,
 .msg-copy-btn:focus-visible,
 .msg-copy-btn.copied {
   opacity: 1;
