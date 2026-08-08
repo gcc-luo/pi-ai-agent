@@ -29,7 +29,7 @@ export interface AgentActivityItem {
 
 export interface AgentActivity {
   runId: string;
-  status: "running" | "complete" | "failed" | "interrupted";
+  status: "running" | "waiting_permission" | "complete" | "failed" | "interrupted";
   durationMs: number | null;
   currentLabel: AgentActivityLabel;
   operationCount: number;
@@ -57,7 +57,8 @@ interface ChatRunOptions {
   isBusy: boolean;
   activeElapsedMs: number | null;
   expandedRunIds: ReadonlySet<string>;
-  outcome?: "interrupted" | null;
+  outcome?: "interrupted" | "failed" | null;
+  waitingForPermission?: boolean;
 }
 
 function storedDurationMs(message: ChatRunSource): number | null {
@@ -109,7 +110,8 @@ export function buildAgentActivity(
   messages: ChatRunSource[],
   isActive: boolean,
   activeElapsedMs: number | null,
-  outcome: "interrupted" | null = null,
+  outcome: "interrupted" | "failed" | null = null,
+  waitingForPermission = false,
 ): AgentActivity {
   const items: AgentActivityItem[] = [];
   const toolIndexes = new Map<string, number>();
@@ -169,7 +171,15 @@ export function buildAgentActivity(
 
   return {
     runId,
-    status: isActive ? "running" : outcome === "interrupted" ? "interrupted" : failedCount > 0 ? "failed" : "complete",
+    status: waitingForPermission
+      ? "waiting_permission"
+      : isActive
+        ? "running"
+        : outcome === "interrupted"
+          ? "interrupted"
+          : outcome === "failed" || failedCount > 0
+            ? "failed"
+            : "complete",
     durationMs: isActive ? (activeElapsedMs ?? 0) : storedDuration,
     currentLabel: currentTool?.label ?? "analyzeRequest",
     operationCount: tools.length,
@@ -233,6 +243,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       isActive,
       options.activeElapsedMs,
       runId === latestRunId ? (options.outcome ?? null) : null,
+      isActive && options.waitingForPermission === true,
     );
     const lastMessage = messages[lastIndex]!;
     const lastHasVisibleContent = lastMessage.hasVisibleContent

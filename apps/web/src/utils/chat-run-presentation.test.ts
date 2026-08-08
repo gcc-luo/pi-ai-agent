@@ -216,6 +216,30 @@ describe("annotateChatRuns", () => {
       displayDurationMs: 2_000,
     });
   });
+
+  it("distinguishes permission waiting and failed outcomes", () => {
+    const waiting = annotateChatRuns(
+      [user("u1"), activityMessage("a1", [], 2_000)],
+      {
+        isBusy: true,
+        activeElapsedMs: 4_000,
+        expandedRunIds: new Set(),
+        waitingForPermission: true,
+      },
+    );
+    expect(waiting[1]!.activity?.status).toBe("waiting_permission");
+
+    const failed = annotateChatRuns(
+      [user("u1"), activityMessage("a1", [{ kind: "thinking", text: "分析" }], 2_000)],
+      {
+        isBusy: false,
+        activeElapsedMs: null,
+        expandedRunIds: new Set(),
+        outcome: "failed",
+      },
+    );
+    expect(failed[1]!.activity?.status).toBe("failed");
+  });
 });
 
 describe("formatProcessingDuration", () => {

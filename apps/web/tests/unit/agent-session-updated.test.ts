@@ -97,7 +97,7 @@ describe("agent store session_updated event", () => {
 
   it("keeps an interrupted outcome until the next run starts", () => {
     const agent = useAgentStore();
-    vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+    vi.spyOn(wsClient, "send").mockImplementation(() => true);
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
     agent.interrupt("s1");
@@ -165,7 +165,7 @@ describe("agent store session_updated event", () => {
 
   it("requires an explicit UI response for sensitive plugin actions", () => {
     const agent = useAgentStore();
-    const send = vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => true);
     agent.handle({
       type: "permission_request",
       sessionId: "s1",
@@ -186,6 +186,31 @@ describe("agent store session_updated event", () => {
       requestId: "request-1",
       approved: true,
     });
+  });
+
+  it("marks a prompt as failed when the socket is unavailable and allows retry", () => {
+    const agent = useAgentStore();
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => false);
+
+    const messageId = agent.send("s1", "请继续", [{
+      name: "shot.png",
+      mediaType: "image/png",
+      data: "abc",
+    }]);
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.messagesFor("s1")[0]).toMatchObject({ id: messageId, status: "error" });
+
+    send.mockImplementation(() => true);
+    expect(agent.retryUserMessage("s1", messageId)).toBe(true);
+    expect(agent.isSessionBusy("s1")).toBe(true);
+    expect(agent.messagesFor("s1")[0]).toMatchObject({ status: "complete" });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "send",
+      sessionId: "s1",
+      content: "请继续",
+      images: [{ name: "shot.png", mediaType: "image/png", data: "abc" }],
+    }));
   });
 
   it("merges persisted tool results back into Pi message parts", () => {

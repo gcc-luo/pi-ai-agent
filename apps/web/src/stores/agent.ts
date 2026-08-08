@@ -11,9 +11,17 @@ interface StreamMessage {
   status: "streaming" | "complete" | "error";
   createdAt: number;
   metadata: Record<string, unknown> | null;
+  error?: string;
 }
 
 type PermissionRequest = Extract<ServerEvent, { type: "permission_request" }>;
+
+const PROMPT_ERROR_CODES = new Set([
+  "pi_prompt_failed",
+  "pi_prompt_write_failed",
+  "pi_model_error",
+  "project_workdir_missing",
+]);
 
 function partsFromText(text: string): MessagePart[] {
   return text ? [{ kind: "text", text }] : [];
@@ -79,7 +87,7 @@ export const useAgentStore = defineStore("agent", {
     // assistant messages while it calls tools and resumes generation.
     runStates: {} as Record<string, "working" | "idle">,
     runStartedAt: {} as Record<string, number>,
-    runOutcomes: {} as Record<string, "interrupted" | undefined>,
+    runOutcomes: {} as Record<string, "interrupted" | "failed" | undefined>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -121,7 +129,7 @@ export const useAgentStore = defineStore("agent", {
     },
     runStartedAtFor: (state) => (sessionId: string): number | null =>
       state.runStartedAt[sessionId] ?? null,
-    runOutcomeFor: (state) => (sessionId: string): "interrupted" | null =>
+    runOutcomeFor: (state) => (sessionId: string): "interrupted" | "failed" | null =>
       state.runOutcomes[sessionId] ?? null,
     tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
       state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
@@ -184,26 +192,62 @@ export const useAgentStore = defineStore("agent", {
       await this.loadConfig();
     },
     send(sessionId: string, content: string, images?: ImageAttachment[]) {
-      this.appendUser(sessionId, content, images);
+      const messageId = this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
       this.runStartedAt[sessionId] = Date.now();
       delete this.runOutcomes[sessionId];
       const event: Record<string, unknown> = { type: "send", sessionId, content };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
-      wsClient.send(event as any);
+      if (!wsClient.send(event as any)) {
+        this.markUserMessageFailed(sessionId, messageId, "connection_unavailable");
+      }
+      return messageId;
+    },
+    retryUserMessage(sessionId: string, messageId: string) {
+      const message = (this.streams[sessionId] ?? []).find((item) => item.id === messageId && item.role === "user");
+      if (!message) return false;
+      const content = message.parts
+        .filter((part): part is Extract<MessagePart, { kind: "text" }> => part.kind === "text")
+        .map((part) => part.text)
+        .join("\n");
+      const images = message.parts
+        .filter((part): part is Extract<MessagePart, { kind: "image" }> => part.kind === "image")
+        .map((part) => ({ name: part.name, mediaType: part.mediaType, data: part.data }));
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).map((item) =>
+        item.id === messageId ? { ...item, status: "complete" as const, error: undefined } : item,
+      );
+      this.runStates[sessionId] = "working";
+      this.runStartedAt[sessionId] = Date.now();
+      delete this.runOutcomes[sessionId];
+      const sent = wsClient.send({
+        type: "send",
+        sessionId,
+        content,
+        ...(this.currentModel ? { model: this.currentModel } : {}),
+        ...(images.length ? { images } : {}),
+      });
+      if (!sent) this.markUserMessageFailed(sessionId, messageId, "connection_unavailable");
+      return sent;
+    },
+    removeLocalMessage(sessionId: string, messageId: string) {
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).filter((message) => message.id !== messageId);
     },
     interrupt(sessionId: string) {
       const pending = this.pendingPermissions[sessionId];
       if (pending) this.respondToPermission(sessionId, pending.requestId, false);
       this.runOutcomes[sessionId] = "interrupted";
-      wsClient.send({ type: "interrupt", sessionId });
+      if (!wsClient.send({ type: "interrupt", sessionId })) {
+        this.runStates[sessionId] = "idle";
+        delete this.runStartedAt[sessionId];
+      }
     },
     respondToPermission(sessionId: string, requestId: string, approved: boolean) {
       const pending = this.pendingPermissions[sessionId];
-      if (!pending || pending.requestId !== requestId) return;
-      delete this.pendingPermissions[sessionId];
-      wsClient.send({ type: "permission_response", sessionId, requestId, approved });
+      if (!pending || pending.requestId !== requestId) return false;
+      const sent = wsClient.send({ type: "permission_response", sessionId, requestId, approved });
+      if (sent) delete this.pendingPermissions[sessionId];
+      return sent;
     },
     subscribe(sessionId: string) {
       wsClient.subscribe(sessionId);
@@ -232,6 +276,16 @@ export const useAgentStore = defineStore("agent", {
         metadata: null,
       };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
+      return msg.id;
+    },
+    markUserMessageFailed(sessionId: string, messageId: string, error: string) {
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).map((message) =>
+        message.id === messageId
+          ? { ...message, status: "error" as const, error }
+          : message,
+      );
+      this.runStates[sessionId] = "idle";
+      delete this.runStartedAt[sessionId];
     },
     handle(e: ServerEvent) {
       if (e.type === "permission_request") {
@@ -253,6 +307,11 @@ export const useAgentStore = defineStore("agent", {
           || e.code === "pi_model_error"
           || e.code === "project_workdir_missing"
         )) {
+          this.runOutcomes[e.sessionId] = "failed";
+          const lastUser = [...(this.streams[e.sessionId] ?? [])]
+            .reverse()
+            .find((message) => message.role === "user");
+          if (lastUser) this.markUserMessageFailed(e.sessionId, lastUser.id, e.message);
           this.runStates[e.sessionId] = "idle";
           delete this.runStartedAt[e.sessionId];
           // Provider failures arrive after Pi has emitted message_start. Drop
@@ -308,6 +367,7 @@ export const useAgentStore = defineStore("agent", {
       if (e.type === "session_status") {
         if (e.status === "suspended" || e.status === "crashed") {
           this.runStates[sid] = "idle";
+          this.runOutcomes[sid] = "failed";
           delete this.runStartedAt[sid];
         }
         return;
@@ -440,6 +500,11 @@ export const useAgentStore = defineStore("agent", {
     },
     dismissError(index: number) {
       this.errors = this.errors.filter((_, i) => i !== index);
+    },
+    dismissPromptErrors(sessionId: string) {
+      this.errors = this.errors.filter((error) =>
+        error.sessionId !== sessionId || !PROMPT_ERROR_CODES.has(error.code),
+      );
     },
     clearErrors() {
       this.errors = [];
