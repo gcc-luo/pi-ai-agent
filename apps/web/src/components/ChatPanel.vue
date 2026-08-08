@@ -833,8 +833,14 @@ watch(allMessages, async (msgs) => {
   if (!toValidate.length) return;
   try {
     const results = await api.validateArtifacts(props.projectId, toValidate);
+    let hasNewFile = false;
     for (const r of results) {
       artifactValidation.value[r.path] = r;
+      if (r.exists) hasNewFile = true;
+    }
+    if (hasNewFile) {
+      agent.fileChangeSeq++;
+      agent.lastFileChange = { sessionId: props.sessionId, toolName: "artifact-validation", at: Date.now() };
     }
   } catch {
     // Validation failure is non-fatal — cards still render with default state
