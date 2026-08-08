@@ -16,6 +16,18 @@ describe("agent store session_updated event", () => {
     status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
   });
 
+  it("registers the streaming event listener only once", () => {
+    const agent = useAgentStore();
+    const onEvent = vi.spyOn(wsClient, "onEvent");
+    vi.spyOn(agent, "loadConfig").mockResolvedValue();
+
+    agent.init();
+    agent.init();
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(agent.loadConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("replaces the matching session in the list and keeps current in sync", async () => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
       status, headers: { "Content-Type": "application/json" },
@@ -95,9 +107,25 @@ describe("agent store session_updated event", () => {
     expect(agent.messagesFor("s1")[0]?.metadata).toMatchObject({ durationMs: 74_000 });
   });
 
+  it("ignores a repeated message_start boundary for the same assistant message", () => {
+    const agent = useAgentStore();
+    const start = {
+      type: "message_start" as const,
+      sessionId: "s1",
+      messageId: "assistant-1000",
+      role: "assistant" as const,
+      timestamp: 1_000,
+    };
+
+    agent.handle(start);
+    agent.handle(start);
+
+    expect(agent.messagesFor("s1")).toHaveLength(1);
+  });
+
   it("keeps an interrupted outcome until the next run starts", () => {
     const agent = useAgentStore();
-    vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+    vi.spyOn(wsClient, "send").mockImplementation(() => true);
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
     agent.interrupt("s1");
@@ -106,6 +134,30 @@ describe("agent store session_updated event", () => {
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
     expect(agent.runOutcomeFor("s1")).toBeNull();
+  });
+
+  it("does not mark a normally suspended session as a failed run", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s1", status: "suspended" });
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.runOutcomeFor("s1")).toBeNull();
+  });
+
+  it("marks a process crash as failed only when it interrupts an active run", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s1", status: "crashed" });
+    expect(agent.runOutcomeFor("s1")).toBe("failed");
+
+    agent.handle({ type: "agent_status", sessionId: "s2", status: "idle" });
+    agent.handle({ type: "session_status", sessionId: "s2", status: "crashed" });
+    expect(agent.runOutcomeFor("s2")).toBeNull();
   });
 
   it("clears an empty assistant placeholder when the model request fails", () => {
@@ -165,7 +217,7 @@ describe("agent store session_updated event", () => {
 
   it("requires an explicit UI response for sensitive plugin actions", () => {
     const agent = useAgentStore();
-    const send = vi.spyOn(wsClient, "send").mockImplementation(() => undefined);
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => true);
     agent.handle({
       type: "permission_request",
       sessionId: "s1",
@@ -186,6 +238,31 @@ describe("agent store session_updated event", () => {
       requestId: "request-1",
       approved: true,
     });
+  });
+
+  it("marks a prompt as failed when the socket is unavailable and allows retry", () => {
+    const agent = useAgentStore();
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => false);
+
+    const messageId = agent.send("s1", "请继续", [{
+      name: "shot.png",
+      mediaType: "image/png",
+      data: "abc",
+    }]);
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.messagesFor("s1")[0]).toMatchObject({ id: messageId, status: "error" });
+
+    send.mockImplementation(() => true);
+    expect(agent.retryUserMessage("s1", messageId)).toBe(true);
+    expect(agent.isSessionBusy("s1")).toBe(true);
+    expect(agent.messagesFor("s1")[0]).toMatchObject({ status: "complete" });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "send",
+      sessionId: "s1",
+      content: "请继续",
+      images: [{ name: "shot.png", mediaType: "image/png", data: "abc" }],
+    }));
   });
 
   it("merges persisted tool results back into Pi message parts", () => {

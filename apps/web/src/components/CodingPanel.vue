@@ -10,6 +10,7 @@ import { useSkillStore } from "../stores/skill.js";
 import ChatKbPicker from "./ChatKbPicker.vue";
 import ChatExpertPicker from "./ChatExpertPicker.vue";
 import { activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
+import { mergeChatMessageSources } from "../utils/chat-run-presentation.js";
 import type { MessagePart } from "@pi-web-ui/shared";
 
 const props = defineProps<{
@@ -210,7 +211,7 @@ const allMessages = computed(() => {
     streaming: m.status === "streaming",
     createdAt: m.createdAt,
   }));
-  return [...persisted, ...live];
+  return mergeChatMessageSources(persisted, live);
 });
 
 onMounted(async () => {

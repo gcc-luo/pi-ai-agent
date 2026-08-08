@@ -24,7 +24,7 @@ describe("agent model selection", () => {
       }
       return json([]);
     }));
-    const send = vi.spyOn(wsClient, "send").mockImplementation(() => {});
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => true);
     const agent = useAgentStore();
 
     await agent.switchModel("qwen3.7-plus", "session-1");
@@ -38,7 +38,7 @@ describe("agent model selection", () => {
   });
 
   it("includes the selected model in every prompt", () => {
-    const send = vi.spyOn(wsClient, "send").mockImplementation(() => {});
+    const send = vi.spyOn(wsClient, "send").mockImplementation(() => true);
     const agent = useAgentStore();
     agent.currentModel = "qwen3.7-plus";
 

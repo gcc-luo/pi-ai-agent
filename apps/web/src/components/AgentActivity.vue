@@ -10,6 +10,7 @@ import {
 const props = defineProps<{
   activity: AgentActivity;
   expanded: boolean;
+  canToggle: boolean;
 }>();
 
 defineEmits<{ (event: "toggle"): void }>();
@@ -65,16 +66,18 @@ function toolPreview(args: unknown): string {
 
 <template>
   <section class="agent-activity" :class="activity.status">
-    <button
-      type="button"
+    <component
+      :is="canToggle ? 'button' : 'div'"
+      :type="canToggle ? 'button' : undefined"
       class="activity-summary"
-      :class="activity.status"
-      :aria-expanded="expanded"
-      :aria-controls="detailsId"
-      @click="$emit('toggle')"
+      :class="[activity.status, { toggleable: canToggle }]"
+      :aria-expanded="canToggle ? expanded : undefined"
+      :aria-controls="canToggle ? detailsId : undefined"
+      @click="canToggle && $emit('toggle')"
     >
       <span class="activity-state-icon" aria-hidden="true">
         <span v-if="activity.status === 'running'" class="activity-spinner" />
+        <span v-else-if="activity.status === 'waiting_permission'">…</span>
         <span v-else-if="activity.status === 'failed'">!</span>
         <span v-else-if="activity.status === 'interrupted'">■</span>
         <span v-else>✓</span>
@@ -82,12 +85,24 @@ function toolPreview(args: unknown): string {
       <span class="activity-state">
         {{ activity.status === 'running'
           ? t('chat.activityRunning')
+          : activity.status === 'waiting_permission'
+            ? t('chat.activityWaitingPermission')
+            : activity.status === 'failed'
+              ? t('chat.activityFailed')
           : activity.status === 'interrupted'
             ? t('chat.activityInterrupted')
-            : t('chat.processedDuration', { duration: formatProcessingDuration(activity.durationMs ?? 0) }) }}
+            : activity.durationMs === null
+              ? t('chat.activityCompleted')
+              : t('chat.processedDuration', { duration: formatProcessingDuration(activity.durationMs) }) }}
       </span>
-      <span class="activity-separator" aria-hidden="true">·</span>
-      <span>{{ t('chat.activityOperationCount', { count: activity.operationCount }) }}</span>
+      <template v-if="activity.status === 'running' || activity.status === 'waiting_permission'">
+        <span class="activity-separator" aria-hidden="true">·</span>
+        <span>{{ formatProcessingDuration(activity.durationMs ?? 0) }}</span>
+      </template>
+      <template v-if="activity.items.length > 0">
+        <span class="activity-separator" aria-hidden="true">·</span>
+        <span>{{ t('chat.activityStepCount', { count: activity.items.length }) }}</span>
+      </template>
       <template v-if="activity.failedCount > 0">
         <span class="activity-separator" aria-hidden="true">·</span>
         <span class="activity-failures">{{ t('chat.activityFailureCount', { count: activity.failedCount }) }}</span>
@@ -98,10 +113,10 @@ function toolPreview(args: unknown): string {
           {{ t('chat.activityCurrent', { action: activityLabel(activity.currentLabel) }) }}
         </span>
       </template>
-      <svg class="activity-chevron" :class="{ expanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <svg v-if="canToggle" class="activity-chevron" :class="{ expanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
-    </button>
+    </component>
 
     <div v-if="expanded" :id="detailsId" class="activity-details">
       <div
@@ -169,12 +184,16 @@ function toolPreview(args: unknown): string {
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  cursor: pointer;
+  cursor: default;
   text-align: left;
 }
 
-.activity-summary:hover,
-.activity-summary:focus-visible {
+.activity-summary.toggleable {
+  cursor: pointer;
+}
+
+.activity-summary.toggleable:hover,
+.activity-summary.toggleable:focus-visible {
   color: var(--text-secondary);
 }
 

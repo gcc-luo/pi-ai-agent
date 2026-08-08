@@ -10,6 +10,7 @@ import RenameProjectDialog from "./RenameProjectDialog.vue";
 import RenameSessionDialog from "./RenameSessionDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
+import { renderMarkdown } from "../utils/markdown.js";
 import type { ProjectDto, SessionDto, MessageDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
@@ -86,13 +87,13 @@ const previewStyle = computed(() => {
   const rect = previewAnchorRect.value;
   if (!rect) return {};
 
-  const cardWidth = Math.min(620, Math.max(280, window.innerWidth - 24));
+  const cardWidth = Math.min(310, Math.max(220, window.innerWidth - 24));
   let left = rect.right + 12;
   if (left + cardWidth > window.innerWidth - 12) {
     left = Math.max(12, window.innerWidth - cardWidth - 12);
   }
 
-  const cardHeight = 236;
+  const cardHeight = 160;
   const top = Math.min(Math.max(12, rect.top - 4), Math.max(12, window.innerHeight - cardHeight - 12));
   return {
     left: `${left}px`,
@@ -361,7 +362,11 @@ function startDeleteSession(s: SessionDto) {
           <span v-else-if="previewState?.status === 'error'" class="session-preview-muted">
             {{ t('sidebar.previewError') }}
           </span>
-          <span v-else class="session-preview-message">{{ previewState?.content }}</span>
+          <div
+            v-else
+            class="session-preview-message"
+            v-html="renderMarkdown(previewState?.content ?? '')"
+          />
         </div>
       </div>
     </Teleport>
@@ -705,12 +710,12 @@ function startDeleteSession(s: SessionDto) {
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 236px;
-  padding: 20px 18px;
+  gap: 8px;
+  max-height: 160px;
+  padding: 12px;
   overflow: hidden;
   border: 1px solid var(--border-active);
-  border-radius: 18px;
+  border-radius: 12px;
   background: var(--bg-elevated);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22), 0 4px 14px rgba(0, 0, 0, 0.12);
   color: var(--text-primary);
@@ -720,7 +725,7 @@ function startDeleteSession(s: SessionDto) {
 
 .session-preview-title {
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
 }
@@ -729,16 +734,102 @@ function startDeleteSession(s: SessionDto) {
   min-height: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 16px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .session-preview-message {
-  display: -webkit-box;
+  display: block;
+  max-height: 104px;
   overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.session-preview-message :deep(p) {
+  margin: 0 0 5px;
+}
+
+.session-preview-message :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.session-preview-message :deep(h1),
+.session-preview-message :deep(h2),
+.session-preview-message :deep(h3),
+.session-preview-message :deep(h4),
+.session-preview-message :deep(h5),
+.session-preview-message :deep(h6) {
+  margin: 0 0 5px;
+  color: var(--text-primary);
+  font-size: 1.08em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.session-preview-message :deep(ul),
+.session-preview-message :deep(ol) {
+  margin: 3px 0 6px;
+  padding-left: 18px;
+}
+
+.session-preview-message :deep(li) {
+  margin: 1px 0;
+}
+
+.session-preview-message :deep(blockquote) {
+  margin: 4px 0;
+  padding-left: 7px;
+  border-left: 2px solid var(--border-active);
+  color: var(--text-muted);
+}
+
+.session-preview-message :deep(code) {
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--bg-surface);
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.session-preview-message :deep(pre) {
+  margin: 4px 0;
+  padding: 6px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--bg-surface);
   white-space: pre-wrap;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
+}
+
+.session-preview-message :deep(pre code) {
+  padding: 0;
+  background: transparent;
+}
+
+.session-preview-message :deep(.code-copy-btn) {
+  display: none;
+}
+
+.session-preview-message :deep(a) {
+  color: var(--accent);
+}
+
+.session-preview-message :deep(hr) {
+  height: 1px;
+  margin: 5px 0;
+  border: 0;
+  background: var(--border-default);
+}
+
+.session-preview-message :deep(table) {
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.session-preview-message :deep(th),
+.session-preview-message :deep(td) {
+  padding: 2px 4px;
+  border: 1px solid var(--border-default);
 }
 
 .session-preview-muted {
