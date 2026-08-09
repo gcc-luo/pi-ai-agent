@@ -213,8 +213,8 @@ async function handleSend() {
 .btn-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
+  border: 1.5px solid rgba(0, 0, 0, 0.3);
+  border-top-color: var(--bg-void);
   border-radius: 50%;
   display: inline-block;
   margin-right: 6px;

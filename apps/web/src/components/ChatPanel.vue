@@ -1776,11 +1776,11 @@ const pendingTipLabel = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-faint, var(--text-secondary));
   cursor: pointer;
@@ -2189,9 +2189,9 @@ const pendingTipLabel = computed(() => {
   justify-content: center;
   width: auto;
   min-width: 72px;
-  height: 26px;
+  height: 28px;
   gap: 5px;
-  padding: 0 9px;
+  padding: 0 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2201,7 +2201,7 @@ const pendingTipLabel = computed(() => {
   flex-shrink: 0;
 }
 .tool-btn-label {
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .tool-btn:hover {
