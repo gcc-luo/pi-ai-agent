@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { useConnectionStore } from "../stores/connection.js";
 import { useI18n } from "../i18n/index.js";
 import { useTrashStore } from "../stores/trash.js";
 import SettingsDialog from "./SettingsDialog.vue";
+import UpdateDialog from "./UpdateDialog.vue";
+import { useUpdateStore } from "../stores/update.js";
+import { isTauri } from "../utils/platform.js";
 
 defineProps<{
   activeNav: "chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash";
@@ -17,6 +20,24 @@ const connection = useConnectionStore();
 const { t } = useI18n();
 const trashStore = useTrashStore();
 const showSettings = ref(false);
+const showUpdateDialog = ref(false);
+const updateStore = useUpdateStore();
+
+onMounted(async () => {
+  if (isTauri()) {
+    await updateStore.getAppVersion();
+    await updateStore.checkForUpdate();
+    if (updateStore.isAvailable) {
+      showUpdateDialog.value = true;
+    }
+  }
+});
+
+watch(() => updateStore.status, (newStatus) => {
+  if (newStatus === 'available' || newStatus === 'downloading' || newStatus === 'ready' || newStatus === 'installing' || newStatus === 'error') {
+    showUpdateDialog.value = true;
+  }
+});
 </script>
 
 <template>
@@ -163,6 +184,10 @@ const showSettings = ref(false);
     </div>
 
     <SettingsDialog :show="showSettings" @close="showSettings = false" />
+    <UpdateDialog
+      :show="showUpdateDialog || updateStore.isDownloading || updateStore.isReady || updateStore.status === 'installing' || updateStore.status === 'error'"
+      @close="showUpdateDialog = false"
+    />
   </nav>
 </template>
 

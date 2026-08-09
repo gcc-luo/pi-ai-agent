@@ -788,6 +788,24 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.workModeDesc": "Switch between office and coding interface",
     "settings.modeOffice": "Office",
     "settings.modeCoding": "Coding",
+    // Update
+    "update.title": "Update Available",
+    "update.releaseNotes": "Release Notes",
+    "update.later": "Later",
+    "update.downloadInstall": "Download & Install",
+    "update.downloading": "Downloading update...",
+    "update.readyToInstall": "Update ready to install",
+    "update.restartHint": "The application will restart to apply the update",
+    "update.restartNow": "Restart Now",
+    "update.installing": "Installing update...",
+    "update.error": "Update failed",
+    "update.close": "Close",
+    "settings.checkUpdate": "Check for Updates",
+    "settings.checking": "Checking...",
+    "settings.noUpdate": "No updates available",
+    "settings.newVersion": "New version available",
+    "settings.currentVersion": "Current Version",
+
 
     // Coding mode
     "coding.thinking": "thinking...",
@@ -1579,6 +1597,24 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.workModeDesc": "切换日常办公与开发者 Coding 界面",
     "settings.modeOffice": "办公",
     "settings.modeCoding": "Coding",
+    // Update
+    "update.title": "发现新版本",
+    "update.releaseNotes": "更新说明",
+    "update.later": "稍后更新",
+    "update.downloadInstall": "下载并安装",
+    "update.downloading": "正在下载更新...",
+    "update.readyToInstall": "更新已就绪，可以安装",
+    "update.restartHint": "应用将重启以完成更新",
+    "update.restartNow": "重启并完成更新",
+    "update.installing": "正在安装更新...",
+    "update.error": "更新失败",
+    "update.close": "关闭",
+    "settings.checkUpdate": "检查更新",
+    "settings.checking": "检查中...",
+    "settings.noUpdate": "已是最新版本",
+    "settings.newVersion": "发现新版本",
+    "settings.currentVersion": "当前版本",
+
 
     // Coding 模式
     "coding.thinking": "思考中...",
