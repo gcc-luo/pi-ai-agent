@@ -28,6 +28,10 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
@@ -67,6 +71,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
 
       - run: pnpm install --frozen-lockfile
 
