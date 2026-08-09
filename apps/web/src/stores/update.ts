@@ -25,6 +25,9 @@ export const useUpdateStore = defineStore("update", () => {
   const errorMessage = ref<string | null>(null);
   const currentVersion = ref<string | null>(null);
 
+  // Keep the update object alive across download → install
+  let pendingUpdate: any = null;
+
   const isAvailable = computed(() => status.value === "available");
   const isDownloading = computed(() => status.value === "downloading");
   const isReady = computed(() => status.value === "ready");
@@ -34,12 +37,14 @@ export const useUpdateStore = defineStore("update", () => {
 
     status.value = "checking";
     errorMessage.value = null;
+    pendingUpdate = null;
 
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
 
       if (update?.available) {
+        pendingUpdate = update;
         updateInfo.value = {
           version: update.version,
           date: update.date ?? null,
@@ -57,25 +62,17 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   async function downloadAndInstall(): Promise<void> {
-    if (!isTauri() || !updateInfo.value) return;
+    if (!isTauri() || !pendingUpdate) return;
 
     status.value = "downloading";
     downloadProgress.value = 0;
     errorMessage.value = null;
 
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-
-      if (!update?.available) {
-        status.value = "no-update";
-        return;
-      }
-
       let downloadedBytes = 0;
       let totalBytes = 0;
 
-      await update.download((event) => {
+      await pendingUpdate.download((event: any) => {
         if (event.event === "Started") {
           totalBytes = event.data.contentLength ?? 0;
           downloadedBytes = 0;
@@ -96,17 +93,12 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   async function installAndRestart(): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri() || !pendingUpdate) return;
 
     status.value = "installing";
 
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-
-      if (!update?.available) return;
-
-      await update.install();
+      await pendingUpdate.install();
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (error) {
@@ -128,6 +120,7 @@ export const useUpdateStore = defineStore("update", () => {
   function reset() {
     status.value = "idle";
     errorMessage.value = null;
+    pendingUpdate = null;
   }
 
   return {

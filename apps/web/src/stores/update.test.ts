@@ -24,6 +24,23 @@ vi.mock("@tauri-apps/api/app", () => ({
   getVersion: mockGetVersion,
 }));
 
+function createMockUpdate() {
+  mockInstall.mockResolvedValue(undefined);
+  mockDownload.mockImplementation(async (onEvent: any) => {
+    onEvent({ event: "Started", data: { contentLength: 1000 } });
+    onEvent({ event: "Progress", data: { chunkLength: 500 } });
+    onEvent({ event: "Progress", data: { chunkLength: 500 } });
+  });
+  return {
+    available: true,
+    version: "1.3.0",
+    date: "2026-08-10",
+    body: "Bug fixes and improvements",
+    download: mockDownload,
+    install: mockInstall,
+  };
+}
+
 describe("useUpdateStore", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -42,14 +59,7 @@ describe("useUpdateStore", () => {
   });
 
   it("detects available update", async () => {
-    mockCheck.mockResolvedValue({
-      available: true,
-      version: "1.3.0",
-      date: "2026-08-10",
-      body: "Bug fixes and improvements",
-      download: mockDownload,
-      install: mockInstall,
-    });
+    mockCheck.mockResolvedValue(createMockUpdate());
 
     const store = useUpdateStore();
     await store.checkForUpdate();
@@ -61,9 +71,7 @@ describe("useUpdateStore", () => {
   });
 
   it("handles no update available", async () => {
-    mockCheck.mockResolvedValue({
-      available: false,
-    });
+    mockCheck.mockResolvedValue({ available: false });
 
     const store = useUpdateStore();
     await store.checkForUpdate();
@@ -85,73 +93,65 @@ describe("useUpdateStore", () => {
   });
 
   it("downloads update with progress", async () => {
-    mockCheck.mockResolvedValue({
-      available: true,
-      version: "1.3.0",
-      download: mockDownload.mockImplementation(async (onEvent: any) => {
-        onEvent({ event: "Started", data: { contentLength: 1000 } });
-        onEvent({ event: "Progress", data: { chunkLength: 500 } });
-        onEvent({ event: "Progress", data: { chunkLength: 500 } });
-      }),
-      install: mockInstall,
-    });
+    mockCheck.mockResolvedValue(createMockUpdate());
 
     const store = useUpdateStore();
-    store.updateInfo = { version: "1.3.0", date: null, body: "" };
+    await store.checkForUpdate();
     await store.downloadAndInstall();
 
     expect(store.status).toBe("ready");
     expect(store.downloadProgress).toBe(100);
     expect(store.isReady).toBe(true);
+    expect(mockDownload).toHaveBeenCalled();
   });
 
   it("handles download failure", async () => {
-    mockCheck.mockResolvedValue({
-      available: true,
-      version: "1.3.0",
-      download: mockDownload.mockRejectedValue(new Error("Download failed")),
-      install: mockInstall,
-    });
+    const update = createMockUpdate();
+    update.download = mockDownload.mockRejectedValue(new Error("Download failed"));
+    mockCheck.mockResolvedValue(update);
 
     const store = useUpdateStore();
-    store.updateInfo = { version: "1.3.0", date: null, body: "" };
+    await store.checkForUpdate();
     await store.downloadAndInstall();
 
     expect(store.status).toBe("error");
     expect(store.errorMessage).toBe("Download failed");
   });
 
-  it("installs and restarts", async () => {
-    mockCheck.mockResolvedValue({
-      available: true,
-      version: "1.3.0",
-      download: mockDownload,
-      install: mockInstall.mockResolvedValue(undefined),
-    });
-    mockRelaunch.mockResolvedValue(undefined);
+  it("reuses same update object for install after download", async () => {
+    mockCheck.mockResolvedValue(createMockUpdate());
 
     const store = useUpdateStore();
-    store.updateInfo = { version: "1.3.0", date: null, body: "" };
+    await store.checkForUpdate();
+    await store.downloadAndInstall();
     await store.installAndRestart();
 
-    expect(mockInstall).toHaveBeenCalled();
-    expect(mockRelaunch).toHaveBeenCalled();
+    // check should only be called once (during checkForUpdate)
+    expect(mockCheck).toHaveBeenCalledTimes(1);
+    expect(mockInstall).toHaveBeenCalledTimes(1);
+    expect(mockRelaunch).toHaveBeenCalledTimes(1);
   });
 
   it("handles install failure", async () => {
-    mockCheck.mockResolvedValue({
-      available: true,
-      version: "1.3.0",
-      download: mockDownload,
-      install: mockInstall.mockRejectedValue(new Error("Install failed")),
-    });
+    const update = createMockUpdate();
+    update.install = mockInstall.mockRejectedValue(new Error("Install failed"));
+    mockCheck.mockResolvedValue(update);
 
     const store = useUpdateStore();
-    store.updateInfo = { version: "1.3.0", date: null, body: "" };
+    await store.checkForUpdate();
+    await store.downloadAndInstall();
     await store.installAndRestart();
 
     expect(store.status).toBe("error");
     expect(store.errorMessage).toBe("Install failed");
+  });
+
+  it("does not install without prior download", async () => {
+    const store = useUpdateStore();
+    await store.installAndRestart();
+
+    expect(mockInstall).not.toHaveBeenCalled();
+    expect(mockRelaunch).not.toHaveBeenCalled();
   });
 
   it("fetches app version", async () => {
@@ -163,11 +163,11 @@ describe("useUpdateStore", () => {
     expect(store.currentVersion).toBe("1.2.5");
   });
 
-  it("resets state correctly", () => {
-    const store = useUpdateStore();
-    store.status = "error";
-    store.errorMessage = "Some error";
+  it("resets state correctly", async () => {
+    mockCheck.mockResolvedValue(createMockUpdate());
 
+    const store = useUpdateStore();
+    await store.checkForUpdate();
     store.reset();
 
     expect(store.status).toBe("idle");
