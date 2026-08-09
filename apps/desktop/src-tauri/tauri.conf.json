@@ -50,7 +50,7 @@
       "endpoints": [
         "https://github.com/gcc-luo/pi-web-ui/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGMzA3REVBRjc3QjVGQzYKUldUR1gzdjM2bjB3djJRUDcvMjQvRmU2aGFweXRwOFJRWUZ0SktBR0V3bXhlQjVDcjlyaGpWVVIK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFERTRFRkIwMUZDQTYzNTAKUldSUVk4b2ZzTy9rcmZYdDA3VUxzTVFQZzhFYU5qMUIxWjl6RUQ4OFhsQnI5WERGWnNEdm1hcXgK"
     }
   }
 }
