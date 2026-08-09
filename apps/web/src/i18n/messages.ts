@@ -22,6 +22,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sidebar.connected": "Connected",
     "sidebar.connecting": "Connecting",
     "sidebar.disconnected": "Disconnected",
+    "common.close": "Close",
+    "sidebar.selectProject": "Select project",
+    "sidebar.manageProjects": "Manage projects",
+    "sidebar.projectPlaceholder…": "Project name…",
 
     // Header
     "header.files": "FILES",
@@ -819,6 +823,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sidebar.connected": "已连接",
     "sidebar.connecting": "连接中",
     "sidebar.disconnected": "已断开",
+    "common.close": "关闭",
+    "sidebar.selectProject": "选择项目",
+    "sidebar.manageProjects": "管理项目",
+    "sidebar.projectPlaceholder…": "项目名称…",
 
     "header.files": "文件",
 
