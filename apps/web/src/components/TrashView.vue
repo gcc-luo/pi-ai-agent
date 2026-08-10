@@ -872,7 +872,7 @@ async function confirmDestroySelected() {
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
   border: 1px solid transparent;

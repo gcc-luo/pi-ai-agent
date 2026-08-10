@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, reactive, onBeforeUnmount } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount } from "vue";
 import { api } from "../api/client.js";
 import { useProjectStore } from "../stores/project.js";
 import { useSessionStore } from "../stores/session.js";
 import { useAgentStore } from "../stores/agent.js";
 import FileTree from "./FileTree.vue";
-import NewProjectDialog from "./NewProjectDialog.vue";
-import RenameProjectDialog from "./RenameProjectDialog.vue";
 import RenameSessionDialog from "./RenameSessionDialog.vue";
+import ProjectManagerDialog from "./ProjectManagerDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
 import { renderMarkdown } from "../utils/markdown.js";
-import type { ProjectDto, SessionDto, MessageDto } from "@pi-web-ui/shared";
+import type { SessionDto, MessageDto } from "@pi-web-ui/shared";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -20,7 +19,8 @@ const { t } = useI18n();
 
 const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
 
-const projectsCollapsed = ref(false);
+const showProjectDropdown = ref(false);
+const showProjectManager = ref(false);
 const sessionsCollapsed = ref(false);
 const filesCollapsed = ref(false);
 
@@ -32,32 +32,17 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "select-project", id: string): void;
   (e: "select-session", id: string): void;
-  (e: "create-project", name: string, workdir: string): void;
-  (e: "rename-project", id: string, name: string): void;
-  (e: "delete-project", id: string): void;
   (e: "create-session"): void;
   (e: "rename-session", id: string, title: string): void;
   (e: "delete-session", id: string): void;
   (e: "select-file", path: string): void;
 }>();
 
-const showNewProject = ref(false);
-const renameTarget = ref<ProjectDto | null>(null);
-const deleteTarget = ref<ProjectDto | null>(null);
 const renameSessionTarget = ref<SessionDto | null>(null);
 const deleteSessionTarget = ref<SessionDto | null>(null);
 
 // Search
-const projectQuery = ref("");
 const sessionQuery = ref("");
-
-const filteredProjects = computed(() => {
-  const q = projectQuery.value.trim().toLowerCase();
-  if (!q) return projectStore.projects;
-  return projectStore.projects.filter(
-    (p) => p.name.toLowerCase().includes(q) || p.workdir.toLowerCase().includes(q)
-  );
-});
 
 const filteredSessions = computed(() => {
   const q = sessionQuery.value.trim().toLowerCase();
@@ -167,17 +152,18 @@ function leavePreviewCard() {
 
 onBeforeUnmount(clearPreviewHideTimer);
 
-function handleCreateProject(name: string, workdir: string) {
-  emit("create-project", name, workdir);
-  showNewProject.value = false;
-}
+onMounted(() => {
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".project-selector")) {
+      showProjectDropdown.value = false;
+    }
+  });
+});
 
-function startRename(p: ProjectDto) {
-  renameTarget.value = p;
-}
-
-function startDelete(p: ProjectDto) {
-  deleteTarget.value = p;
+function selectProject(id: string) {
+  emit("select-project", id);
+  showProjectDropdown.value = false;
 }
 
 function startRenameSession(s: SessionDto) {
@@ -191,71 +177,39 @@ function startDeleteSession(s: SessionDto) {
 
 <template>
   <aside class="sidebar">
-    <!-- Projects Section -->
-    <div class="sidebar-section" :class="{ collapsed: projectsCollapsed }">
-      <div class="section-header">
-        <button type="button" class="section-toggle" :aria-expanded="!projectsCollapsed" @click="projectsCollapsed = !projectsCollapsed">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" :class="{ rotated: projectsCollapsed }">
+    <!-- Project Selector -->
+    <div class="sidebar-project">
+      <div class="project-selector">
+        <button class="project-selector-btn" @click="showProjectDropdown = !showProjectDropdown">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M1.5 3a1 1 0 011-1h3.586a1 1 0 01.707.293l1.414 1.414a1 1 0 00.707.293h3.586a1 1 0 011 1V11a1 1 0 01-1 1h-9a1 1 0 01-1-1V3z" stroke="currentColor" stroke-width="1.2"/>
+          </svg>
+          <span class="project-selector-name">{{ projectStore.current?.name ?? t('sidebar.selectProject') }}</span>
+          <svg class="project-selector-chevron" :class="{ open: showProjectDropdown }" width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="section-label">{{ t('sidebar.projects') }}</span>
-          <span class="section-count">{{ projectStore.projects.length }}</span>
         </button>
-        <button class="section-action" @click="showNewProject = true" :title="t('sidebar.newProject')">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
-
-      <div v-if="projectStore.projects.length > 3 && !projectsCollapsed" class="section-search">
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-          <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.2"/>
-          <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-        <input
-          v-model="projectQuery"
-          type="text"
-          class="section-search-input"
-          :placeholder="t('sidebar.searchProjects')"
-        />
-      </div>
-
-      <div class="section-list" v-show="!projectsCollapsed">
-        <div
-          v-for="p in filteredProjects"
-          :key="p.id"
-          class="list-item"
-          :class="{ active: p.id === selectedProjectId }"
-          @click="emit('select-project', p.id)"
-        >
-          <span class="item-icon">
+        <div v-if="showProjectDropdown" class="project-dropdown" @click.stop>
+          <div
+            v-for="p in projectStore.projects"
+            :key="p.id"
+            class="project-dropdown-item"
+            :class="{ active: p.id === selectedProjectId }"
+            @click="selectProject(p.id)"
+          >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M1.5 3a1 1 0 011-1h3.586a1 1 0 01.707.293l1.414 1.414a1 1 0 00.707.293h3.586a1 1 0 011 1V11a1 1 0 01-1 1h-9a1 1 0 01-1-1V3z" stroke="currentColor" stroke-width="1.2"/>
             </svg>
-          </span>
-          <div class="item-content">
-            <span class="item-label truncate">{{ p.name }}</span>
-            <span class="item-path truncate">{{ p.workdir }}</span>
+            <span class="project-dropdown-name">{{ p.name }}</span>
           </div>
-          <span class="item-actions">
-            <button class="item-action" :title="t('rename.title')" @click.stop="startRename(p)">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 10l1-3 5-5 2 2-5 5-3 1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          <div class="project-dropdown-footer">
+            <button class="project-dropdown-manage" @click="showProjectManager = true; showProjectDropdown = false">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
+              <span>{{ t('sidebar.manageProjects') }}</span>
             </button>
-            <button class="item-action danger" :title="t('delete.confirmTitle')" @click.stop="startDelete(p)">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </span>
-        </div>
-        <div v-if="!projectStore.projects.length" class="empty-hint">
-          {{ t('sidebar.noProjects') }}
-        </div>
-        <div v-else-if="!filteredProjects.length" class="empty-hint">
-          {{ t('sidebar.noResults') }}
+          </div>
         </div>
       </div>
     </div>
@@ -401,29 +355,8 @@ function startDeleteSession(s: SessionDto) {
     </div>
 
     <!-- Dialogs -->
-    <NewProjectDialog
-      :show="showNewProject"
-      @close="showNewProject = false"
-      @create="handleCreateProject"
-    />
 
-    <RenameProjectDialog
-      :show="renameTarget !== null"
-      :project="renameTarget"
-      @close="renameTarget = null"
-      @rename="(id, name) => emit('rename-project', id, name)"
-    />
 
-    <ConfirmDialog
-      :show="deleteTarget !== null"
-      :title="t('delete.confirmTitle')"
-      :message="t('delete.confirmMessage')"
-      :confirm-label="t('delete.confirm')"
-      :cancel-label="t('delete.cancel')"
-      :danger="true"
-      @close="deleteTarget = null"
-      @confirm="emit('delete-project', deleteTarget!.id)"
-    />
 
     <RenameSessionDialog
       :show="renameSessionTarget !== null"
@@ -442,6 +375,12 @@ function startDeleteSession(s: SessionDto) {
       @close="deleteSessionTarget = null"
       @confirm="emit('delete-session', deleteSessionTarget!.id)"
     />
+
+    <ProjectManagerDialog
+      :show="showProjectManager"
+      @close="showProjectManager = false"
+      @select="selectProject($event)"
+    />
   </aside>
 </template>
 
@@ -455,6 +394,124 @@ function startDeleteSession(s: SessionDto) {
   border-right: 1px solid var(--border-color);
   overflow: hidden;
   flex-shrink: 0;
+}
+
+
+/* ─── Project Selector ─── */
+
+.sidebar-project {
+  padding: 10px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.project-selector {
+  position: relative;
+}
+
+.project-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-mono);
+}
+.project-selector-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.project-selector-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.project-selector-chevron {
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+  color: var(--text-muted);
+}
+.project-selector-chevron.open {
+  transform: rotate(180deg);
+}
+
+.project-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+  z-index: 100;
+  overflow: hidden;
+}
+
+.project-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.project-dropdown-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.project-dropdown-item.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.project-dropdown-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-dropdown-footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 4px;
+}
+
+.project-dropdown-manage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.project-dropdown-manage:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
 }
 
 /* ─── Sections ─── */
@@ -526,8 +583,8 @@ function startDeleteSession(s: SessionDto) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -650,10 +707,6 @@ function startDeleteSession(s: SessionDto) {
   font-weight: 600;
 }
 
-.item-path {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
 
 .item-actions {
   display: flex;

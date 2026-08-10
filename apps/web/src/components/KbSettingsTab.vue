@@ -298,7 +298,7 @@ async function handleDelete() {
   color: var(--text-secondary);
 }
 .btn-danger {
-  padding: 7px 16px;
+  padding: 7px 18px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 12px;

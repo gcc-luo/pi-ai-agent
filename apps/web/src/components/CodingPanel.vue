@@ -908,8 +908,8 @@ function onContentClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--border-default);
   border-radius: 50%;
   background: var(--bg-surface);

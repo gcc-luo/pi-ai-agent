@@ -1,0 +1,180 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.6.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
+      - run: pnpm --filter @pi-web-ui/server build
+      - run: pnpm --filter @pi-web-ui/web typecheck
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm prepare-sidecar && npx tauri build --target aarch64-apple-darwin
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.6.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
+      - run: pnpm --filter @pi-web-ui/server build
+      - run: pnpm --filter @pi-web-ui/web typecheck
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm prepare-sidecar && npx tauri build --target x86_64-pc-windows-msvc
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+
+  publish:
+    name: Publish Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+          path: artifacts/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: artifacts/windows
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Generate latest.json
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.version.outputs.version }}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          NOTES="${{ github.event.head_commit.message }}"
+
+          # macOS files
+          MACOS_TARGZ=$(ls artifacts/macos/*.app.tar.gz | head -1)
+          MACOS_SIG=$(ls artifacts/macos/*.app.tar.gz.sig | head -1)
+          MACOS_FILENAME=$(basename "$MACOS_TARGZ")
+          MACOS_SIG_CONTENT=$(cat "$MACOS_SIG")
+
+          # Windows files
+          WIN_EXE=$(ls artifacts/windows/*.exe | grep -v '.sig' | head -1)
+          WIN_SIG=$(ls artifacts/windows/*.exe.sig | head -1)
+          WIN_FILENAME=$(basename "$WIN_EXE")
+          WIN_SIG_CONTENT=$(cat "$WIN_SIG")
+
+          REPO="${{ github.repository }}"
+
+          cat > latest.json << EOJSON
+          {
+            "version": "${VERSION}",
+            "notes": $(echo "$NOTES" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))'),
+            "pub_date": "${PUB_DATE}",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${MACOS_SIG_CONTENT}",
+                "url": "https://github.com/${REPO}/releases/download/v${VERSION}/${MACOS_FILENAME}"
+              },
+              "windows-x86_64": {
+                "signature": "${WIN_SIG_CONTENT}",
+                "url": "https://github.com/${REPO}/releases/download/v${VERSION}/${WIN_FILENAME}"
+              }
+            }
+          }
+          EOJSON
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body: ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/macos/*.app.tar.gz
+            artifacts/macos/*.app.tar.gz.sig
+            artifacts/windows/*.exe
+            artifacts/windows/*.exe.sig
+            latest.json
+          make_latest: true

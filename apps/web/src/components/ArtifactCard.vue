@@ -166,7 +166,7 @@ function formatBytes(bytes: number): string {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated, var(--bg-deep));
   color: var(--text-muted);
 }
@@ -237,11 +237,11 @@ function formatBytes(bytes: number): string {
   gap: 4px;
   padding: 4px 10px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
   text-decoration: none;

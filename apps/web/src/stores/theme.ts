@@ -25,7 +25,7 @@ export const useThemeStore = defineStore("theme", {
 
   actions: {
     toggle() {
-      const order: ThemeMode[] = ["dark", "gray", "light"];
+      const order: ThemeMode[] = ["light", "dark", "gray"];
       const index = order.indexOf(this.mode);
       this.mode = order[(index + 1) % order.length] ?? "light";
       this.apply();

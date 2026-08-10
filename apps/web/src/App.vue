@@ -41,6 +41,7 @@ const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 
+
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
 );
@@ -73,45 +74,10 @@ watch(selectedSessionId, async (id) => {
   if (id) await sessionStore.open(id);
 });
 
-async function createProject(name: string, workdir: string) {
-  try {
-    const p = await projectStore.create(name, workdir);
-    selectedProjectId.value = p.id;
-  } catch (e: any) {
-    console.error("Failed to create project:", e);
-    message.error(`创建项目失败: ${e.message}`);
-  }
-}
-
 async function createSession() {
   if (!selectedProjectId.value) return;
   const s = await sessionStore.create(selectedProjectId.value);
   selectedSessionId.value = s.id;
-}
-
-async function renameProject(id: string, name: string) {
-  try {
-    await projectStore.update(id, name);
-  } catch (e: any) {
-    console.error("Failed to rename project:", e);
-    message.error(`重命名失败: ${e.message}`);
-  }
-}
-
-async function deleteProject(id: string) {
-  try {
-    await projectStore.remove(id);
-    if (selectedProjectId.value === id) {
-      sessionStore.$reset();
-      selectedProjectId.value = null;
-    }
-    // 刷新回收站数据，确保删除的项目会显示在回收站中
-    await trashStore.load();
-    message.success("已移至回收站");
-  } catch (e: any) {
-    console.error("Failed to delete project:", e);
-    message.error(`删除失败: ${e.message}`);
-  }
 }
 
 async function renameSession(id: string, title: string) {
@@ -288,9 +254,6 @@ function closePreview() {
           :selected-session-id="selectedSessionId"
           @select-project="selectedProjectId = $event"
           @select-session="selectedSessionId = $event"
-          @create-project="createProject"
-          @rename-project="renameProject"
-          @delete-project="deleteProject"
           @create-session="createSession"
           @rename-session="renameSession"
           @delete-session="deleteSession"
@@ -447,7 +410,6 @@ function closePreview() {
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
-
 .session-tag {
   font-family: var(--font-mono);
   font-size: 11px;

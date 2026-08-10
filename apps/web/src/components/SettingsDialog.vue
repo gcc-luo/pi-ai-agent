@@ -1,13 +1,39 @@
 <script setup lang="ts">
 import { NModal } from "naive-ui";
+import { onMounted, computed } from "vue";
 import { useI18n } from "../i18n/index.js";
 import { useThemeStore, THEME_OPTIONS, type ThemeMode } from "../stores/theme.js";
+import { useUpdateStore } from "../stores/update.js";
+import { isTauri } from "../utils/platform.js";
 
-defineProps<{ show: boolean }>();
-defineEmits<{ (e: "close"): void }>();
+const props = defineProps<{ show: boolean }>();
+const emit = defineEmits<{ (e: "close"): void }>();
 
 const { t, currentLocale, toggleLocale } = useI18n();
 const themeStore = useThemeStore();
+const updateStore = useUpdateStore();
+
+const isDesktop = isTauri();
+
+const updateButtonText = computed(() => {
+  if (updateStore.status === "checking") return t("settings.checking");
+  if (updateStore.status === "no-update") return t("settings.noUpdate");
+  if (updateStore.isAvailable) return t("settings.newVersion");
+  return t("settings.checkUpdate");
+});
+
+const canCheckUpdate = computed(() => {
+  return updateStore.status !== "checking" && updateStore.status !== "downloading";
+});
+
+function handleCheckUpdate() {
+  if (!canCheckUpdate.value) return;
+  updateStore.checkForUpdate();
+}
+
+onMounted(() => {
+  updateStore.getAppVersion();
+});
 </script>
 
 <template>
@@ -50,6 +76,25 @@ const themeStore = useThemeStore();
             </button>
           </div>
         </div>
+
+        <!-- Update section (desktop only) -->
+        <template v-if="isDesktop">
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">{{ t('settings.checkUpdate') }}</span>
+              <span class="setting-desc" v-if="updateStore.currentVersion">
+                {{ t('settings.currentVersion') }}: v{{ updateStore.currentVersion }}
+              </span>
+            </div>
+            <button
+              class="lang-switch"
+              :disabled="!canCheckUpdate"
+              @click="handleCheckUpdate"
+            >
+              {{ updateButtonText }}
+            </button>
+          </div>
+        </template>
 
       </div>
     </div>
@@ -148,9 +193,13 @@ const themeStore = useThemeStore();
   cursor: pointer;
   transition: all var(--transition-fast);
 }
-.lang-switch:hover {
+.lang-switch:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
+}
+.lang-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .theme-switcher {
