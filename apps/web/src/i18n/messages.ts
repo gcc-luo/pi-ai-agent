@@ -1,4 +1,4 @@
-export type Locale = "en" | "zh";
+﻿export type Locale = "en" | "zh";
 
 export const messages: Record<Locale, Record<string, string>> = {
   en: {
@@ -120,6 +120,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.activityUseComputer": "Using computer",
     "chat.activityExecuteOperation": "Executing operation",
     "chat.scrollToBottom": "Scroll to bottom",
+    "chat.scrollToTop": "Scroll to top",
     "chat.newReply": "New reply",
     "chat.sessionDetails": "Session details",
     "chat.inputTokens": "Input tokens",
@@ -936,6 +937,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.activityUseComputer": "操作电脑",
     "chat.activityExecuteOperation": "执行操作",
     "chat.scrollToBottom": "滚动到底部",
+    "chat.scrollToTop": "滚动到顶部",
     "chat.newReply": "有新回复",
     "chat.sessionDetails": "会话信息",
     "chat.inputTokens": "输入 Token",

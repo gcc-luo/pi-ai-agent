@@ -1,279 +1,194 @@
-﻿# PI AI Agent
+# PI AI Agent
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/pi) 的开源 AI 编程助手。它提供桌面端图形界面，用于管理项目、会话、模型、文件和开发任务，也支持在浏览器中运行 Web 界面。
+
 [![Version](https://img.shields.io/badge/version-1.2.5-green.svg)](https://github.com/gcc-luo/pi-web-ui/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 
-**PI AI Agent** 是一款基于 [pi-coding-agent](https://github.com/earendil-works/pi) 的桌面端 AI 编程助手，让你通过直观的图形界面使用 pi 的强大 coding agent 能力，无需在本地配置终端环境。
+## 功能概览
 
-后端使用 Fastify 以子进程方式托管 pi-coding-agent（RPC over stdio），前端使用 Vue 3 提供完整的聊天、项目管理、文件预览、知识库、技能商店、专家中心、定时任务、消息渠道等功能。
+- **AI 对话**：流式消息、Markdown 渲染、代码高亮、工具调用和 Token 用量展示。
+- **模型管理**：支持 Google、OpenAI、Anthropic、OpenRouter 和自定义模型，可在会话中切换模型。
+- **项目与会话**：管理多个项目和会话，支持文件树、会话历史、子会话和回收站。
+- **知识库**：导入文档，使用全文检索和向量检索为会话提供上下文。
+- **技能与专家**：管理本地技能、技能市场、自定义专家和预设专家。
+- **开发工具**：编码模式、内嵌终端、Artifact 展示和定时任务。
+- **消息渠道**：可选集成微信、钉钉等消息渠道。
+- **桌面应用**：基于 Tauri 2 构建 Windows、macOS 和 Linux 安装包。
 
-## 主界面预览
+## 界面预览
 
 ![PI AI Agent 主界面](docs/images/main.png)
 
-## 功能特性
-
-### 核心对话
-
-- **实时聊天**：基于 WebSocket 的 agent 事件流，支持消息发送、中断、引导（steer）与流式渲染
-- **Markdown + 语法高亮**：marked + highlight.js + DOMPurify 安全渲染
-- **多模态消息**：支持图片附件（最多 5 张，5MB/张）与文本文件上传（1MB）
-- **思维链展示**：thinking_delta 事件可折叠展示
-- **工具调用可视化**：tool_call / tool_progress / tool_result 事件，显示参数、结果与运行状态
-- **Token 用量追踪**：每个会话累计 input/output token 统计
-- **模型热切换**：运行时按会话切换 LLM 模型
-
-### 项目与会话
-
-- **多项目管理**：创建（目录浏览器）、重命名、删除项目，每个项目独立工作区
-- **会话管理**：创建、重命名、删除会话，支持父子会话（线程化对话）
-- **消息持久化**：完整消息历史存储于 SQLite
-- **文件树**：项目目录浏览 + 文件创建/重命名/删除
-- **回收站**：软删除项目和会话，支持恢复或永久删除
-
-### 文件预览
-
-支持 10+ 种文件格式预览：
-
-| 类型 | 格式 |
-|------|------|
-| 文本/代码 | 语法高亮（所有文本格式） |
-| 文档 | Markdown、PDF、DOCX、XLSX、PPTX |
-| 旧版 Office | .doc / .xls / .ppt / .odt / .ods / .odp / .rtf（需 LibreOffice） |
-| 媒体 | 图片（PNG/JPG/GIF/WebP）、音频、视频 |
-
-### LLM 模型管理
-
-- **多 Provider**：Google Gemini / OpenAI / Anthropic / OpenRouter
-- **自定义模型**：添加/编辑/删除模型，配置 API Base URL、API Key、类型（文本/多模态/Embedding）
-- **连接测试**：保存前测试模型连通性
-- **默认模型**：标记默认模型用于新会话
-
-### 知识库（RAG）
-
-- **知识库 CRUD**：创建、管理知识库，支持绑定 Embedding 模型
-- **文件导入**：批量导入 PDF / DOCX / TXT / MD 文件
-- **解析流水线**：文档自动分块，支持页码边界
-- **混合搜索**：FTS5 全文检索（jieba 中文分词）+ 向量相似度搜索
-- **会话绑定**：将知识库绑定到会话，自动注入上下文
-- **搜索引用卡片**：搜索结果在聊天中以引用卡片形式展示
-
-### 技能（Skills）
-
-- **本地技能**：创建、zip 导入、删除本地技能
-- **技能商店**：从 skills.sh / SkillsMP / GitHub 搜索和安装技能
-- **AI 搜索**：语义化技能搜索模式
-- **技能预览**：安装前查看技能内容
-- **安全审计**：展示 SkillsMP 安全审计状态
-
-### 专家中心
-
-- **23 个预设专家**：覆盖开发、设计、数据、营销、产品、财务、法务、运营 8 大类别
-- **自定义专家**：创建自定义专家角色（名称、图标、类别、系统提示词、标签）
-- **专家召唤**：召唤专家开启专属对话会话
-- **系统提示词注入**：专家的系统提示词自动注入到 agent 消息中
-
-### 定时任务
-
-- **任务管理**：创建、编辑、删除定时任务
-- **任务类型**：自动提问（prompt）、定时提醒（reminder）
-- **Cron 调度**：5 字段 cron 表达式 + 快捷预设（每 5 分钟/每小时/每天 9 点/每周一/每月 1 号）
-- **启用/禁用**：开关任务无需删除
-- **手动触发**：立即执行任务
-- **执行日志**：查看任务执行历史（成功/失败/运行中）
-
-### 消息渠道
-
-- **微信频道**：通过 @wechatbot/wechatbot SDK 集成个人微信
-  - 扫码登录（QR 状态机：获取二维码 → 等待扫码 → 确认 → 登录）
-  - 会话持久化，重启自动恢复登录
-  - 按 wxid 路由到独立 Pi 会话
-- **钉钉频道**：通过 Stream 协议集成钉钉智能机器人
-  - Client ID / Secret / Robot Code 配置
-  - 消息接收与自动回复
-- **渠道配置管理**：创建、更新、删除、启用/禁用渠道配置
-- **连通性测试**：发送测试消息验证配置
-
-### 编码模式
-
-- **CodingPanel**：独立编码工作区视图
-- **TUI 终端面板**：嵌入式终端（WebSocket）
-- **模式切换**：对话模式 / 编码模式自由切换
-- **Artifact 卡片**：展示 agent 生成的代码/文件产物
-
-### 通用
-
-- **深色/灰色/浅色主题**：三种主题自由切换，持久化到 localStorage
-- **中英文国际化**：运行时切换，持久化到 localStorage
-- **连接状态指示**：WebSocket 连接状态实时显示（已连接/连接中/已断开）
-- **空闲回收**：空闲 5 分钟标记 idle，挂起 30 分钟自动回收子进程释放资源
-
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 前端 | Vue 3 + TypeScript + Pinia + Vite |
-| 后端 | Fastify + TypeScript + SQLite (better-sqlite3) |
-| 桌面端 | Tauri 2.0 (Rust) |
-| Agent | pi-coding-agent (Node.js, RPC over stdio) |
-| 搜索 | FTS5 + jieba 中文分词 |
-| 文件转换 | LibreOffice (可选) |
+| 模块     | 技术                                     |
+| -------- | ---------------------------------------- |
+| Web 前端 | Vue 3、TypeScript、Pinia、Vite、Naive UI |
+| 服务端   | Fastify、TypeScript、SQLite、WebSocket   |
+| 桌面端   | Tauri 2、Rust                            |
+| Agent    | pi-coding-agent（Node.js，RPC）          |
+| 检索     | SQLite FTS5、jieba、向量搜索             |
 
 ## 快速开始
 
 ### 环境要求
 
-- Node.js >= 18
-- pnpm >= 8
-- Rust (仅桌面端构建需要)
+- Node.js 20 或更高版本
+- pnpm 9.6.0（仓库通过 `packageManager` 固定版本）
+- Rust stable（仅构建桌面端时需要）
+- LibreOffice（可选，用于预览旧版 Office 文档）
+
+桌面端安装包需要 Node.js 22.19 或更高版本，因为打包过程会生成内置服务端运行时。
 
 ### 安装依赖
 
-`ash
+```bash
+corepack enable
+corepack prepare pnpm@9.6.0 --activate
 pnpm install
-`
+```
 
-### 启动开发服务
+### 配置环境变量
 
-`ash
-pnpm start
-`
+复制示例配置并填写至少一个模型服务商的 API Key：
 
-这会同时启动后端服务（默认 http://localhost:8080）和前端开发服务器（默认 http://localhost:5173），以及桌面端开发窗口。
+```bash
+cp .env.example .env
+```
 
-### 构建生产版本
+Windows PowerShell：
 
-`ash
-# 构建所有 workspace
-pnpm build
+```powershell
+Copy-Item .env.example .env
+```
 
-# 仅构建桌面端安装包
-pnpm --dir apps/desktop build
+常用配置如下：
 
-# 构建桌面端调试版
-pnpm --dir apps/desktop build:debug
-`
-
-桌面端安装包输出在：
-
-`	ext
-apps/desktop/src-tauri/target/release/bundle/
-`
-
-按平台生成对应产物，例如 Windows 的 .msi / .exe、macOS 的 .dmg / .app、Linux 的 .deb / .AppImage。
-
-### 环境变量
-
-复制 .env.example 为 .env 并按需修改：
-
-`ash
-# 服务监听
+```dotenv
 PORT=8080
 HOST=127.0.0.1
 LOG_LEVEL=info
 
-# LLM Provider（四选一，至少填一个 API Key）
-PI_PROVIDER=google        # google | openai | anthropic | openrouter
-PI_MODEL=                  # 留空使用 provider 默认模型
-PI_AUTO_COMPACTION=true    # 接近上下文上限时自动压缩，默认 true
+# 支持 google、openai、anthropic、openrouter
+PI_PROVIDER=google
+PI_MODEL=
 GOOGLE_API_KEY=
+```
 
-# Agent 进程（可选，覆盖默认启动命令；开发环境默认使用 npx）
-# PI_COMMAND=npx
-# PI_ARGS=-y @earendil-works/pi-coding-agent --mode rpc
-# PI_NPM_REGISTRY=https://registry.npmjs.org/
+完整配置项和示例请参阅 [.env.example](.env.example)。
 
-# 超时（可选）
-# IDLE_TIMEOUT_MS=300000         # 空闲多久后标记 idle（5 分钟）
-# SUSPENDED_TIMEOUT_MS=1800000   # 挂起多久后回收子进程（30 分钟）
-# NO_RESPONSE_TIMEOUT_MS=30000
+### 启动开发环境
 
-# 数据目录（可选）
-# PI_WEB_UI_ROOT=                # 默认 ~/.pi-web-ui
+```bash
+pnpm start
+```
 
-# LibreOffice（可选，用于预览旧版 Office 文档）
-# LIBREOFFICE_BINARY=
-`
+该命令会启动服务端和 Tauri 桌面开发窗口。服务端默认监听 `http://127.0.0.1:8080`，前端开发服务器默认使用 `http://localhost:3000`。
 
-## 数据存储
+只启动浏览器开发环境时，可以在服务端运行后执行：
 
-数据目录默认 ~/.pi-web-ui（可通过 PI_WEB_UI_ROOT 覆盖）：
+```bash
+pnpm --filter @pi-web-ui/web dev
+```
 
-| 文件 | 说明 |
-|------|------|
-| pi-web-ui.sqlite | SQLite 数据库（14 张表） |
-| logs/server.log | 服务端日志 |
-| kb-files/ | 知识库上传的文件 |
-| wechat-session/ | 微信登录会话凭据 |
+浏览器前端通过 Vite 将 `/api` 和 `/ws` 请求代理到本地服务端。
 
-## 常用脚本
+## 构建与发布
 
-| 命令 | 说明 |
-|---|---|
-| pnpm start | 全量启动后端、桌面端和浏览器端开发服务 |
-| pnpm dev | 并行执行各 workspace 的 dev 脚本 |
-| pnpm build | 构建所有 workspace；桌面端打包前需先准备 sidecar |
-| pnpm --dir apps/desktop prepare-sidecar | 生成当前平台的后端 sidecar |
-| pnpm --dir apps/desktop build | 构建桌面端生产安装包 |
-| pnpm --dir apps/desktop build:debug | 构建桌面端调试安装包 |
-| pnpm test | 运行所有测试（vitest） |
-| pnpm typecheck | 全仓 TypeScript 类型检查 |
-| pnpm lint | 运行 lint |
+### 构建 Web 和服务端
+
+```bash
+pnpm build
+```
+
+### 构建桌面端安装包
+
+```bash
+pnpm --filter @pi-web-ui/desktop build
+```
+
+桌面端构建会自动完成以下步骤：
+
+1. 构建服务端并生成生产依赖部署。
+2. 生成 Node.js sidecar 和服务端运行时压缩包。
+3. 运行服务端健康检查及桌面端 CORS 预检检查。
+4. 执行 Tauri 构建并生成安装包。
+
+产物位于：
+
+```text
+apps/desktop/src-tauri/target/release/bundle/
+```
+
+根据操作系统会生成不同格式的安装包，例如 Windows 的 `.msi` / `.exe`、macOS 的 `.dmg` 和 Linux 的 `.deb` / `.AppImage`。
+
+如需单独准备 sidecar：
+
+```bash
+pnpm --filter @pi-web-ui/desktop prepare-sidecar
+```
+
+## 常用命令
+
+| 命令                                           | 用途                            |
+| ---------------------------------------------- | ------------------------------- |
+| `pnpm start`                                   | 启动服务端和桌面开发环境        |
+| `pnpm dev`                                     | 并行启动各 workspace 的开发脚本 |
+| `pnpm build`                                   | 构建所有 workspace              |
+| `pnpm test`                                    | 运行各 workspace 的测试         |
+| `pnpm typecheck`                               | 执行 TypeScript 类型检查        |
+| `pnpm stop`                                    | 停止本地开发进程                |
+| `pnpm --filter @pi-web-ui/desktop build:debug` | 构建桌面调试包                  |
+
+## 数据目录
+
+应用默认将数据保存在用户目录下的 `.pi-web-ui`：
+
+```text
+~/.pi-web-ui/
+├── pi-web-ui.sqlite       # SQLite 数据库
+├── logs/                  # 服务端日志
+├── kb-files/              # 知识库文件
+└── wechat-session/        # 微信登录会话（如启用）
+```
+
+可以通过 `PI_WEB_UI_ROOT` 修改数据根目录。请不要将包含 API Key 或登录凭据的 `.env`、数据库和会话目录提交到版本库。
 
 ## 仓库结构
 
-`
+```text
 pi-web-ui/
 ├── apps/
-│   ├── web/                     # Vue 3 前端
-│   │   └── src/
-│   │       ├── components/      # 页面组件（ChatPanel / Sidebar / NavRail / ...）
-│   │       ├── stores/          # Pinia stores（12 个）
-│   │       ├── api/             # REST client + WebSocket client
-│   │       ├── utils/           # 工具函数（markdown / cron / kb / skill-tips）
-│   │       └── i18n/            # 中英文国际化
-│   ├── server/                  # Fastify 后端
-│   │   └── src/
-│   │       ├── agent/           # 进程管理 / RPC bridge / 会话状态 / 空闲回收
-│   │       ├── channels/        # 渠道集成（微信 / 钉钉）
-│   │       ├── db/              # SQLite + migrations（14 张表）+ repositories
-│   │       ├── kb/              # 知识库搜索 / 解析流水线 / FTS 分词
-│   │       ├── routes/          # REST API 路由（16 个路由模块）
-│   │       ├── services/        # 定时任务调度 / LibreOffice 转换
-│   │       ├── skill-store/     # 技能市场服务
-│   │       └── ws/              # WebSocket（agent + terminal）
-│   └── desktop/                 # Tauri 2.0 桌面端
-│       └── src-tauri/           # Rust 后端 + sidecar
+│   ├── web/               # Vue 3 Web 前端
+│   ├── server/            # Fastify API、WebSocket 和 Agent 桥接
+│   └── desktop/           # Tauri 桌面端及 sidecar 打包脚本
 ├── packages/
-│   └── shared/                  # 跨端共享 TypeScript 类型
-├── docs/
-│   └── images/                  # 文档图片资源
-└── patches/                     # 第三方包补丁
-`
+│   └── shared/            # 前后端共享类型
+├── docs/                  # 文档和界面图片
+├── patches/               # 第三方依赖补丁
+├── scripts/               # 仓库级开发脚本
+├── .env.example           # 环境变量示例
+└── pnpm-workspace.yaml    # pnpm workspace 配置
+```
 
-## 数据库表结构
+## 开发说明
 
-| 表 | 说明 |
-|---|---|
-| projects | 项目（支持软删除） |
-| sessions | 会话（父子线程 + 专家绑定 + 软删除） |
-| messages | 消息历史（序列号排序） |
-| models | LLM 模型配置 |
-| experts | 专家角色（预设 + 自定义） |
-| knowledge_bases | 知识库定义 |
-| kb_files | 知识库文件（解析状态追踪） |
-| kb_chunks | 文本分块 |
-| kb_chunks_fts | FTS5 全文搜索索引 |
-| session_kb_bindings | 会话 ↔ 知识库绑定 |
-| scheduled_tasks | 定时任务定义 |
-| 	ask_logs | 任务执行日志 |
-| channels | 渠道配置（微信/钉钉等） |
-| channel_conversations | 渠道用户 ↔ 会话绑定 |
+- API 路由位于 `apps/server/src/routes/`。
+- 数据库初始化和迁移位于 `apps/server/src/db/`。
+- Web 页面和组件位于 `apps/web/src/`。
+- Tauri 配置和 Rust 代码位于 `apps/desktop/src-tauri/`。
+- 修改桌面端服务端逻辑后，请使用 `pnpm --filter @pi-web-ui/desktop build` 重新生成安装包，避免携带旧的 sidecar。
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request。提交代码前建议运行：
+
+```bash
+pnpm test
+pnpm typecheck
+```
 
 ## 许可证
 
-MIT License
+本项目采用 MIT License。第三方依赖的许可证以各自项目声明为准。
