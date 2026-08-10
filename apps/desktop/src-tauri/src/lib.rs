@@ -1,23 +1,31 @@
 #[cfg(not(target_os = "windows"))]
 use flate2::read::GzDecoder;
+#[cfg(not(target_os = "windows"))]
+use std::fs::File;
 use std::{
     fs, io,
     net::TcpListener,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU16, Ordering},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError},
+        Mutex,
+    },
     time::Duration,
 };
-#[cfg(not(target_os = "windows"))]
-use std::fs::File;
 use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
 
+struct ManagedServerProcess {
+    child: CommandChild,
+    terminated: Receiver<()>,
+}
+
 #[derive(Default)]
-struct ServerProcess(Mutex<Option<CommandChild>>);
+struct ServerProcess(Mutex<Option<ManagedServerProcess>>);
 
 #[derive(Default)]
 struct ServerPort(AtomicU16);
@@ -26,18 +34,69 @@ struct ServerPort(AtomicU16);
 struct ServerStartupError(Mutex<Option<String>>);
 
 const EXTERNAL_SERVER_PORT_ENV: &str = "PI_DESKTOP_SERVER_PORT";
+const SIDECAR_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+
+trait StoppableProcess {
+    fn stop(self, timeout: Duration) -> Result<(), String>;
+}
+
+impl StoppableProcess for ManagedServerProcess {
+    fn stop(self, timeout: Duration) -> Result<(), String> {
+        let pid = self.child.pid();
+        let kill_error = self.child.kill().err().map(|error| error.to_string());
+
+        match self.terminated.recv_timeout(timeout) {
+            Ok(()) => Ok(()),
+            Err(RecvTimeoutError::Timeout) => Err(kill_error.map_or_else(
+                || format!("timed out waiting for server sidecar pid={pid} to exit"),
+                |error| format!("failed to stop server sidecar pid={pid}: {error}"),
+            )),
+            Err(RecvTimeoutError::Disconnected) => Err(kill_error.map_or_else(
+                || format!("lost server sidecar pid={pid} termination signal"),
+                |error| format!("failed to stop server sidecar pid={pid}: {error}"),
+            )),
+        }
+    }
+}
+
+fn stop_server_process<P: StoppableProcess>(
+    process: &Mutex<Option<P>>,
+    timeout: Duration,
+) -> Result<(), String> {
+    let process = process
+        .lock()
+        .map_err(|_| "server process lock poisoned".to_owned())?
+        .take();
+
+    match process {
+        Some(process) => process.stop(timeout),
+        None => Ok(()),
+    }
+}
 
 #[tauri::command]
 fn get_server_port(
     port: tauri::State<'_, ServerPort>,
     startup_error: tauri::State<'_, ServerStartupError>,
 ) -> Result<u16, String> {
-    wait_for_server_port(
-        &port,
-        &startup_error,
-        350,
-        Duration::from_millis(100),
-    )
+    wait_for_server_port(&port, &startup_error, 350, Duration::from_millis(100))
+}
+
+#[tauri::command]
+async fn prepare_for_update(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    tauri::async_runtime::spawn_blocking(move || {
+        let process = app.state::<ServerProcess>();
+        stop_server_process(&process.0, SIDECAR_STOP_TIMEOUT)
+    })
+    .await
+    .map_err(|error| format!("failed to join sidecar cleanup task: {error}"))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,13 +113,15 @@ pub fn run() {
         .manage(ServerProcess::default())
         .manage(ServerPort::default())
         .manage(ServerStartupError::default())
-        .invoke_handler(tauri::generate_handler![get_server_port])
+        .invoke_handler(tauri::generate_handler![
+            get_server_port,
+            prepare_for_update
+        ])
         .setup(|app| {
             let app_handle = app.handle().clone();
-            let external_port = parse_external_server_port(
-                std::env::var(EXTERNAL_SERVER_PORT_ENV).ok().as_deref(),
-            )
-            .map_err(io::Error::other)?;
+            let external_port =
+                parse_external_server_port(std::env::var(EXTERNAL_SERVER_PORT_ENV).ok().as_deref())
+                    .map_err(io::Error::other)?;
 
             if let Some(port) = external_port {
                 log::info!("Using external development server on port={port}");
@@ -75,10 +136,7 @@ pub fn run() {
                 if let Err(error) = start_server_sidecar(&app_handle) {
                     let message = format!("Failed to start server sidecar: {error}");
                     log::error!("{message}");
-                    if let Ok(mut startup_error) = app_handle
-                        .state::<ServerStartupError>()
-                        .0
-                        .lock()
+                    if let Ok(mut startup_error) = app_handle.state::<ServerStartupError>().0.lock()
                     {
                         *startup_error = Some(message);
                     }
@@ -91,14 +149,10 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
-            if let Some(child) = app_handle
-                .state::<ServerProcess>()
-                .0
-                .lock()
-                .expect("server process lock poisoned")
-                .take()
+            if let Err(error) =
+                stop_server_process(&app_handle.state::<ServerProcess>().0, SIDECAR_STOP_TIMEOUT)
             {
-                let _ = child.kill();
+                log::warn!("Failed to stop server sidecar during exit: {error}");
             }
         }
     });
@@ -143,37 +197,50 @@ fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
                 .spawn()
                 .map_err(|e| format!("Failed to start server sidecar: {e}"))?;
             log::info!("Server sidecar started with pid={}", child.pid());
+            let (termination_sender, termination_receiver) = mpsc::channel();
             app.state::<ServerProcess>()
                 .0
                 .lock()
                 .map_err(|_| "server process lock poisoned")?
-                .replace(child);
+                .replace(ManagedServerProcess {
+                    child,
+                    terminated: termination_receiver,
+                });
 
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = events.recv().await {
-                    match event {
-                        CommandEvent::Stdout(line) => {
-                            log::info!("[server] {}", String::from_utf8_lossy(&line).trim_end());
-                        }
-                        CommandEvent::Stderr(line) => {
-                            log::error!("[server] {}", String::from_utf8_lossy(&line).trim_end());
-                        }
-                        CommandEvent::Error(error) => {
-                            log::error!("Server sidecar error: {error}");
-                        }
-                        CommandEvent::Terminated(payload) => {
-                            log::error!(
-                                "Server sidecar terminated: code={:?}, signal={:?}",
-                                payload.code,
-                                payload.signal
-                            );
-                            break;
-                        }
-                        _ => {
-                            log::debug!("Received an unhandled server sidecar event");
+            std::thread::spawn(move || {
+                tauri::async_runtime::block_on(async move {
+                    while let Some(event) = events.recv().await {
+                        match event {
+                            CommandEvent::Stdout(line) => {
+                                log::info!(
+                                    "[server] {}",
+                                    String::from_utf8_lossy(&line).trim_end()
+                                );
+                            }
+                            CommandEvent::Stderr(line) => {
+                                log::error!(
+                                    "[server] {}",
+                                    String::from_utf8_lossy(&line).trim_end()
+                                );
+                            }
+                            CommandEvent::Error(error) => {
+                                log::error!("Server sidecar error: {error}");
+                            }
+                            CommandEvent::Terminated(payload) => {
+                                log::info!(
+                                    "Server sidecar terminated: code={:?}, signal={:?}",
+                                    payload.code,
+                                    payload.signal
+                                );
+                                break;
+                            }
+                            _ => {
+                                log::debug!("Received an unhandled server sidecar event");
+                            }
                         }
                     }
-                }
+                    let _ = termination_sender.send(());
+                });
             });
         }
         Err(_) => {
@@ -256,21 +323,16 @@ fn wait_for_server_port(
 }
 
 #[cfg(target_os = "windows")]
-fn extract_archive(
-    archive_path: &Path,
-    dest_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn extract_archive(archive_path: &Path, dest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
     let mut command = Command::new("tar.exe");
-    command
-        .creation_flags(windows_tar_creation_flags())
-        .args([
-            "-xzf",
-            &archive_path.to_string_lossy(),
-            "-C",
-            &dest_dir.to_string_lossy(),
-        ]);
+    command.creation_flags(windows_tar_creation_flags()).args([
+        "-xzf",
+        &archive_path.to_string_lossy(),
+        "-C",
+        &dest_dir.to_string_lossy(),
+    ]);
     let status = command.status()?;
     if !status.success() {
         return Err(format!("tar.exe exited with status {}", status).into());
@@ -279,10 +341,7 @@ fn extract_archive(
 }
 
 #[cfg(not(target_os = "windows"))]
-fn extract_archive(
-    archive_path: &Path,
-    dest_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn extract_archive(archive_path: &Path, dest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let archive_file = File::open(archive_path)?;
     let decoder = GzDecoder::new(archive_file);
     let mut archive = tar::Archive::new(decoder);
@@ -300,9 +359,57 @@ fn remove_dir_if_exists(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_external_server_port, wait_for_server_port, ServerPort, ServerStartupError};
+    use super::{
+        parse_external_server_port, stop_server_process, wait_for_server_port, ServerPort,
+        ServerStartupError, StoppableProcess,
+    };
     use std::sync::atomic::Ordering;
+    use std::sync::Mutex;
     use std::time::Duration;
+
+    struct FakeProcess(Result<(), String>);
+
+    impl StoppableProcess for FakeProcess {
+        fn stop(self, _timeout: Duration) -> Result<(), String> {
+            self.0
+        }
+    }
+
+    #[test]
+    fn stopping_a_missing_or_already_stopped_sidecar_is_idempotent() {
+        let process = Mutex::<Option<FakeProcess>>::new(None);
+
+        assert_eq!(
+            stop_server_process(&process, Duration::from_millis(1)),
+            Ok(())
+        );
+        assert_eq!(
+            stop_server_process(&process, Duration::from_millis(1)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn sidecar_stop_failures_prevent_update_preparation() {
+        let process = Mutex::new(Some(FakeProcess(Err("sidecar did not exit".into()))));
+
+        assert_eq!(
+            stop_server_process(&process, Duration::from_millis(1)),
+            Err("sidecar did not exit".into())
+        );
+        assert!(process.lock().expect("process lock poisoned").is_none());
+    }
+
+    #[test]
+    fn sidecar_is_removed_from_state_after_a_successful_stop() {
+        let process = Mutex::new(Some(FakeProcess(Ok(()))));
+
+        assert_eq!(
+            stop_server_process(&process, Duration::from_millis(1)),
+            Ok(())
+        );
+        assert!(process.lock().expect("process lock poisoned").is_none());
+    }
 
     #[cfg(target_os = "windows")]
     #[test]

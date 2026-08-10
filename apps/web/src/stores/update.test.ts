@@ -11,6 +11,7 @@ const mockInstall = vi.fn();
 const mockDownload = vi.fn();
 const mockRelaunch = vi.fn();
 const mockGetVersion = vi.fn();
+const mockInvoke = vi.fn();
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: mockCheck,
@@ -22,6 +23,10 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 
 vi.mock("@tauri-apps/api/app", () => ({
   getVersion: mockGetVersion,
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mockInvoke,
 }));
 
 function createMockUpdate() {
@@ -45,6 +50,7 @@ describe("useUpdateStore", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    mockInvoke.mockResolvedValue(undefined);
   });
 
   it("has correct initial state", () => {
@@ -130,6 +136,37 @@ describe("useUpdateStore", () => {
     expect(mockCheck).toHaveBeenCalledTimes(1);
     expect(mockInstall).toHaveBeenCalledTimes(1);
     expect(mockRelaunch).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the server sidecar before installing the update", async () => {
+    mockCheck.mockResolvedValue(createMockUpdate());
+
+    const store = useUpdateStore();
+    await store.checkForUpdate();
+    await store.downloadAndInstall();
+    await store.installAndRestart();
+
+    expect(mockInvoke).toHaveBeenCalledWith("prepare_for_update");
+    const prepareCallOrder = mockInvoke.mock.invocationCallOrder[0];
+    const installCallOrder = mockInstall.mock.invocationCallOrder[0];
+    expect(prepareCallOrder).toBeDefined();
+    expect(installCallOrder).toBeDefined();
+    expect(prepareCallOrder!).toBeLessThan(installCallOrder!);
+  });
+
+  it("does not start the installer when sidecar cleanup fails", async () => {
+    mockCheck.mockResolvedValue(createMockUpdate());
+    mockInvoke.mockRejectedValue(new Error("sidecar did not exit"));
+
+    const store = useUpdateStore();
+    await store.checkForUpdate();
+    await store.downloadAndInstall();
+    await store.installAndRestart();
+
+    expect(store.status).toBe("error");
+    expect(store.errorMessage).toBe("sidecar did not exit");
+    expect(mockInstall).not.toHaveBeenCalled();
+    expect(mockRelaunch).not.toHaveBeenCalled();
   });
 
   it("handles install failure", async () => {

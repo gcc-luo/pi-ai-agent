@@ -98,6 +98,8 @@ export const useUpdateStore = defineStore("update", () => {
     status.value = "installing";
 
     try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("prepare_for_update");
       await pendingUpdate.install();
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
