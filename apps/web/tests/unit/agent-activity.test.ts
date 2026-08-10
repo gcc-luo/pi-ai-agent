@@ -54,17 +54,17 @@ describe("AgentActivity", () => {
   beforeEach(() => useI18n().setLocale("zh"));
 
   it("shows one compact summary while collapsed", () => {
-    const wrapper = mount(AgentActivity, { props: { activity, expanded: false } });
+    const wrapper = mount(AgentActivity, { props: { activity, expanded: false, canToggle: true } });
 
     expect(wrapper.get(".activity-summary").text()).toContain("正在处理");
-    expect(wrapper.get(".activity-summary").text()).toContain("2 项操作");
+    expect(wrapper.get(".activity-summary").text()).toContain("3 个步骤");
     expect(wrapper.get(".activity-summary").text()).toContain("搜索代码");
     expect(wrapper.find(".activity-details").exists()).toBe(false);
     expect(wrapper.get("button").attributes("aria-expanded")).toBe("false");
   });
 
   it("emits toggle and exposes full details only when expanded", async () => {
-    const wrapper = mount(AgentActivity, { props: { activity, expanded: true } });
+    const wrapper = mount(AgentActivity, { props: { activity, expanded: true, canToggle: true } });
 
     expect(wrapper.findAll(".activity-item")).toHaveLength(3);
     expect(wrapper.text()).toContain("rg any apps/web");
@@ -81,9 +81,30 @@ describe("AgentActivity", () => {
       completedCount: 2,
       items: activity.items.map((item, index) => index === 2 ? { ...item, status: "failed" as const } : item),
     };
-    const wrapper = mount(AgentActivity, { props: { activity: failed, expanded: false } });
+    const wrapper = mount(AgentActivity, { props: { activity: failed, expanded: false, canToggle: true } });
 
     expect(wrapper.get(".activity-summary").text()).toContain("1 项失败");
     expect(wrapper.get(".activity-summary").classes()).toContain("failed");
+  });
+
+  it("does not expose an expand button when there are no details", () => {
+    const empty = { ...activity, items: [], operationCount: 0 };
+    const wrapper = mount(AgentActivity, {
+      props: { activity: empty, expanded: false, canToggle: false },
+    });
+
+    expect(wrapper.find("button.activity-summary").exists()).toBe(false);
+    expect(wrapper.find(".activity-chevron").exists()).toBe(false);
+    expect(wrapper.get(".activity-summary").text()).not.toContain("0 个步骤");
+  });
+
+  it("shows permission waiting as a distinct run state", () => {
+    const waiting = { ...activity, status: "waiting_permission" as const };
+    const wrapper = mount(AgentActivity, {
+      props: { activity: waiting, expanded: false, canToggle: true },
+    });
+
+    expect(wrapper.get(".activity-summary").text()).toContain("等待你确认");
+    expect(wrapper.get(".activity-summary").text()).toContain("1m 14s");
   });
 });

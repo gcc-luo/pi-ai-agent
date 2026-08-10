@@ -24,7 +24,11 @@ import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
-import { annotateChatRuns, formatProcessingDuration } from "../utils/chat-run-presentation.js";
+import {
+  annotateChatRuns,
+  formatProcessingDuration,
+  mergeChatMessageSources,
+} from "../utils/chat-run-presentation.js";
 import ArtifactCard from "./ArtifactCard.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import AgentActivity from "./AgentActivity.vue";
@@ -222,6 +226,7 @@ watch(
 );
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
+const pendingPermission = computed(() => agent.pendingPermissions[props.sessionId] ?? null);
 
 // Pi can finish one assistant message to execute a tool and then start another
 // model turn. Use the run lifecycle so the control remains in its stop state
@@ -229,6 +234,9 @@ const messages = computed(() => agent.messagesFor(props.sessionId));
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
 const expandedRunIds = ref<Set<string>>(new Set());
 const durationClock = ref(Date.now());
+const showScrollButton = ref(false);
+const followLiveOutput = ref(true);
+const newContentBelow = ref(false);
 let durationTimer: number | null = null;
 
 const activeElapsedMs = computed(() => {
@@ -454,6 +462,7 @@ watch(
   () => messages.value.length,
   () => {
     if (followLiveOutput.value) nextTick(scrollToBottom);
+    else newContentBelow.value = true;
   },
 );
 
@@ -468,6 +477,7 @@ watch(
   liveTextSignature,
   () => {
     if (followLiveOutput.value) nextTick(scrollToBottom);
+    else newContentBelow.value = true;
   },
 );
 
@@ -478,9 +488,6 @@ function scrollToBottom() {
 }
 
 // ─── Scroll-to-bottom button ───────────────────────────────────────────
-const showScrollButton = ref(false);
-const followLiveOutput = ref(true);
-
 // ─── Conversation outline (user questions) ─────────────────────────────
 const showOutline = ref(false);
 
@@ -538,6 +545,29 @@ function messagePlainText(m: { role: string; parts: MessagePart[] }): string {
   return texts.join("\n").trim();
 }
 
+function retryUserMessage(messageId: string) {
+  if (isBusy.value) return;
+  agent.dismissPromptErrors(props.sessionId);
+  agent.retryUserMessage(props.sessionId, messageId);
+}
+
+function editFailedMessage(m: { id: string; role: string; parts: MessagePart[] }) {
+  if (isBusy.value) return;
+  input.value = messagePlainText(m);
+  attachedImages.value = m.parts
+    .filter((part): part is Extract<MessagePart, { kind: "image" }> => part.kind === "image")
+    .map((part) => ({
+      name: part.name,
+      mediaType: part.mediaType,
+      data: part.data,
+      size: Math.ceil(part.data.length * 0.75),
+      previewUrl: `data:${part.mediaType};base64,${part.data}`,
+    }));
+  agent.dismissPromptErrors(props.sessionId);
+  agent.removeLocalMessage(props.sessionId, m.id);
+  nextTick(() => document.querySelector<HTMLTextAreaElement>(".composer-input textarea")?.focus());
+}
+
 async function copyMessage(m: { id: string; role: string; parts: MessagePart[] }) {
   const text = messagePlainText(m);
   if (!text) return;
@@ -590,12 +620,14 @@ function onMessagesScroll() {
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
   showScrollButton.value = distanceFromBottom > 200;
   followLiveOutput.value = distanceFromBottom < 64;
+  if (followLiveOutput.value) newContentBelow.value = false;
 }
 
 function handleClickScrollToBottom() {
   const el = messagesEl.value;
   if (!el) return;
   followLiveOutput.value = true;
+  newContentBelow.value = false;
   el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 }
 
@@ -694,11 +726,8 @@ const isComposing = ref(false);
 function handleKeySend(e: KeyboardEvent) {
   if (e.isComposing || isComposing.value) return;
   if (e.key === "Enter" && !e.shiftKey) {
+    if (isBusy.value) return;
     e.preventDefault();
-    if (isBusy.value) {
-      agent.interrupt(props.sessionId);
-      return;
-    }
     send();
   }
 }
@@ -715,6 +744,8 @@ const allMessages = computed(() => {
     persisted: true,
     createdAt: m.createdAt,
     metadata: m.metadata,
+    failed: false,
+    error: undefined as string | undefined,
   }));
   const live = messages.value.map((m) => ({
     id: m.id,
@@ -724,8 +755,10 @@ const allMessages = computed(() => {
     persisted: false,
     createdAt: m.createdAt,
     metadata: m.metadata,
+    failed: m.status === "error",
+    error: m.error,
   }));
-  const all = [...persisted, ...live];
+  const all = mergeChatMessageSources(persisted, live);
   const decorated = all.map((m) => {
     // Extract <artifacts> blocks from assistant text parts
     let artifacts: ArtifactItem[] = [];
@@ -770,6 +803,7 @@ const allMessages = computed(() => {
     activeElapsedMs: activeElapsedMs.value,
     expandedRunIds: expandedRunIds.value,
     outcome: agent.runOutcomeFor(props.sessionId),
+    waitingForPermission: Boolean(pendingPermission.value),
   });
 
   const artifactsByRun = new Map<string, ArtifactItem[]>();
@@ -799,8 +833,14 @@ watch(allMessages, async (msgs) => {
   if (!toValidate.length) return;
   try {
     const results = await api.validateArtifacts(props.projectId, toValidate);
+    let hasNewFile = false;
     for (const r of results) {
       artifactValidation.value[r.path] = r;
+      if (r.exists) hasNewFile = true;
+    }
+    if (hasNewFile) {
+      agent.fileChangeSeq++;
+      agent.lastFileChange = { sessionId: props.sessionId, toolName: "artifact-validation", at: Date.now() };
     }
   } catch {
     // Validation failure is non-fatal — cards still render with default state
@@ -871,10 +911,19 @@ const sessionChunkMap = computed(() => {
   return map;
 });
 
-const sessionErrors = computed(() =>
-  agent.errors.filter((e) => e.sessionId === props.sessionId),
-);
-const pendingPermission = computed(() => agent.pendingPermissions[props.sessionId] ?? null);
+const messageLevelErrorCodes = new Set([
+  "pi_prompt_failed",
+  "pi_prompt_write_failed",
+  "pi_model_error",
+  "project_workdir_missing",
+]);
+const sessionErrors = computed(() => {
+  const hasFailedUserMessage = messages.value.some((message) => message.role === "user" && message.status === "error");
+  return agent.errors.filter((error) =>
+    error.sessionId === props.sessionId
+      && !(hasFailedUserMessage && messageLevelErrorCodes.has(error.code)),
+  );
+});
 const permissionMessage = computed(() => {
   const pending = pendingPermission.value;
   if (!pending) return "";
@@ -997,42 +1046,6 @@ const pendingTipLabel = computed(() => {
           'run-status-only': m.statusOnly,
         }]"
       >
-        <AgentActivity
-          v-if="m.showActivity && m.activity"
-          :activity="m.activity"
-          :expanded="m.runExpanded"
-          @toggle="toggleRun(m.runId, m.canToggleRun)"
-        />
-        <div v-if="m.runArtifacts?.length" class="artifact-cards run-artifacts">
-          <ArtifactCard
-            v-for="a in m.runArtifacts"
-            :key="a.path"
-            :project-id="projectId"
-            :artifact="a"
-            :exists="artifactValidation[a.path]?.exists ?? true"
-            :size="artifactValidation[a.path]?.size ?? null"
-            @preview="(p) => emit('select-file', p)"
-          />
-        </div>
-        <button
-          v-else-if="m.showRunStatus && m.displayDurationMs !== null"
-          type="button"
-          class="assistant-duration"
-          :class="{ expanded: m.runExpanded, toggleable: m.canToggleRun }"
-          :aria-expanded="m.canToggleRun ? m.runExpanded : undefined"
-          :aria-disabled="!m.canToggleRun"
-          :title="m.canToggleRun
-            ? (m.runExpanded
-              ? t('chat.collapseRunHistory')
-              : t('chat.expandRunHistory'))
-            : undefined"
-          @click="toggleRun(m.runId, m.canToggleRun)"
-        >
-          <span>{{ t('chat.processedDuration', { duration: formatProcessingDuration(m.displayDurationMs) }) }}</span>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
         <div v-if="m.role === 'user'" class="msg-avatar-row">
           <span class="msg-avatar-label">user</span>
           <div class="msg-avatar" aria-hidden="true">
@@ -1047,10 +1060,44 @@ const pendingTipLabel = computed(() => {
             <img src="/panda-agent-avatar-22px.svg" alt="PI Agent" />
           </div>
           <span class="msg-avatar-label">PI Agent</span>
-          <span v-if="m.streaming" class="typing-dots">
-            <span /><span /><span />
-          </span>
         </div>
+        <AgentActivity
+          v-if="m.showActivity && m.activity"
+          :activity="m.activity"
+          :expanded="m.runExpanded"
+          :can-toggle="m.canToggleRun"
+          @toggle="toggleRun(m.runId, m.canToggleRun)"
+        />
+        <div v-if="m.runArtifacts?.length" class="artifact-cards run-artifacts">
+          <ArtifactCard
+            v-for="a in m.runArtifacts"
+            :key="a.path"
+            :project-id="projectId"
+            :artifact="a"
+            :exists="artifactValidation[a.path]?.exists ?? true"
+            :size="artifactValidation[a.path]?.size ?? null"
+            @preview="(p) => emit('select-file', p)"
+          />
+        </div>
+        <button
+          v-else-if="!m.showActivity && m.showRunStatus && m.displayDurationMs !== null"
+          type="button"
+          class="assistant-duration"
+          :class="{ expanded: m.runExpanded, toggleable: m.canToggleRun }"
+          :aria-expanded="m.canToggleRun ? m.runExpanded : undefined"
+          :aria-disabled="!m.canToggleRun"
+          :title="m.canToggleRun
+            ? (m.runExpanded
+              ? t('chat.collapseRunHistory')
+              : t('chat.expandRunHistory'))
+            : undefined"
+          @click="toggleRun(m.runId, m.canToggleRun)"
+        >
+          <span>{{ t('chat.processedDuration', { duration: formatProcessingDuration(m.displayDurationMs) }) }}</span>
+          <svg v-if="m.canToggleRun" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <div v-if="!m.statusOnly" class="msg-body">
           <template v-for="(p, pi) in m.parts" :key="pi">
             <!-- Image part — show thumbnail in message bubble -->
@@ -1115,7 +1162,7 @@ const pendingTipLabel = computed(() => {
           :class="m.role"
         >
           <button
-            v-if="messagePlainText(m)"
+            v-if="!m.streaming && messagePlainText(m)"
             type="button"
             class="msg-copy-btn"
             :class="{ copied: copiedMsgId === m.id }"
@@ -1132,30 +1179,33 @@ const pendingTipLabel = computed(() => {
             </svg>
           </button>
           <div
-            v-if="m.createdAt"
+            v-if="m.createdAt && !m.streaming"
             class="msg-time"
             :title="formatTimeFull(m.createdAt)"
           >{{ formatTime(m.createdAt) }}</div>
         </div>
+        <div v-if="m.role === 'user' && m.failed" class="message-failure" role="alert">
+          <span>{{ m.error && m.error !== 'connection_unavailable' ? m.error : t('chat.messageFailed') }}</span>
+          <button type="button" @click="retryUserMessage(m.id)">{{ t('chat.retry') }}</button>
+          <button type="button" @click="editFailedMessage(m)">{{ t('chat.editAndResend') }}</button>
+        </div>
       </div>
       </template>
-      <div v-if="isBusy" class="generating-indicator" role="status" aria-live="polite">
-        <span class="generating-spinner" aria-hidden="true" />
-        <span>{{ t('chat.generating') }}</span>
-        <span class="generating-dots" aria-hidden="true"><i /><i /><i /></span>
-      </div>
     </div>
 
       <Transition name="scroll-btn-fade">
         <button
           v-if="showScrollButton"
           class="scroll-to-bottom-btn"
+          :class="{ 'has-new-content': newContentBelow }"
           :title="t('chat.scrollToBottom')"
+          :aria-label="newContentBelow ? t('chat.newReply') : t('chat.scrollToBottom')"
           @click="handleClickScrollToBottom"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span v-if="newContentBelow">{{ t('chat.newReply') }}</span>
         </button>
       </Transition>
     </div>
@@ -1244,10 +1294,13 @@ const pendingTipLabel = computed(() => {
           <span v-else class="compaction-icon">↻</span>
           {{ compactionLabel }}
         </span>
-        <span class="token-usage" :title="t('chat.tokenUsage')">
-          <span class="token-in"><span class="token-arrow up">↑</span>{{ tokenLabel.input }}</span>
-          <span class="token-out"><span class="token-arrow down">↓</span>{{ tokenLabel.output }}</span>
-        </span>
+        <details class="session-meta">
+          <summary :title="t('chat.sessionDetails')" :aria-label="t('chat.sessionDetails')">ⓘ</summary>
+          <div class="session-meta-popover">
+            <span>{{ t('chat.inputTokens') }}：{{ tokenLabel.input }}</span>
+            <span>{{ t('chat.outputTokens') }}：{{ tokenLabel.output }}</span>
+          </div>
+        </details>
       </div>
       <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
@@ -1268,6 +1321,7 @@ const pendingTipLabel = computed(() => {
           class="send-btn stop embedded"
           @click="agent.interrupt(props.sessionId)"
           :title="t('chat.stop')"
+          :aria-label="t('chat.stop')"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
@@ -1279,6 +1333,7 @@ const pendingTipLabel = computed(() => {
           :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
           @click="send"
           :title="t('chat.send')"
+          :aria-label="t('chat.send')"
         >
           <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
             <path
@@ -1289,6 +1344,7 @@ const pendingTipLabel = computed(() => {
           <span class="send-label">{{ t('chat.send') }}</span>
         </button>
       </div>
+      <div v-if="isBusy" class="composer-busy-hint">{{ t('chat.busyDraftHint') }}</div>
     </div>
     <ImportSkillDialog
       data-test="import-skill-dialog"
@@ -1412,6 +1468,16 @@ const pendingTipLabel = computed(() => {
   z-index: 10;
 }
 
+.scroll-to-bottom-btn.has-new-content {
+  width: auto;
+  padding: 0 12px;
+  gap: 6px;
+  border-radius: 18px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .scroll-to-bottom-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -1427,45 +1493,6 @@ const pendingTipLabel = computed(() => {
 .scroll-btn-fade-leave-to {
   opacity: 0;
   transform: translateY(8px);
-}
-
-/* Always follows the final message. It remains visible between tool turns and
-   disappears only when Pi reports that the complete agent run has settled. */
-.generating-indicator {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 28px;
-  padding: 4px 2px 0 30px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.generating-spinner {
-  width: 11px;
-  height: 11px;
-  border: 1.5px solid var(--accent-dim);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: generatingSpin 0.7s linear infinite;
-}
-.generating-dots {
-  display: inline-flex;
-  gap: 3px;
-  align-items: center;
-}
-.generating-dots i {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: generatingDot 1.2s ease-in-out infinite;
-}
-.generating-dots i:nth-child(2) { animation-delay: 0.15s; }
-.generating-dots i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes generatingSpin { to { transform: rotate(360deg); } }
-@keyframes generatingDot {
-  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-2px); }
 }
 
 /* ─── Empty State ─── */
@@ -1607,15 +1634,6 @@ const pendingTipLabel = computed(() => {
   opacity: 0.5;
 }
 
-.msg.streaming.assistant::before {
-  animation: railPulse 1.8s ease-in-out infinite;
-}
-
-@keyframes railPulse {
-  0%, 100% { opacity: 0.55; box-shadow: 0 0 0 transparent; }
-  50%      { opacity: 1;    box-shadow: 0 0 10px var(--accent-glow); }
-}
-
 @keyframes msgInRight {
   from { opacity: 0; transform: translateX(6px)  translateY(2px); }
   to   { opacity: 1; transform: translateX(0)    translateY(0); }
@@ -1681,6 +1699,31 @@ const pendingTipLabel = computed(() => {
   color: var(--text-secondary);
 }
 
+.message-failure {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 520px;
+  color: var(--rose);
+  font-size: 11px;
+}
+
+.message-failure button {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--rose) 45%, var(--border-default));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.message-failure button:hover {
+  background: var(--rose-dim);
+}
+
 /* User actions float below the bubble, right-aligned to its right edge —
    the bubble shrinks to body width instead of expanding to fit the row. */
 .msg.user .msg-actions {
@@ -1695,7 +1738,40 @@ const pendingTipLabel = computed(() => {
   text-align: left;
 }
 
-/* Copy button: hidden until the message row is hovered (ChatGPT-style) */
+/* Match Codex's live-answer rhythm: keep transient metadata out of the way
+   while content is arriving and use one quiet caret as the only text-level
+   progress affordance. The run header remains the primary status indicator. */
+.msg.assistant.streaming .msg-content:last-of-type :deep(p:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(li:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h1:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h2:last-child)::after,
+.msg.assistant.streaming .msg-content:last-of-type :deep(h3:last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 13px;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  vertical-align: -2px;
+  animation: streamingCaret 1s steps(2, jump-none) infinite;
+}
+
+@keyframes streamingCaret {
+  50% { opacity: 0.2; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.assistant.streaming .msg-content:last-of-type :deep(p:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(li:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h1:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h2:last-child)::after,
+  .msg.assistant.streaming .msg-content:last-of-type :deep(h3:last-child)::after {
+    animation: none;
+  }
+}
+
+/* Copy button: always visible in the message actions row */
 .msg-copy-btn {
   display: inline-flex;
   align-items: center;
@@ -1708,11 +1784,10 @@ const pendingTipLabel = computed(() => {
   background: transparent;
   color: var(--text-faint, var(--text-secondary));
   cursor: pointer;
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
-.msg:hover .msg-copy-btn,
 .msg-copy-btn:focus-visible,
 .msg-copy-btn.copied {
   opacity: 1;
@@ -1770,29 +1845,6 @@ const pendingTipLabel = computed(() => {
 
 .assistant-duration.expanded svg {
   transform: rotate(90deg);
-}
-
-/* ─── Typing Indicator ─── */
-
-.typing-dots {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  margin-left: 2px;
-}
-
-.typing-dots span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: dotBounce 1.2s ease infinite;
-}
-.typing-dots span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.typing-dots span:nth-child(3) {
-  animation-delay: 0.3s;
 }
 
 /* ─── Artifact Cards ─── */
@@ -2033,7 +2085,7 @@ const pendingTipLabel = computed(() => {
   white-space: nowrap;
 }
 
-.compaction-status + .token-usage {
+.compaction-status + .session-meta {
   margin-left: 0;
 }
 
@@ -2070,11 +2122,65 @@ const pendingTipLabel = computed(() => {
   flex-shrink: 0;
 }
 
+.composer-busy-hint {
+  margin-top: -4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .composer-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 2px 0;
+}
+
+.session-meta {
+  position: relative;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.session-meta summary {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+
+.session-meta summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-meta summary:hover,
+.session-meta[open] summary {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.session-meta-popover {
+  position: absolute;
+  right: 0;
+  bottom: 30px;
+  z-index: 20;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .tool-btn {
@@ -2415,7 +2521,6 @@ const pendingTipLabel = computed(() => {
 .send-btn.stop {
   background: var(--rose);
   color: #fff;
-  animation: stopPulse 1.6s ease-in-out infinite;
 }
 .send-btn.stop:hover {
   background: var(--rose-hover, #e11d48);
@@ -2424,11 +2529,6 @@ const pendingTipLabel = computed(() => {
 }
 .send-btn.stop:active {
   transform: translateY(0);
-}
-
-@keyframes stopPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.0); }
-  50%      { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0.16); }
 }
 
 /* ─── KB Citation Chips ─── */

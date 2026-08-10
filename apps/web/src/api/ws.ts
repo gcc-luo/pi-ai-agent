@@ -49,8 +49,14 @@ export class WsClient {
     this.statusListeners.forEach((l) => l(s));
   }
 
-  send(event: ClientEvent) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(event));
+  send(event: ClientEvent): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      this.ws.send(JSON.stringify(event));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   subscribe(sessionId: string) {

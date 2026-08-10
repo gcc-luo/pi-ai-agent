@@ -11,9 +11,17 @@ interface StreamMessage {
   status: "streaming" | "complete" | "error";
   createdAt: number;
   metadata: Record<string, unknown> | null;
+  error?: string;
 }
 
 type PermissionRequest = Extract<ServerEvent, { type: "permission_request" }>;
+
+const PROMPT_ERROR_CODES = new Set([
+  "pi_prompt_failed",
+  "pi_prompt_write_failed",
+  "pi_model_error",
+  "project_workdir_missing",
+]);
 
 function partsFromText(text: string): MessagePart[] {
   return text ? [{ kind: "text", text }] : [];
@@ -74,12 +82,14 @@ function appendDeltaToKind(parts: MessagePart[], kind: "text" | "thinking", delt
 
 export const useAgentStore = defineStore("agent", {
   state: () => ({
+    initialized: false,
     streams: {} as Record<string, StreamMessage[]>,
     // Kept separately from message streaming: one agent run can produce many
     // assistant messages while it calls tools and resumes generation.
     runStates: {} as Record<string, "working" | "idle">,
     runStartedAt: {} as Record<string, number>,
-    runOutcomes: {} as Record<string, "interrupted" | undefined>,
+    runOutcomes: {} as Record<string, "interrupted" | "failed" | undefined>,
+    runEndedFromWorking: {} as Record<string, boolean>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -121,7 +131,7 @@ export const useAgentStore = defineStore("agent", {
     },
     runStartedAtFor: (state) => (sessionId: string): number | null =>
       state.runStartedAt[sessionId] ?? null,
-    runOutcomeFor: (state) => (sessionId: string): "interrupted" | null =>
+    runOutcomeFor: (state) => (sessionId: string): "interrupted" | "failed" | null =>
       state.runOutcomes[sessionId] ?? null,
     tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
       state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
@@ -129,6 +139,12 @@ export const useAgentStore = defineStore("agent", {
   },
   actions: {
     init() {
+      // App.vue can be remounted by development HMR. Registering another
+      // listener on every mount makes each streaming delta append repeatedly
+      // (for example, "Codex" becomes "CodCodCodexexex") until message_end
+      // replaces it with the authoritative final response.
+      if (this.initialized) return;
+      this.initialized = true;
       wsClient.onEvent((e) => this.handle(e));
       this.loadConfig();
     },
@@ -184,26 +200,62 @@ export const useAgentStore = defineStore("agent", {
       await this.loadConfig();
     },
     send(sessionId: string, content: string, images?: ImageAttachment[]) {
-      this.appendUser(sessionId, content, images);
+      const messageId = this.appendUser(sessionId, content, images);
       this.runStates[sessionId] = "working";
       this.runStartedAt[sessionId] = Date.now();
       delete this.runOutcomes[sessionId];
       const event: Record<string, unknown> = { type: "send", sessionId, content };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
-      wsClient.send(event as any);
+      if (!wsClient.send(event as any)) {
+        this.markUserMessageFailed(sessionId, messageId, "connection_unavailable");
+      }
+      return messageId;
+    },
+    retryUserMessage(sessionId: string, messageId: string) {
+      const message = (this.streams[sessionId] ?? []).find((item) => item.id === messageId && item.role === "user");
+      if (!message) return false;
+      const content = message.parts
+        .filter((part): part is Extract<MessagePart, { kind: "text" }> => part.kind === "text")
+        .map((part) => part.text)
+        .join("\n");
+      const images = message.parts
+        .filter((part): part is Extract<MessagePart, { kind: "image" }> => part.kind === "image")
+        .map((part) => ({ name: part.name, mediaType: part.mediaType, data: part.data }));
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).map((item) =>
+        item.id === messageId ? { ...item, status: "complete" as const, error: undefined } : item,
+      );
+      this.runStates[sessionId] = "working";
+      this.runStartedAt[sessionId] = Date.now();
+      delete this.runOutcomes[sessionId];
+      const sent = wsClient.send({
+        type: "send",
+        sessionId,
+        content,
+        ...(this.currentModel ? { model: this.currentModel } : {}),
+        ...(images.length ? { images } : {}),
+      });
+      if (!sent) this.markUserMessageFailed(sessionId, messageId, "connection_unavailable");
+      return sent;
+    },
+    removeLocalMessage(sessionId: string, messageId: string) {
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).filter((message) => message.id !== messageId);
     },
     interrupt(sessionId: string) {
       const pending = this.pendingPermissions[sessionId];
       if (pending) this.respondToPermission(sessionId, pending.requestId, false);
       this.runOutcomes[sessionId] = "interrupted";
-      wsClient.send({ type: "interrupt", sessionId });
+      if (!wsClient.send({ type: "interrupt", sessionId })) {
+        this.runStates[sessionId] = "idle";
+        delete this.runStartedAt[sessionId];
+      }
     },
     respondToPermission(sessionId: string, requestId: string, approved: boolean) {
       const pending = this.pendingPermissions[sessionId];
-      if (!pending || pending.requestId !== requestId) return;
-      delete this.pendingPermissions[sessionId];
-      wsClient.send({ type: "permission_response", sessionId, requestId, approved });
+      if (!pending || pending.requestId !== requestId) return false;
+      const sent = wsClient.send({ type: "permission_response", sessionId, requestId, approved });
+      if (sent) delete this.pendingPermissions[sessionId];
+      return sent;
     },
     subscribe(sessionId: string) {
       wsClient.subscribe(sessionId);
@@ -232,6 +284,16 @@ export const useAgentStore = defineStore("agent", {
         metadata: null,
       };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
+      return msg.id;
+    },
+    markUserMessageFailed(sessionId: string, messageId: string, error: string) {
+      this.streams[sessionId] = (this.streams[sessionId] ?? []).map((message) =>
+        message.id === messageId
+          ? { ...message, status: "error" as const, error }
+          : message,
+      );
+      this.runStates[sessionId] = "idle";
+      delete this.runStartedAt[sessionId];
     },
     handle(e: ServerEvent) {
       if (e.type === "permission_request") {
@@ -253,6 +315,11 @@ export const useAgentStore = defineStore("agent", {
           || e.code === "pi_model_error"
           || e.code === "project_workdir_missing"
         )) {
+          this.runOutcomes[e.sessionId] = "failed";
+          const lastUser = [...(this.streams[e.sessionId] ?? [])]
+            .reverse()
+            .find((message) => message.role === "user");
+          if (lastUser) this.markUserMessageFailed(e.sessionId, lastUser.id, e.message);
           this.runStates[e.sessionId] = "idle";
           delete this.runStartedAt[e.sessionId];
           // Provider failures arrive after Pi has emitted message_start. Drop
@@ -281,11 +348,14 @@ export const useAgentStore = defineStore("agent", {
       if (!("sessionId" in e) || !e.sessionId) return;
       const sid = e.sessionId;
       if (e.type === "agent_status") {
+        const wasWorking = this.runStates[sid] === "working";
         this.runStates[sid] = e.status;
         if (e.status === "working") {
+          delete this.runEndedFromWorking[sid];
           delete this.runOutcomes[sid];
           if (!this.runStartedAt[sid]) this.runStartedAt[sid] = Date.now();
         } else {
+          this.runEndedFromWorking[sid] = wasWorking;
           delete this.runStartedAt[sid];
         }
         if (e.status === "idle" && typeof e.durationMs === "number") {
@@ -308,6 +378,16 @@ export const useAgentStore = defineStore("agent", {
       if (e.type === "session_status") {
         if (e.status === "suspended" || e.status === "crashed") {
           this.runStates[sid] = "idle";
+          if (e.status === "crashed" && this.runEndedFromWorking[sid] === true) {
+            this.runOutcomes[sid] = "failed";
+          } else if (
+            e.status === "suspended"
+            && this.runOutcomes[sid] === "failed"
+            && !(this.streams[sid] ?? []).some((message) => message.role === "user" && message.status === "error")
+          ) {
+            delete this.runOutcomes[sid];
+          }
+          delete this.runEndedFromWorking[sid];
           delete this.runStartedAt[sid];
         }
         return;
@@ -326,6 +406,10 @@ export const useAgentStore = defineStore("agent", {
       }
       const list = this.streams[sid] ?? [];
       if (e.type === "message_start") {
+        // Replayed/repeated transport boundaries must be idempotent. Updating
+        // every later delta by id would otherwise make duplicate rows evolve
+        // into the same visible assistant response.
+        if (list.some((message) => message.id === e.messageId)) return;
         this.streams[sid] = [...list, {
           id: e.messageId,
           role: e.role,
@@ -440,6 +524,11 @@ export const useAgentStore = defineStore("agent", {
     },
     dismissError(index: number) {
       this.errors = this.errors.filter((_, i) => i !== index);
+    },
+    dismissPromptErrors(sessionId: string) {
+      this.errors = this.errors.filter((error) =>
+        error.sessionId !== sessionId || !PROMPT_ERROR_CODES.has(error.code),
+      );
     },
     clearErrors() {
       this.errors = [];
