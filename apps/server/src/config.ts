@@ -67,15 +67,19 @@ export function loadConfig(): Config {
   const customPiCommand = process.env.PI_COMMAND || undefined;
   const embeddedAgent = Boolean(bundledAgentEntry) && !customPiCommand;
   const configuredPiArgs = splitArgs(process.env.PI_ARGS);
+  const defaultNpxArgs = ["-y", "@earendil-works/pi-coding-agent"];
   const piCommand =
     customPiCommand ?? (embeddedAgent ? process.execPath : "npx");
   const piArgs = embeddedAgent
-    ? [bundledAgentEntry!, ...(configuredPiArgs ?? ["--mode", "rpc"])]
+    ? [
+        bundledAgentEntry!,
+        ...(configuredPiArgs ?? ["--mode", "rpc", "--no-extensions"]),
+      ]
     : (configuredPiArgs ?? [
-        "-y",
-        "@earendil-works/pi-coding-agent",
+        ...defaultNpxArgs,
         "--mode",
         "rpc",
+        "--no-extensions",
       ]);
   const configuredTuiArgs = splitArgs(process.env.PI_TUI_ARGS);
   return {
@@ -90,7 +94,8 @@ export function loadConfig(): Config {
     // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
     piTuiArgs: embeddedAgent
       ? [bundledAgentEntry!, ...(configuredTuiArgs ?? [])]
-      : (configuredTuiArgs ?? withoutRpcMode(piArgs)),
+      : (configuredTuiArgs ??
+        (configuredPiArgs ? withoutRpcMode(piArgs) : defaultNpxArgs)),
     piNpmRegistry: process.env.PI_NPM_REGISTRY ?? "https://registry.npmjs.org/",
     // One private Pi JSONL directory per Web UI session. Keep the original
     // tui-sessions location so existing Coding conversations remain usable.
