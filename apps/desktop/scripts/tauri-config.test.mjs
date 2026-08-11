@@ -34,7 +34,8 @@ test("refreshes the bundled server runtime before packaging", () => {
   assert.doesNotMatch(releaseWorkflow, /pnpm prepare-sidecar && npx tauri build/);
   assert.match(releaseWorkflow, /pnpm build -- --target aarch64-apple-darwin/);
   assert.match(releaseWorkflow, /pnpm build -- --target x86_64-pc-windows-msvc/);
-  assert.match(releaseWorkflow, /pnpm verify-release-version --/);
+  assert.doesNotMatch(releaseWorkflow, /pnpm verify-release-version --/);
+  assert.match(releaseWorkflow, /pnpm verify-release-version "\$\{\{ github\.ref_name \}\}"/);
 });
 
 test("bundles a verified PortableGit runtime for the Windows shell fallback", () => {

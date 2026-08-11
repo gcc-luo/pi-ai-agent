@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { verifyReleaseVersion } from "./verify-release-version.mjs";
+import {
+  resolveReleaseTag,
+  verifyReleaseVersion,
+} from "./verify-release-version.mjs";
+
+test("ignores pnpm's argument separator when resolving the release tag", () => {
+  assert.equal(resolveReleaseTag(["--", "v1.3.8"]), "v1.3.8");
+});
 
 test("accepts a release tag matching every desktop version", () => {
   assert.equal(

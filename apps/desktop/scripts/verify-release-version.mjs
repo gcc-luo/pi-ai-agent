@@ -28,6 +28,12 @@ export function verifyReleaseVersion({
   return releaseVersion;
 }
 
+export function resolveReleaseTag(args, fallbackTag = process.env.GITHUB_REF_NAME) {
+  const tag = args.find((argument) => argument !== "--") ?? fallbackTag;
+  if (!tag) throw new Error("Release tag argument is required");
+  return tag;
+}
+
 export function verifyRepositoryReleaseVersion(tag) {
   const packageJson = JSON.parse(
     readFileSync(path.resolve(scriptDir, "../package.json"), "utf8"),
@@ -51,8 +57,7 @@ export function verifyRepositoryReleaseVersion(tag) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const tag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
-  if (!tag) throw new Error("Release tag argument is required");
+  const tag = resolveReleaseTag(process.argv.slice(2));
   const version = verifyRepositoryReleaseVersion(tag);
   console.log(`Release version verified: ${version}`);
 }
