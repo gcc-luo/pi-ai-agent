@@ -34,6 +34,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm verify-release-version -- "${{ github.ref_name }}"
+        working-directory: apps/desktop
+
       - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
       - run: pnpm --filter @pi-web-ui/server build
       - run: pnpm --filter @pi-web-ui/web typecheck
@@ -43,7 +46,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm prepare-sidecar && npx tauri build --target aarch64-apple-darwin
+        run: pnpm build -- --target aarch64-apple-darwin
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -78,6 +81,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm verify-release-version -- "${{ github.ref_name }}"
+        working-directory: apps/desktop
+
       - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
       - run: pnpm --filter @pi-web-ui/server build
       - run: pnpm --filter @pi-web-ui/web typecheck
@@ -87,7 +93,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm prepare-sidecar && npx tauri build --target x86_64-pc-windows-msvc
+        run: pnpm build -- --target x86_64-pc-windows-msvc
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

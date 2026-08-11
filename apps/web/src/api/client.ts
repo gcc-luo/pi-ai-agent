@@ -133,6 +133,7 @@ export const api = {
   openFile: (projectId: string, path: string, action: "reveal" | "open-file" | "open-with") =>
     request<{ ok: boolean; error?: string }>("POST", `/files/${projectId}/open`, { path, action }),
 
+  validateArtifacts: (projectId: string, items: ArtifactItem[]) =>
     request<ArtifactValidation[]>("POST", `/files/${projectId}/validate-artifacts`, { items }),
 
   getConfig: () => request<ConfigDto>("GET", "/config"),

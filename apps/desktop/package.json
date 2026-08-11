@@ -1,7 +1,7 @@
 {
   "name": "@pi-web-ui/desktop",
   "productName": "PI-AI-Agent",
-  "version": "1.3.5",
+  "version": "1.3.7",
   "description": "PI AI Agent 桌面客户端",
   "private": true,
   "scripts": {
@@ -12,7 +12,8 @@
     "typecheck": "vue-tsc --noEmit",
     "tauri": "tauri",
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
-    "prepare-shell-runtime": "node scripts/prepare-shell-runtime.mjs"
+    "prepare-shell-runtime": "node scripts/prepare-shell-runtime.mjs",
+    "verify-release-version": "node scripts/verify-release-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

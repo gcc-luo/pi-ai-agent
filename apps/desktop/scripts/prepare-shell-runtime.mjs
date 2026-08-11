@@ -13,6 +13,8 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
+import { verifyPortableGitRuntime } from "./portable-git-runtime.mjs";
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const resourcesDir = resolve(scriptDir, "../resources");
 const archivePath = resolve(resourcesDir, "portable-git.exe");
@@ -27,10 +29,15 @@ if (process.platform !== "win32") {
 
 mkdirSync(resourcesDir, { recursive: true });
 
-if (existsSync(archivePath) && checksum(archivePath) === expectedChecksum) {
+if (existsSync(archivePath)) {
   writeFileSync(checksumPath, `${expectedChecksum}\n`);
-  console.log(`Using verified PortableGit runtime: ${archivePath}`);
-  process.exit(0);
+  try {
+    verifyPortableGitRuntime({ archivePath, checksumPath, expectedChecksum });
+    console.log(`Using verified PortableGit runtime: ${archivePath}`);
+    process.exit(0);
+  } catch (error) {
+    console.warn(`${error.message}; downloading a clean copy.`);
+  }
 }
 
 const temporaryPath = `${archivePath}.download-${process.pid}`;
@@ -47,6 +54,7 @@ try {
   }
   copyFileSync(temporaryPath, archivePath);
   writeFileSync(checksumPath, `${expectedChecksum}\n`);
+  verifyPortableGitRuntime({ archivePath, checksumPath, expectedChecksum });
   console.log(`PortableGit runtime is ready: ${archivePath}`);
 } finally {
   try {

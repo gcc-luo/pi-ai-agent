@@ -3,11 +3,7 @@ use flate2::read::GzDecoder;
 #[cfg(not(target_os = "windows"))]
 use std::fs::File;
 #[cfg(target_os = "windows")]
-use std::{
-    ffi::OsString,
-    os::windows::process::CommandExt,
-    process::Command,
-};
+use std::{ffi::OsString, os::windows::process::CommandExt, process::Command};
 use std::{
     fs, io,
     net::TcpListener,
@@ -184,7 +180,7 @@ fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
 
     let runtime_dir = prepare_server_runtime(app)?;
     #[cfg(target_os = "windows")]
-    let bundled_shell_bin_dir = prepare_bundled_shell_runtime(app)?;
+    let bundled_shell_bin_dir = optional_bundled_shell_path(prepare_bundled_shell_runtime(app));
     let server_entry = runtime_dir.join("dist/index.js");
     let server_port = find_available_port()?;
     app.state::<ServerPort>()
@@ -203,7 +199,11 @@ fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
                 .env("HOST", "127.0.0.1")
                 .env("PORT", server_port.to_string());
             #[cfg(target_os = "windows")]
-            let command = command.env("PATH", prepend_windows_path(&bundled_shell_bin_dir)?);
+            let command = if let Some(bundled_shell_bin_dir) = bundled_shell_bin_dir {
+                command.env("PATH", prepend_windows_path(&bundled_shell_bin_dir)?)
+            } else {
+                command
+            };
             let (mut events, child) = command
                 .spawn()
                 .map_err(|e| format!("Failed to start server sidecar: {e}"))?;
@@ -349,6 +349,21 @@ fn prepare_bundled_shell_runtime(
 }
 
 #[cfg(target_os = "windows")]
+fn optional_bundled_shell_path(
+    result: Result<PathBuf, Box<dyn std::error::Error>>,
+) -> Option<PathBuf> {
+    match result {
+        Ok(path) => Some(path),
+        Err(error) => {
+            log::error!(
+                "Bundled Shell runtime is unavailable; starting the server with the system PATH: {error}"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn prepend_windows_path(directory: &Path) -> io::Result<OsString> {
     let mut entries = vec![directory.to_path_buf()];
     if let Some(current_path) = std::env::var_os("PATH") {
@@ -490,6 +505,14 @@ mod tests {
             .expect("PATH should contain the bundled shell");
 
         assert_eq!(first, shell_dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn bundled_shell_preparation_failure_degrades_to_the_original_path() {
+        let result = Err::<std::path::PathBuf, _>("empty PortableGit archive".into());
+
+        assert!(super::optional_bundled_shell_path(result).is_none());
     }
 
     #[test]
