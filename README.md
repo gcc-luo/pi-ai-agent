@@ -95,6 +95,25 @@ pnpm --filter @pi-web-ui/web dev
 
 ## 构建与发布
 
+### 发布桌面端版本
+
+使用统一命令同步 npm、Tauri 和 Cargo 的版本号：
+
+```bash
+pnpm release:prepare 1.3.11
+```
+
+也可以传入带 `v` 前缀的版本。确认变更后，按以下顺序提交并创建 tag：
+
+```bash
+git commit -am "chore(desktop): 升级版本号到 v1.3.11"
+git tag -a v1.3.11 -m "发布 v1.3.11"
+git push origin release/v1.0
+git push origin v1.3.11
+```
+
+依赖安装时会自动启用 `.githooks/pre-push`。推送 `vX.Y.Z` tag 前，hook 会校验三个桌面端版本是否与 tag 一致；GitHub Actions 也会在构建前再次校验。不要跳过该检查，也不要直接手动修改单个版本文件。
+
 ### 构建 Web 和服务端
 
 ```bash
