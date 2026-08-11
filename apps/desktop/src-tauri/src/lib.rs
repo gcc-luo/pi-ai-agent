@@ -2,6 +2,12 @@
 use flate2::read::GzDecoder;
 #[cfg(not(target_os = "windows"))]
 use std::fs::File;
+#[cfg(target_os = "windows")]
+use std::{
+    ffi::OsString,
+    os::windows::process::CommandExt,
+    process::Command,
+};
 use std::{
     fs, io,
     net::TcpListener,
@@ -177,6 +183,8 @@ fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
     let shell = app.shell();
 
     let runtime_dir = prepare_server_runtime(app)?;
+    #[cfg(target_os = "windows")]
+    let bundled_shell_bin_dir = prepare_bundled_shell_runtime(app)?;
     let server_entry = runtime_dir.join("dist/index.js");
     let server_port = find_available_port()?;
     app.state::<ServerPort>()
@@ -186,14 +194,17 @@ fn start_server_sidecar(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
     match shell.sidecar("pi-node") {
         Ok(cmd) => {
             log::info!("Starting server with bundled Node.js runtime");
-            let (mut events, child) = cmd
+            let command = cmd
                 .arg(server_entry.to_string_lossy().to_string())
                 .env(
                     "PI_BUNDLED_RUNTIME_DIR",
                     runtime_dir.to_string_lossy().to_string(),
                 )
                 .env("HOST", "127.0.0.1")
-                .env("PORT", server_port.to_string())
+                .env("PORT", server_port.to_string());
+            #[cfg(target_os = "windows")]
+            let command = command.env("PATH", prepend_windows_path(&bundled_shell_bin_dir)?);
+            let (mut events, child) = command
                 .spawn()
                 .map_err(|e| format!("Failed to start server sidecar: {e}"))?;
             log::info!("Server sidecar started with pid={}", child.pid());
@@ -293,6 +304,60 @@ fn prepare_server_runtime(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std
 }
 
 #[cfg(target_os = "windows")]
+fn prepare_bundled_shell_runtime(
+    app: &tauri::AppHandle,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let resource_dir = app.path().resource_dir()?;
+    let archive_path = resource_dir.join("portable-git.exe");
+    let expected_checksum = fs::read_to_string(resource_dir.join("portable-git.sha256"))?
+        .trim()
+        .to_owned();
+    let cache_dir = app.path().app_cache_dir()?;
+    let runtime_dir = cache_dir.join("bundled-shell");
+    let bash_path = runtime_dir.join("bin").join("bash.exe");
+    let marker_path = runtime_dir.join(".runtime-version");
+
+    if fs::read_to_string(&marker_path)
+        .map(|value| value.trim() == expected_checksum)
+        .unwrap_or(false)
+        && bash_path.is_file()
+    {
+        return Ok(runtime_dir.join("bin"));
+    }
+
+    fs::create_dir_all(&cache_dir)?;
+    let staging_dir = cache_dir.join("bundled-shell-staging");
+    remove_dir_if_exists(&staging_dir)?;
+    fs::create_dir_all(&staging_dir)?;
+
+    let output_argument = format!("-o{}", staging_dir.to_string_lossy());
+    let status = Command::new(&archive_path)
+        .creation_flags(windows_tar_creation_flags())
+        .args(["-y", output_argument.as_str()])
+        .status()?;
+    if !status.success() {
+        return Err(format!("PortableGit extraction failed with status {status}").into());
+    }
+    if !staging_dir.join("bin").join("bash.exe").is_file() {
+        return Err("PortableGit extraction did not provide bin\\bash.exe".into());
+    }
+    fs::write(staging_dir.join(".runtime-version"), expected_checksum)?;
+
+    remove_dir_if_exists(&runtime_dir)?;
+    fs::rename(&staging_dir, &runtime_dir)?;
+    Ok(runtime_dir.join("bin"))
+}
+
+#[cfg(target_os = "windows")]
+fn prepend_windows_path(directory: &Path) -> io::Result<OsString> {
+    let mut entries = vec![directory.to_path_buf()];
+    if let Some(current_path) = std::env::var_os("PATH") {
+        entries.extend(std::env::split_paths(&current_path));
+    }
+    std::env::join_paths(entries).map_err(io::Error::other)
+}
+
+#[cfg(target_os = "windows")]
 fn windows_tar_creation_flags() -> u32 {
     0x0800_0000 // CREATE_NO_WINDOW
 }
@@ -324,8 +389,6 @@ fn wait_for_server_port(
 
 #[cfg(target_os = "windows")]
 fn extract_archive(archive_path: &Path, dest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
     let mut command = Command::new("tar.exe");
     command.creation_flags(windows_tar_creation_flags()).args([
         "-xzf",
@@ -415,6 +478,18 @@ mod tests {
     #[test]
     fn windows_tar_command_hides_its_console_window() {
         assert_eq!(super::windows_tar_creation_flags(), 0x0800_0000);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn bundled_shell_path_precedes_the_user_path() {
+        let shell_dir = std::path::Path::new(r"C:\\PI-AI-Agent\\bundled-shell\\bin");
+        let path = super::prepend_windows_path(shell_dir).expect("PATH should be joinable");
+        let first = std::env::split_paths(&path)
+            .next()
+            .expect("PATH should contain the bundled shell");
+
+        assert_eq!(first, shell_dir);
     }
 
     #[test]

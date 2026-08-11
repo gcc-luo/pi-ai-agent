@@ -5,5 +5,8 @@ node_modules/
 *.log
 resources/server-runtime.tar.gz
 resources/server-runtime.sha256
+resources/portable-git.exe
+resources/portable-git.sha256
+resources/portable-git.exe.download-*
 .deploy-*
 .native-*

@@ -22,7 +22,8 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "@amaster.ai/pi-channels@0.1.6": "patches/@amaster.ai__pi-channels@0.1.6.patch"
+      "@amaster.ai/pi-channels@0.1.6": "patches/@amaster.ai__pi-channels@0.1.6.patch",
+      "@earendil-works/pi-coding-agent@0.82.1": "patches/@earendil-works__pi-coding-agent@0.82.1.patch"
     }
   }
 }

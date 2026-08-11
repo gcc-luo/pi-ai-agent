@@ -116,10 +116,18 @@ copyFileSync(
   resolve(serverDir, "node_modules/@amaster.ai/pi-channels/package.json"),
   resolve(deployDir, "node_modules/@amaster.ai/pi-channels/package.json"),
 );
+// pnpm deploy performs an isolated production install, so workspace-level
+// patchedDependencies are not reapplied inside the deployment directory.
+// Copy the verified Pi shell fallback patch from the installed server runtime.
+copyFileSync(
+  resolve(serverDir, "node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js"),
+  resolve(deployDir, "node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js"),
+);
 
 console.log("\nCreating archive-safe production runtime...");
 const runtimeDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-runtime-"));
 copyRuntimeTree(deployDir, runtimeDir);
+assertBundledShellFallback(runtimeDir);
 rmSync(deployDir, { recursive: true, force: true });
 
 console.log("\nCopying Node.js sidecar...");
@@ -250,4 +258,17 @@ function findFreePort() {
       });
     });
   });
+}
+
+function assertBundledShellFallback(bundledRuntimeDir) {
+  const shellSource = readFileSync(
+    resolve(
+      bundledRuntimeDir,
+      "node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js",
+    ),
+    "utf8",
+  );
+  if (shellSource.includes("Custom shell path not found")) {
+    throw new Error("Packaged pi-coding-agent still rejects stale custom shell paths");
+  }
 }

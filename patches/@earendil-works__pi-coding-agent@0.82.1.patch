@@ -1,0 +1,26 @@
+diff --git a/dist/utils/shell.js b/dist/utils/shell.js
+index 68e7e516ca147649a56e236e406a1a4a008069af..a12269d18c1003e956f2e8c4ce20df1669405b30 100644
+--- a/dist/utils/shell.js
++++ b/dist/utils/shell.js
+@@ -61,9 +61,20 @@ export function getShellConfig(customShellPath) {
+         if (existsSync(customShellPath)) {
+             return getBashShellConfig(customShellPath);
+         }
+-        throw new Error(`Custom shell path not found: ${customShellPath}`);
++        // A shell configured by another desktop product can disappear after an
++        // upgrade or uninstall. Continue with normal discovery so callers that
++        // provide a bundled shell through PATH still have a usable fallback.
+     }
+     if (process.platform === "win32") {
++        // An invalid custom path is typically a stale app-specific setting.
++        // Prefer PATH first so an embedding application can provide its own
++        // bundled Bash without being overridden by a system Git installation.
++        if (customShellPath) {
++            const bashOnPath = findBashOnPath();
++            if (bashOnPath) {
++                return getBashShellConfig(bashOnPath);
++            }
++        }
+         // 2. Try Git Bash in known locations
+         const paths = [];
+         const programFiles = process.env.ProgramFiles;
