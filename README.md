@@ -1,4 +1,4 @@
-# PI AI Agent
+﻿# PI AI Agent
 
 PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/pi) 的开源 AI 编程助手。它提供桌面端图形界面，用于管理项目、会话、模型、文件和开发任务，也支持在浏览器中运行 Web 界面。
 
@@ -37,7 +37,6 @@ PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/
 - Node.js 20 或更高版本
 - pnpm 9.6.0（仓库通过 `packageManager` 固定版本）
 - Rust stable（仅构建桌面端时需要）
-- LibreOffice（可选，用于预览旧版 Office 文档）
 
 桌面端安装包需要 Node.js 22.19 或更高版本，因为打包过程会生成内置服务端运行时。
 

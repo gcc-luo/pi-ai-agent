@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Config } from "./config.js";
 import { openDatabase } from "./db/sqlite.js";
@@ -36,8 +36,6 @@ import { createKbFilesRoutes } from "./routes/kb-files.js";
 import { kbSearchRoutes } from "./routes/kb-search.js";
 import { sessionKbBindingsRoutes } from "./routes/session-kb-bindings.js";
 import { trashRoutes } from "./routes/trash.js";
-import { LibreOfficeService } from "./services/libre-office.js";
-import { createOfficePdfRoutes } from "./routes/office-pdf.js";
 import { ExpertRepository } from "./db/repositories/expert.js";
 import { expertsRoutes } from "./routes/experts.js";
 import { ScheduledTaskRepository, TaskLogRepository } from "./db/repositories/scheduled-task.js";
@@ -279,15 +277,6 @@ export async function buildConfiguredApp(config: Config) {
   app.addHook("onReady", async () => trashSweeper.start());
   app.addHook("onClose", async () => trashSweeper.stop());
 
-  // LibreOffice → PDF conversion for Office file previews
-  const loService = new LibreOfficeService({
-    binaryPath: config.libreOfficeBinary || undefined,
-    timeoutMs: config.loConvertTimeoutMs,
-    cacheDir: config.loCacheDir,
-    maxCacheFiles: config.loMaxCacheFiles,
-    maxCacheBytes: config.loMaxCacheBytes,
-  });
-  await app.register(createOfficePdfRoutes(loService), { prefix: "/api" });
 
   await app.register(agentRoutes);
   await app.register(terminalRoutes);

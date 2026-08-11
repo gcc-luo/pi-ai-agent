@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
@@ -133,12 +133,6 @@ export const api = {
   openFile: (projectId: string, path: string, action: "reveal" | "open-file" | "open-with") =>
     request<{ ok: boolean; error?: string }>("POST", `/files/${projectId}/open`, { path, action }),
 
-  // Office → PDF via LibreOffice
-  officePdfUrl: (projectId: string, path: string) =>
-    apiUrl(`/files/${projectId}/office-pdf?path=${encodeURIComponent(path)}`),
-  checkOfficeAvailability: () =>
-    request<{ available: boolean }>("GET", "/files/office-status"),
-  validateArtifacts: (projectId: string, items: ArtifactItem[]) =>
     request<ArtifactValidation[]>("POST", `/files/${projectId}/validate-artifacts`, { items }),
 
   getConfig: () => request<ConfigDto>("GET", "/config"),
