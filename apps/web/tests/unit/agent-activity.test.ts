@@ -73,6 +73,32 @@ describe("AgentActivity", () => {
     expect(wrapper.emitted("toggle")).toHaveLength(1);
   });
 
+  it("renders assistant commentary between timed work steps", () => {
+    const timeline = {
+      ...activity,
+      status: "complete" as const,
+      items: [
+        {
+          id: "message:a1:0",
+          kind: "message" as const,
+          label: "analyzeRequest" as const,
+          status: "complete" as const,
+          part: { kind: "text" as const, text: "我先检查项目启动方式。" },
+        },
+        {
+          ...activity.items[1]!,
+          durationMs: 7_000,
+        },
+      ],
+    };
+    const wrapper = mount(AgentActivity, {
+      props: { activity: timeline, expanded: true, canToggle: true },
+    });
+
+    expect(wrapper.get(".activity-message").text()).toContain("我先检查项目启动方式");
+    expect(wrapper.get(".activity-item-duration").text()).toBe("已工作 7s");
+  });
+
   it("announces failures in the completed summary", () => {
     const failed = {
       ...activity,

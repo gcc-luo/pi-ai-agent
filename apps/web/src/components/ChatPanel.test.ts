@@ -31,8 +31,8 @@ describe("ChatPanel PI Agent avatar", () => {
 
     expect(source).toContain('import AgentActivity from "./AgentActivity.vue"');
     expect(source).toContain("<AgentActivity");
-    expect(source).toContain("artifactsByRun");
-    expect(source).toContain("m.runArtifacts?.length");
+    expect(source).not.toContain("runArtifacts");
+    expect(source).toContain('v-if="m.artifacts?.length && !m.hideNonTextContent"');
     expect(source).not.toContain("messages.value.map((m) => m.parts.length)");
     expect(source).toContain("liveTextSignature");
   });

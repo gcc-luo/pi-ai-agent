@@ -1,11 +1,13 @@
-import type { MessagePart } from "@pi-web-ui/shared";
+import type { ArtifactItem, MessagePart } from "@pi-web-ui/shared";
 
 export interface ChatRunSource {
   id: string;
   role: "user" | "assistant";
   metadata: Record<string, unknown> | null;
+  createdAt?: number;
   hasNonTextContent?: boolean;
   hasVisibleContent?: boolean;
+  artifacts?: ArtifactItem[];
   parts?: MessagePart[];
 }
 
@@ -88,10 +90,11 @@ export type AgentActivityLabel =
 
 export interface AgentActivityItem {
   id: string;
-  kind: "thinking" | "tool" | "raw";
+  kind: "message" | "thinking" | "tool" | "raw";
   label: AgentActivityLabel;
   status: "running" | "complete" | "failed";
   part: MessagePart;
+  durationMs?: number | null;
 }
 
 export interface AgentActivity {
@@ -115,6 +118,7 @@ export interface ChatRunAnnotation {
   canToggleRun: boolean;
   hiddenMessageCount: number;
   hideNonTextContent: boolean;
+  hideActivityText: boolean;
   statusOnly: boolean;
   showActivity: boolean;
   activity: AgentActivity | null;
@@ -133,6 +137,38 @@ function storedDurationMs(message: ChatRunSource): number | null {
   return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0
     ? durationMs
     : null;
+}
+
+function containsProcessParts(message: ChatRunSource): boolean {
+  return message.parts?.some((part) =>
+    part.kind === "thinking" || part.kind === "tool_call" || part.kind === "raw",
+  ) ?? false;
+}
+
+function hasStandaloneContent(message: ChatRunSource): boolean {
+  if ((message.artifacts?.length ?? 0) > 0) return true;
+
+  const parts = message.parts;
+  if (parts) {
+    if (parts.some((part) => part.kind === "image")) return true;
+    const lastProcessIndex = parts.map((part) =>
+      part.kind === "thinking" || part.kind === "tool_call" || part.kind === "raw",
+    ).lastIndexOf(true);
+    const lastTextIndex = parts.map((part) =>
+      part.kind === "text" && part.text.trim().length > 0,
+    ).lastIndexOf(true);
+    if (lastTextIndex > lastProcessIndex) return true;
+    return message.hasVisibleContent === true && parts.length === 0;
+  }
+
+  return message.hasVisibleContent ?? message.hasNonTextContent !== true;
+}
+
+function finalResponseIndex(messages: ChatRunSource[]): number | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (hasStandaloneContent(messages[index]!)) return index;
+  }
+  return null;
 }
 
 function resultFailed(result: unknown): boolean {
@@ -182,9 +218,31 @@ export function buildAgentActivity(
 ): AgentActivity {
   const items: AgentActivityItem[] = [];
   const toolIndexes = new Map<string, number>();
+  const responseIndex = finalResponseIndex(messages);
 
-  messages.forEach((message) => {
+  messages.forEach((message, messageIndex) => {
+    const nextCreatedAt = messages
+      .slice(messageIndex + 1)
+      .find((candidate) => typeof candidate.createdAt === "number")
+      ?.createdAt;
+    const messageDurationMs = typeof message.createdAt === "number" && typeof nextCreatedAt === "number"
+      ? Math.max(0, nextCreatedAt - message.createdAt)
+      : null;
+    const includeText = messageIndex !== responseIndex;
+
     (message.parts ?? []).forEach((part, partIndex) => {
+      if (part.kind === "text") {
+        if (includeText && part.text.trim()) {
+          items.push({
+            id: `message:${message.id}:${partIndex}`,
+            kind: "message",
+            label: "analyzeRequest",
+            status: "complete",
+            part,
+          });
+        }
+        return;
+      }
       if (part.kind === "thinking") {
         items.push({
           id: `thinking:${message.id}:${partIndex}`,
@@ -214,6 +272,7 @@ export function buildAgentActivity(
         label: activityLabelForTool(part.name, part.args),
         status: part.status === "running" ? "running" : failed ? "failed" : "complete",
         part,
+        durationMs: messageDurationMs,
       };
       const existingIndex = toolIndexes.get(part.toolCallId);
       if (existingIndex === undefined) {
@@ -274,6 +333,17 @@ export function annotateChatRuns<T extends ChatRunSource>(
     runIndexes.set(currentRunId, [...(runIndexes.get(currentRunId) ?? []), index]);
   });
 
+  const artifactsByRun = new Map<string, ArtifactItem[]>();
+  for (const [runId, indexes] of runIndexes) {
+    const artifacts: ArtifactItem[] = [];
+    for (const index of indexes) {
+      for (const artifact of messages[index]!.artifacts ?? []) {
+        if (!artifacts.some((item) => item.path === artifact.path)) artifacts.push(artifact);
+      }
+    }
+    artifactsByRun.set(runId, artifacts);
+  }
+
   const latestRunId = [...runIndexes.keys()].at(-1) ?? null;
 
   return messages.map((message, index) => {
@@ -289,6 +359,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
         canToggleRun: false,
         hiddenMessageCount: 0,
         hideNonTextContent: false,
+        hideActivityText: false,
         statusOnly: false,
         showActivity: false,
         activity: null,
@@ -299,11 +370,16 @@ export function annotateChatRuns<T extends ChatRunSource>(
     const indexes = runIndexes.get(runId)!;
     const firstIndex = indexes[0]!;
     const lastIndex = indexes[indexes.length - 1]!;
+    const runMessages = indexes.map((messageIndex) => messages[messageIndex]!);
+    const relativeResponseIndex = finalResponseIndex(runMessages);
+    const responseIndex = relativeResponseIndex === null
+      ? null
+      : indexes[relativeResponseIndex]!;
     const isFirst = index === firstIndex;
-    const isLast = index === lastIndex;
+    const isResponse = index === responseIndex;
     const isActive = options.isBusy && runId === latestRunId;
     const runExpanded = options.expandedRunIds.has(runId);
-    const runMessages = indexes.map((messageIndex) => messages[messageIndex]!);
+    const runArtifacts = artifactsByRun.get(runId) ?? [];
     const activity = buildAgentActivity(
       runId,
       runMessages,
@@ -312,12 +388,12 @@ export function annotateChatRuns<T extends ChatRunSource>(
       runId === latestRunId ? (options.outcome ?? null) : null,
       isActive && options.waitingForPermission === true,
     );
-    const lastMessage = messages[lastIndex]!;
-    const lastHasVisibleContent = lastMessage.hasVisibleContent
-      ?? lastMessage.parts?.some((part) =>
-        part.kind === "image" || (part.kind === "text" && part.text.trim().length > 0),
-      )
-      ?? true;
+    const responseHasVisibleContent = responseIndex !== null
+      && (hasStandaloneContent(messages[responseIndex]!) || runArtifacts.length > 0);
+    const hasActivityTimeline = activity.items.length > 0;
+    const hideActivityText = activity.items.some((item) =>
+      item.kind === "message" && item.id.startsWith(`message:${message.id}:`),
+    );
     const canToggleRun = indexes.length > 1
       || activity.items.length > 0
       || messages[lastIndex]!.hasNonTextContent === true;
@@ -326,19 +402,24 @@ export function annotateChatRuns<T extends ChatRunSource>(
       ? (options.activeElapsedMs ?? 0)
       : storedDurationMs(messages[lastIndex]!);
     const statusOwner = isFirst;
-    const statusOnly = collapsed && isFirst && (!isLast || !lastHasVisibleContent);
+    const statusOnly = (hasActivityTimeline && isFirst && !isResponse)
+      || (collapsed && isFirst && (!isResponse || !responseHasVisibleContent));
+    const hiddenByTimeline = hasActivityTimeline && !isFirst && !isResponse;
 
     return {
       ...message,
+      artifacts: index === (responseIndex ?? lastIndex) ? runArtifacts : [],
       runId,
-      hidden: collapsed && !isFirst && (!isLast || !lastHasVisibleContent),
-      showHeader: collapsed ? isLast && lastHasVisibleContent : isFirst,
+      hidden: hiddenByTimeline
+        || (collapsed && !isFirst && (!isResponse || !responseHasVisibleContent)),
+      showHeader: isFirst,
       showRunStatus: statusOwner && (isActive || durationMs !== null),
       displayDurationMs: statusOwner ? durationMs : null,
       runExpanded,
       canToggleRun,
       hiddenMessageCount: collapsed ? Math.max(1, indexes.length - 1) : 0,
       hideNonTextContent: false,
+      hideActivityText,
       statusOnly,
       showActivity: isFirst && (isActive || activity.items.length > 0),
       activity: isFirst ? activity : null,

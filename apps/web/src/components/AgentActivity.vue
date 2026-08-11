@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "../i18n/index.js";
+import { renderMarkdown } from "../utils/markdown.js";
 import {
   formatProcessingDuration,
   type AgentActivity,
@@ -62,6 +63,15 @@ function toolPreview(args: unknown): string {
   const preview = value.command ?? value.path ?? value.query ?? value.url;
   return typeof preview === "string" ? preview : formatJson(args);
 }
+
+function itemStatus(item: AgentActivity["items"][number]): string {
+  if (item.status === "running") return t("chat.toolRunning");
+  if (item.status === "failed") return t("chat.toolFailed");
+  if (item.durationMs !== null && item.durationMs !== undefined) {
+    return t("chat.activityWorked", { duration: formatProcessingDuration(item.durationMs) });
+  }
+  return t("chat.toolDone");
+}
 </script>
 
 <template>
@@ -80,7 +90,10 @@ function toolPreview(args: unknown): string {
         <span v-else-if="activity.status === 'waiting_permission'">…</span>
         <span v-else-if="activity.status === 'failed'">!</span>
         <span v-else-if="activity.status === 'interrupted'">■</span>
-        <span v-else>✓</span>
+        <svg v-else width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M2 4.4 7 1.8l5 2.6L7 7 2 4.4Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+          <path d="m2 7 5 2.6L12 7M2 9.6l5 2.6 5-2.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
       </span>
       <span class="activity-state">
         {{ activity.status === 'running'
@@ -93,7 +106,7 @@ function toolPreview(args: unknown): string {
             ? t('chat.activityInterrupted')
             : activity.durationMs === null
               ? t('chat.activityCompleted')
-              : t('chat.processedDuration', { duration: formatProcessingDuration(activity.durationMs) }) }}
+              : t('chat.activityWorked', { duration: formatProcessingDuration(activity.durationMs) }) }}
       </span>
       <template v-if="activity.status === 'running' || activity.status === 'waiting_permission'">
         <span class="activity-separator" aria-hidden="true">·</span>
@@ -125,41 +138,47 @@ function toolPreview(args: unknown): string {
         class="activity-item"
         :class="[item.kind, item.status]"
       >
-        <div class="activity-item-heading">
-          <span class="activity-item-mark" aria-hidden="true">
-            {{ item.status === 'failed' ? '!' : item.status === 'running' ? '›' : '·' }}
-          </span>
-          <span v-if="item.kind === 'tool' && item.part.kind === 'tool_call'" class="activity-tool-name">
-            {{ item.part.name }}
-          </span>
-          <span v-else>{{ activityLabel(item.label) }}</span>
-          <span class="activity-item-status">
-            {{ item.status === 'running'
-              ? t('chat.toolRunning')
-              : item.status === 'failed'
-                ? t('chat.toolFailed')
-                : t('chat.toolDone') }}
-          </span>
-        </div>
-
-        <div v-if="item.part.kind === 'thinking'" class="activity-thinking">
+        <div
+          v-if="item.kind === 'message' && item.part.kind === 'text'"
+          class="activity-message"
+          v-html="renderMarkdown(item.part.text)"
+        />
+        <div v-else-if="item.part.kind === 'thinking'" class="activity-thinking">
           {{ item.part.text }}
         </div>
-        <template v-else-if="item.part.kind === 'tool_call'">
-          <div class="activity-tool-preview">{{ toolPreview(item.part.args) }}</div>
-          <div class="activity-section">
-            <span class="activity-label">{{ t('chat.toolArgs') }}</span>
-            <pre>{{ formatJson(item.part.args) }}</pre>
+        <details v-else-if="item.part.kind === 'tool_call'" class="activity-work-step" :open="item.status === 'running'">
+          <summary class="activity-item-heading">
+            <span class="activity-item-mark" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2 4.4 7 1.8l5 2.6L7 7 2 4.4Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
+                <path d="m2 7 5 2.6L12 7M2 9.6l5 2.6 5-2.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <span class="activity-item-duration">{{ itemStatus(item) }}</span>
+            <svg class="activity-item-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </summary>
+          <div class="activity-step-detail">
+            <div class="activity-tool-meta">
+              <span>{{ activityLabel(item.label) }}</span>
+              <code>{{ item.part.name }}</code>
+            </div>
+            <div class="activity-tool-preview">{{ toolPreview(item.part.args) }}</div>
+            <div class="activity-section">
+              <span class="activity-label">{{ t('chat.toolArgs') }}</span>
+              <pre>{{ formatJson(item.part.args) }}</pre>
+            </div>
+            <div v-if="item.part.progress?.length" class="activity-section">
+              <span class="activity-label">{{ t('chat.toolProgress') }}</span>
+              <pre>{{ formatJson(item.part.progress) }}</pre>
+            </div>
+            <div v-if="item.part.result !== undefined" class="activity-section">
+              <span class="activity-label">{{ t('chat.toolResult') }}</span>
+              <pre>{{ toolResultText(item.part.result) }}</pre>
+            </div>
           </div>
-          <div v-if="item.part.progress?.length" class="activity-section">
-            <span class="activity-label">{{ t('chat.toolProgress') }}</span>
-            <pre>{{ formatJson(item.part.progress) }}</pre>
-          </div>
-          <div v-if="item.part.result !== undefined" class="activity-section">
-            <span class="activity-label">{{ t('chat.toolResult') }}</span>
-            <pre>{{ toolResultText(item.part.result) }}</pre>
-          </div>
-        </template>
+        </details>
         <pre v-else-if="item.part.kind === 'raw'" class="activity-raw">{{ formatJson(item.part.data) }}</pre>
       </div>
     </div>
@@ -251,61 +270,99 @@ function toolPreview(args: unknown): string {
 
 .activity-details {
   margin-left: 7px;
-  padding: 2px 0 4px 17px;
-  border-left: 1px solid var(--border-default);
+  padding: 1px 0 4px 18px;
+  border-left: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
 }
 
 .activity-item {
-  padding: 7px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-default) 55%, transparent);
-}
-
-.activity-item:last-child {
-  border-bottom: 0;
+  padding: 5px 0;
 }
 
 .activity-item-heading {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
+  padding: 2px 0;
+  list-style: none;
+  cursor: pointer;
 }
 
+.activity-item-heading::-webkit-details-marker { display: none; }
+
 .activity-item-mark {
-  width: 10px;
+  width: 14px;
   flex: 0 0 auto;
   text-align: center;
 }
 
-.activity-tool-name {
-  color: var(--text-primary);
-  font-family: var(--font-mono);
+.activity-item-duration {
+  color: var(--text-muted);
   font-weight: 600;
 }
 
-.activity-item-status {
+.activity-item-chevron {
   margin-left: auto;
   flex: 0 0 auto;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  transition: transform var(--transition-fast);
+}
+
+.activity-work-step[open] .activity-item-chevron { transform: rotate(90deg); }
+
+.activity-message {
+  padding: 4px 18px 5px 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.activity-message :deep(p) { margin: 0; }
+.activity-message :deep(code) {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-elevated) 84%, var(--text-primary) 6%);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
 }
 
 .activity-thinking,
 .activity-tool-preview {
-  margin: 4px 0 0 17px;
+  margin: 4px 0 0;
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .activity-thinking {
+  padding: 3px 18px 4px 0;
   font-style: italic;
+}
+
+.activity-step-detail {
+  margin: 5px 18px 2px 22px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-elevated) 68%, transparent);
+}
+
+.activity-tool-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.activity-tool-meta code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .activity-section,
 .activity-raw {
-  margin: 7px 0 0 17px;
+  margin: 7px 0 0;
 }
 
 .activity-label {

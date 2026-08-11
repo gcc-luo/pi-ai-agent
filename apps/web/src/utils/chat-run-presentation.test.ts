@@ -24,6 +24,58 @@ const activityMessage = (id: string, parts: MessagePart[], durationMs?: number) 
 });
 
 describe("buildAgentActivity", () => {
+  it("keeps intermediate assistant commentary in order and leaves the final answer outside", () => {
+    const messages = [
+      {
+        ...activityMessage("a1", [
+          { kind: "text", text: "我先检查项目启动方式。" },
+          {
+            kind: "tool_call",
+            toolCallId: "call-1",
+            name: "bash",
+            args: { command: "Get-Content package.json" },
+            status: "complete",
+            result: "ok",
+          },
+        ]),
+        createdAt: 1_000,
+      },
+      {
+        ...assistant("a2", 7_000),
+        createdAt: 8_000,
+        parts: [{ kind: "text" as const, text: "桌面端服务已启动。" }],
+      },
+    ];
+
+    const result = buildAgentActivity("run:u1", messages, false, null);
+
+    expect(result.items.map((item) => item.kind)).toEqual(["message", "tool"]);
+    expect(result.items[0]!.part).toEqual({ kind: "text", text: "我先检查项目启动方式。" });
+    expect(result.items[1]).toMatchObject({ id: "call-1", durationMs: 7_000 });
+    expect(result.items.some((item) => item.part.kind === "text" && item.part.text.includes("服务已启动"))).toBe(false);
+  });
+
+  it("leaves final text outside the activity when it follows thinking in the same message", () => {
+    const messages = [
+      activityMessage("a1", [
+        { kind: "thinking", text: "整理最终结论" },
+        { kind: "text", text: "这是最后一次明确回复。" },
+      ], 8_000),
+      {
+        ...assistant("a2"),
+        hasVisibleContent: false,
+        parts: [],
+      },
+    ];
+
+    const result = buildAgentActivity("run:u1", messages, false, null);
+
+    expect(result.items.map((item) => item.kind)).toEqual(["thinking"]);
+    expect(result.items.some((item) =>
+      item.part.kind === "text" && item.part.text === "这是最后一次明确回复。",
+    )).toBe(false);
+  });
+
   it("aggregates many tool calls into one activity and does not count thinking", () => {
     const messages = [
       activityMessage("a1", [
@@ -95,6 +147,76 @@ describe("buildAgentActivity", () => {
 });
 
 describe("annotateChatRuns", () => {
+  it("keeps the PI Agent header above the run while working and after completion", () => {
+    const processMessage = activityMessage("a1", [{ kind: "thinking", text: "分析" }]);
+    const active = annotateChatRuns(
+      [
+        user("u1"),
+        processMessage,
+        activityMessage("a2", [{
+          kind: "tool_call",
+          toolCallId: "call-1",
+          name: "bash",
+          args: { command: "pnpm test" },
+          status: "running",
+        }]),
+      ],
+      { isBusy: true, activeElapsedMs: 21_000, expandedRunIds: new Set() },
+    );
+    const completed = annotateChatRuns(
+      [
+        user("u1"),
+        processMessage,
+        {
+          ...assistant("a2", 63_000),
+          hasVisibleContent: true,
+          parts: [{ kind: "text" as const, text: "PPTX 已生成。" }],
+        },
+      ],
+      { isBusy: false, activeElapsedMs: null, expandedRunIds: new Set() },
+    );
+
+    expect(active.slice(1).map((message) => message.showHeader)).toEqual([true, false]);
+    expect(completed.slice(1).map((message) => message.showHeader)).toEqual([true, false]);
+  });
+
+  it("keeps the last explicit reply visible when an empty assistant message follows it", () => {
+    const result = annotateChatRuns(
+      [
+        user("u1"),
+        activityMessage("a1", [
+          { kind: "thinking", text: "分析请求" },
+          {
+            kind: "tool_call",
+            toolCallId: "call-1",
+            name: "bash",
+            args: { command: "pnpm test" },
+            status: "complete",
+            result: "ok",
+          },
+        ]),
+        {
+          ...assistant("a2"),
+          hasVisibleContent: true,
+          parts: [{ kind: "text" as const, text: "你好，你可以开始了。" }],
+        },
+        {
+          ...assistant("a3", 8_000),
+          hasVisibleContent: false,
+          parts: [],
+        },
+      ],
+      { isBusy: false, activeElapsedMs: null, expandedRunIds: new Set() },
+    );
+
+    expect(result[1]).toMatchObject({ hidden: false, showHeader: true, showActivity: true });
+    expect(result[2]).toMatchObject({ hidden: false, hideActivityText: false });
+    expect(result[3]).toMatchObject({ hidden: true, showHeader: false });
+    expect(result[1]!.activity?.items.some((item) =>
+      item.part.kind === "text" && item.part.text === "你好，你可以开始了。",
+    )).toBe(false);
+  });
+
   it("collapses an active run to one activity owner and the latest answer", () => {
     const result = annotateChatRuns(
       [
@@ -156,15 +278,42 @@ describe("annotateChatRuns", () => {
     expect(result.slice(1).map((message) => message.hidden)).toEqual([false, true, false]);
     expect(result[1]).toMatchObject({
       statusOnly: true,
+      showHeader: true,
       showRunStatus: true,
       displayDurationMs: 74_000,
     });
     expect(result[3]).toMatchObject({
-      showHeader: true,
+      showHeader: false,
       showRunStatus: false,
       canToggleRun: true,
       hiddenMessageCount: 2,
     });
+  });
+
+  it("shows each delivered file only once at the end of its run", () => {
+    const artifact = {
+      path: "output/poem.txt",
+      name: "诗歌.txt",
+      mimeType: "text/plain",
+    };
+    const result = annotateChatRuns(
+      [
+        { ...user("u1"), artifacts: [] },
+        {
+          ...activityMessage("a1", [{ kind: "thinking", text: "生成文件" }]),
+          artifacts: [artifact],
+        },
+        {
+          ...assistant("a2", 32_000),
+          hasVisibleContent: true,
+          artifacts: [artifact],
+        },
+      ],
+      { isBusy: false, activeElapsedMs: null, expandedRunIds: new Set() },
+    );
+
+    expect(result[1]!.artifacts).toEqual([]);
+    expect(result[2]!.artifacts).toEqual([artifact]);
   });
 
   it("shows the full run and moves its status above the first message when expanded", () => {
@@ -186,6 +335,39 @@ describe("annotateChatRuns", () => {
       showRunStatus: false,
       runExpanded: true,
     });
+  });
+
+  it("keeps intermediate commentary inside the expanded activity timeline", () => {
+    const result = annotateChatRuns(
+      [
+        user("u1"),
+        activityMessage("a1", [
+          { kind: "text", text: "我先检查项目。" },
+          { kind: "thinking", text: "分析" },
+        ]),
+        activityMessage("a2", [
+          { kind: "text", text: "接下来运行测试。" },
+          {
+            kind: "tool_call",
+            toolCallId: "call-1",
+            name: "bash",
+            args: { command: "pnpm test" },
+            status: "complete",
+            result: "ok",
+          },
+        ]),
+        {
+          ...assistant("a3", 12_000),
+          hasVisibleContent: true,
+          parts: [{ kind: "text" as const, text: "测试已通过。" }],
+        },
+      ],
+      { isBusy: false, activeElapsedMs: null, expandedRunIds: new Set(["run:u1"]) },
+    );
+
+    expect(result[1]).toMatchObject({ statusOnly: true, hideActivityText: true });
+    expect(result[2]).toMatchObject({ hidden: true, hideActivityText: true });
+    expect(result[3]).toMatchObject({ hidden: false, hideActivityText: false });
   });
 
   it("collapses thinking and other process content inside the final assistant message", () => {

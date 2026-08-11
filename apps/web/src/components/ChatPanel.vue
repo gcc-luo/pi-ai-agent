@@ -767,7 +767,24 @@ const allMessages = computed(() => {
     error: m.error,
   }));
   const all = mergeChatMessageSources(persisted, live);
-  const decorated = all.map((m) => {
+  const latest = all.at(-1);
+  const messageSources = isBusy.value && (!latest || latest.role === "user")
+    ? [
+        ...all,
+        {
+          id: `pending-assistant:${latest?.id ?? props.sessionId}`,
+          role: "assistant" as const,
+          parts: [] as MessagePart[],
+          streaming: true,
+          persisted: false,
+          createdAt: agent.runStartedAtFor(props.sessionId) ?? Date.now(),
+          metadata: null,
+          failed: false,
+          error: undefined,
+        },
+      ]
+    : all;
+  const decorated = messageSources.map((m) => {
     // Extract <artifacts> blocks from assistant text parts
     let artifacts: ArtifactItem[] = [];
     let parts = m.parts;
@@ -814,28 +831,12 @@ const allMessages = computed(() => {
     waitingForPermission: Boolean(pendingPermission.value),
   });
 
-  const artifactsByRun = new Map<string, ArtifactItem[]>();
-  for (const message of annotated) {
-    if (!message.runId || message.role !== "assistant") continue;
-    const existing = artifactsByRun.get(message.runId) ?? [];
-    for (const artifact of message.artifacts) {
-      if (!existing.some((item) => item.path === artifact.path)) existing.push(artifact);
-    }
-    artifactsByRun.set(message.runId, existing);
-  }
-
-  return annotated.map((message) => ({
-    ...message,
-    runArtifacts: message.showActivity && message.runId
-      ? (artifactsByRun.get(message.runId) ?? [])
-      : [],
-    artifacts: message.showActivity ? [] : message.artifacts,
-  }));
+  return annotated;
 });
 
 // Validate artifact files exist on disk
 watch(allMessages, async (msgs) => {
-  const items = msgs.flatMap((m) => [...m.artifacts, ...m.runArtifacts]);
+  const items = msgs.flatMap((m) => m.artifacts);
   if (!items.length) return;
   const toValidate = items.filter((i) => !(i.path in artifactValidation.value));
   if (!toValidate.length) return;
@@ -1076,19 +1077,8 @@ const pendingTipLabel = computed(() => {
           :can-toggle="m.canToggleRun"
           @toggle="toggleRun(m.runId, m.canToggleRun)"
         />
-        <div v-if="m.runArtifacts?.length" class="artifact-cards run-artifacts">
-          <ArtifactCard
-            v-for="a in m.runArtifacts"
-            :key="a.path"
-            :project-id="projectId"
-            :artifact="a"
-            :exists="artifactValidation[a.path]?.exists ?? true"
-            :size="artifactValidation[a.path]?.size ?? null"
-            @preview="(p) => emit('select-file', p)"
-          />
-        </div>
         <button
-          v-else-if="!m.showActivity && m.showRunStatus && m.displayDurationMs !== null"
+          v-if="!m.showActivity && m.showRunStatus && m.displayDurationMs !== null"
           type="button"
           class="assistant-duration"
           :class="{ expanded: m.runExpanded, toggleable: m.canToggleRun }"
@@ -1147,7 +1137,7 @@ const pendingTipLabel = computed(() => {
                 <div v-if="split.text" class="msg-content" @click="onMsgContentClick" v-html="renderMarkdown(split.text)"></div>
               </template>
             </template>
-            <div v-else-if="p.kind === 'text'" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
+            <div v-else-if="p.kind === 'text' && !m.hideActivityText" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
           </template>
           <!-- Artifact cards (files delivered by the agent) -->
           <div v-if="m.artifacts?.length && !m.hideNonTextContent" class="artifact-cards">
@@ -1316,13 +1306,10 @@ const pendingTipLabel = computed(() => {
           <span v-else class="compaction-icon">↻</span>
           {{ compactionLabel }}
         </span>
-        <details class="session-meta">
-          <summary :title="t('chat.sessionDetails')" :aria-label="t('chat.sessionDetails')">ⓘ</summary>
-          <div class="session-meta-popover">
-            <span>{{ t('chat.inputTokens') }}：{{ tokenLabel.input }}</span>
-            <span>{{ t('chat.outputTokens') }}：{{ tokenLabel.output }}</span>
-          </div>
-        </details>
+        <span class="token-usage" :title="t('chat.sessionDetails')">
+          <span class="token-in"><span class="token-arrow">↑</span>{{ tokenLabel.input }}</span>
+          <span class="token-out"><span class="token-arrow">↓</span>{{ tokenLabel.output }}</span>
+        </span>
       </div>
       <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
@@ -2132,7 +2119,7 @@ const pendingTipLabel = computed(() => {
   white-space: nowrap;
 }
 
-.compaction-status + .session-meta {
+.compaction-status + .token-usage {
   margin-left: 0;
 }
 
@@ -2183,52 +2170,6 @@ const pendingTipLabel = computed(() => {
   padding: 2px 0;
 }
 
-.session-meta {
-  position: relative;
-  margin-left: auto;
-  color: var(--text-muted);
-}
-
-.session-meta summary {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  cursor: pointer;
-  list-style: none;
-  font-size: 13px;
-}
-
-.session-meta summary::-webkit-details-marker {
-  display: none;
-}
-
-.session-meta summary:hover,
-.session-meta[open] summary {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.session-meta-popover {
-  position: absolute;
-  right: 0;
-  bottom: 30px;
-  z-index: 20;
-  min-width: 160px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px 11px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-  color: var(--text-secondary);
-  font-size: 10px;
-  white-space: nowrap;
-}
 
 .tool-btn {
   display: flex;
