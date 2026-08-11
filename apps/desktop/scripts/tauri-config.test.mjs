@@ -31,9 +31,15 @@ test("refreshes the bundled server runtime before packaging", () => {
 
   assert.match(packageJson.scripts.build, /^pnpm prepare-shell-runtime && pnpm prepare-sidecar && tauri build$/);
   assert.match(packageJson.scripts["build:debug"], /^pnpm prepare-shell-runtime && pnpm prepare-sidecar && tauri build --debug$/);
-  assert.doesNotMatch(releaseWorkflow, /pnpm prepare-sidecar && npx tauri build/);
-  assert.match(releaseWorkflow, /pnpm build -- --target aarch64-apple-darwin/);
-  assert.match(releaseWorkflow, /pnpm build -- --target x86_64-pc-windows-msvc/);
+  assert.doesNotMatch(releaseWorkflow, /pnpm build -- --target/);
+  assert.match(
+    releaseWorkflow,
+    /pnpm prepare-shell-runtime && pnpm prepare-sidecar && npx tauri build --target aarch64-apple-darwin/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /pnpm prepare-shell-runtime && pnpm prepare-sidecar && npx tauri build --target x86_64-pc-windows-msvc/,
+  );
   assert.doesNotMatch(releaseWorkflow, /pnpm verify-release-version --/);
   assert.match(releaseWorkflow, /pnpm verify-release-version "\$\{\{ github\.ref_name \}\}"/);
 });
