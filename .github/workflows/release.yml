@@ -81,11 +81,45 @@ jobs:
 
           APP_PATH=$(find apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
           DMG_PATH=$(find apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+          SIDECAR_PATH="$APP_PATH/Contents/MacOS/pi-node"
 
           test -n "$APP_PATH"
           test -n "$DMG_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          SIDECAR_ENTITLEMENTS=$(codesign -d --entitlements - "$SIDECAR_PATH" 2>&1)
+          grep -q 'com.apple.security.cs.allow-jit' <<<"$SIDECAR_ENTITLEMENTS"
+          grep -q 'com.apple.security.cs.disable-library-validation' <<<"$SIDECAR_ENTITLEMENTS"
           hdiutil verify "$DMG_PATH"
+
+          SMOKE_DIR=$(mktemp -d)
+          mkdir -p "$SMOKE_DIR/runtime"
+          tar -xzf "$APP_PATH/Contents/Resources/server-runtime.tar.gz" -C "$SMOKE_DIR/runtime"
+          SMOKE_PORT=$(
+            "$SIDECAR_PATH" -e 'const server=require("node:net").createServer();server.listen(0,"127.0.0.1",()=>{console.log(server.address().port);server.close()})'
+          )
+          HOST=127.0.0.1 \
+            PORT="$SMOKE_PORT" \
+            PI_WEB_UI_ROOT="$SMOKE_DIR/data" \
+            PI_BUNDLED_RUNTIME_DIR="$SMOKE_DIR/runtime" \
+            "$SIDECAR_PATH" "$SMOKE_DIR/runtime/dist/index.js" \
+            >"$SMOKE_DIR/server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 100); do
+            if curl --fail --silent --show-error "http://127.0.0.1:$SMOKE_PORT/healthz" | grep -q '"ok":true'; then
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat "$SMOKE_DIR/server.log"
+              exit 1
+            fi
+            if [ "$attempt" -eq 100 ]; then
+              cat "$SMOKE_DIR/server.log"
+              exit 1
+            fi
+            sleep 0.2
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

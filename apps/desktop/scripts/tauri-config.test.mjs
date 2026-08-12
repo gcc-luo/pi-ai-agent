@@ -14,6 +14,7 @@ const shellRuntimeScriptPath = path.resolve(scriptDir, "prepare-shell-runtime.mj
 const sidecarRuntimeScriptPath = path.resolve(scriptDir, "prepare-sidecar.mjs");
 const releaseWorkflowPath = path.resolve(scriptDir, "../../../.github/workflows/release.yml");
 const tauriBuildScriptPath = path.resolve(scriptDir, "../src-tauri/build.rs");
+const macOSEntitlementsPath = path.resolve(scriptDir, "../src-tauri/Entitlements.plist");
 
 test("uses a space-free product name for generated install artifacts", () => {
   const config = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
@@ -46,13 +47,23 @@ test("refreshes the bundled server runtime before packaging", () => {
 
 test("signs macOS apps and publishes a verified DMG installer", () => {
   const releaseWorkflow = readFileSync(releaseWorkflowPath, "utf8");
+  const config = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
+  const entitlements = readFileSync(macOSEntitlementsPath, "utf8");
 
+  assert.equal(config.bundle.macOS.entitlements, "./Entitlements.plist");
+  assert.match(entitlements, /com\.apple\.security\.cs\.allow-jit/);
+  assert.match(entitlements, /com\.apple\.security\.cs\.allow-unsigned-executable-memory/);
+  assert.match(entitlements, /com\.apple\.security\.cs\.disable-library-validation/);
   assert.match(releaseWorkflow, /APPLE_CERTIFICATE:.*secrets\.APPLE_CERTIFICATE/);
   assert.match(releaseWorkflow, /APPLE_ID:.*secrets\.APPLE_ID/);
   assert.match(releaseWorkflow, /unset "\$variable"/);
   assert.match(releaseWorkflow, /Missing required macOS signing secret/);
   assert.match(releaseWorkflow, /export APPLE_SIGNING_IDENTITY="-"/);
   assert.match(releaseWorkflow, /codesign --verify --deep --strict/);
+  assert.match(releaseWorkflow, /SIDECAR_ENTITLEMENTS=\$\(codesign -d --entitlements - "\$SIDECAR_PATH"/);
+  assert.match(releaseWorkflow, /PI_BUNDLED_RUNTIME_DIR="\$SMOKE_DIR\/runtime"/);
+  assert.match(releaseWorkflow, /"\$SIDECAR_PATH" "\$SMOKE_DIR\/runtime\/dist\/index\.js"/);
+  assert.match(releaseWorkflow, /healthz/);
   assert.match(releaseWorkflow, /hdiutil verify/);
   assert.match(releaseWorkflow, /name: macos-installer/);
   assert.match(releaseWorkflow, /artifacts\/macos-installer\/\*\.dmg/);
