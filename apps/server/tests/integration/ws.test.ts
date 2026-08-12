@@ -100,6 +100,27 @@ describe("ws agent", () => {
     expect(types).toContain("message_delta");
   });
 
+  it("rejects a second prompt while the current agent run is working", async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/agent`);
+    const received: any[] = [];
+    ws.on("message", (data) => received.push(JSON.parse(data.toString())));
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    ws.send(JSON.stringify({ type: "send", sessionId, content: "first" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.send(JSON.stringify({ type: "send", sessionId, content: "second" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(received).toContainEqual({
+      type: "error",
+      sessionId,
+      code: "agent_busy",
+      message: "模型仍在处理上一条消息，请等待完成后再发送。",
+    });
+    expect(app.messages.listBySession(sessionId).map((message) => message.content)).toEqual(["first"]);
+    ws.close();
+  });
+
   it("starts and restarts the session with the model selected by the client", async () => {
     app.models.create({
       id: "model-a",

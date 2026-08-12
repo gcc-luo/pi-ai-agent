@@ -128,9 +128,13 @@ describe("agent store session_updated event", () => {
     vi.spyOn(wsClient, "send").mockImplementation(() => true);
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({
+      type: "error", sessionId: "s1", code: "pi_model_error", message: "Internal error",
+    });
     agent.interrupt("s1");
     agent.handle({ type: "agent_status", sessionId: "s1", status: "idle", durationMs: 3_000 });
     expect(agent.runOutcomeFor("s1")).toBe("interrupted");
+    expect(agent.errors).toEqual([]);
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
     expect(agent.runOutcomeFor("s1")).toBeNull();
@@ -160,7 +164,7 @@ describe("agent store session_updated event", () => {
     expect(agent.runOutcomeFor("s2")).toBeNull();
   });
 
-  it("clears an empty assistant placeholder when the model request fails", () => {
+  it("keeps the run busy through transient model errors and fails it only when settled", () => {
     const agent = useAgentStore();
 
     agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
@@ -174,13 +178,38 @@ describe("agent store session_updated event", () => {
       message: "HTTP Error: 400",
     });
 
-    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.isSessionBusy("s1")).toBe(true);
     expect(agent.messagesFor("s1")).toEqual([]);
+    expect(agent.errors).toEqual([]);
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
     expect(agent.errors).toContainEqual({
       sessionId: "s1",
       code: "pi_model_error",
       message: "HTTP Error: 400",
     });
+  });
+
+  it("clears a transient model error when a retry succeeds", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
+    agent.handle({
+      type: "error", sessionId: "s1", code: "pi_model_error", message: "Internal error",
+    });
+    agent.handle({
+      type: "message_start", sessionId: "s1", messageId: "m2", role: "assistant",
+    });
+    agent.handle({
+      type: "message_end", sessionId: "s1", messageId: "m2", content: "你好！",
+    });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.errors).toEqual([]);
+    expect(agent.runOutcomeFor("s1")).toBeNull();
   });
 
   it("tracks context compaction independently for each session", () => {

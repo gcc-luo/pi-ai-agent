@@ -312,6 +312,18 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
       app.sessionStates.touch(event.sessionId);
       if (event.type === "send" || event.type === "steer") {
+        // A normal prompt cannot be accepted while Pi is running. The web UI
+        // normally prevents this, but the server must also enforce it because
+        // client state can lag behind automatic provider retries.
+        if (event.type === "send" && state.runStatus === "working") {
+          send({
+            type: "error",
+            sessionId: session.id,
+            code: "agent_busy",
+            message: "模型仍在处理上一条消息，请等待完成后再发送。",
+          });
+          return;
+        }
         console.log(`[WS Agent] received: type=${event.type} sessionId=${event.sessionId} contentLen=${event.content?.length ?? 0}`);
 
         // KB search interception: inject context before forwarding to Pi

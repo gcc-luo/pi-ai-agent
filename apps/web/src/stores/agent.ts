@@ -20,6 +20,7 @@ const PROMPT_ERROR_CODES = new Set([
   "pi_prompt_failed",
   "pi_prompt_write_failed",
   "pi_model_error",
+  "agent_busy",
   "project_workdir_missing",
 ]);
 
@@ -90,6 +91,10 @@ export const useAgentStore = defineStore("agent", {
     runStartedAt: {} as Record<string, number>,
     runOutcomes: {} as Record<string, "interrupted" | "failed" | undefined>,
     runEndedFromWorking: {} as Record<string, boolean>,
+    // Pi may emit one model error for every automatic retry attempt. Keep the
+    // latest one private until `agent_settled` confirms that the complete run
+    // failed; a later successful assistant message clears it.
+    pendingModelErrors: {} as Record<string, { code: string; message: string } | undefined>,
     errors: [] as { sessionId?: string; code: string; message: string }[],
     currentModel: null as string | null,
     currentProvider: null as string | null,
@@ -244,6 +249,9 @@ export const useAgentStore = defineStore("agent", {
     interrupt(sessionId: string) {
       const pending = this.pendingPermissions[sessionId];
       if (pending) this.respondToPermission(sessionId, pending.requestId, false);
+      // An interrupted retry cycle is user-cancelled, not a terminal provider
+      // failure. Ignore any transient model error buffered for that run.
+      delete this.pendingModelErrors[sessionId];
       this.runOutcomes[sessionId] = "interrupted";
       if (!wsClient.send({ type: "interrupt", sessionId })) {
         this.runStates[sessionId] = "idle";
@@ -307,7 +315,31 @@ export const useAgentStore = defineStore("agent", {
         return;
       }
       if (e.type === "error") {
+        if (e.sessionId && e.code === "pi_model_error" && this.runStates[e.sessionId] === "working") {
+          this.pendingModelErrors[e.sessionId] = { code: e.code, message: e.message };
+          // Each failed retry has its own message_start. Remove that empty
+          // placeholder without exposing a retry button while Pi is still busy.
+          const list = this.streams[e.sessionId] ?? [];
+          const last = list[list.length - 1];
+          if (last?.role === "assistant" && last.status === "streaming" && last.parts.length === 0) {
+            this.streams[e.sessionId] = list.slice(0, -1);
+          }
+          return;
+        }
         this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
+        if (e.sessionId && e.code === "agent_busy") {
+          const lastUser = [...(this.streams[e.sessionId] ?? [])]
+            .reverse()
+            .find((message) => message.role === "user");
+          if (lastUser) {
+            this.streams[e.sessionId] = (this.streams[e.sessionId] ?? []).map((message) =>
+              message.id === lastUser.id
+                ? { ...message, status: "error" as const, error: e.message }
+                : message,
+            );
+          }
+          return;
+        }
         // A rejected prompt has no `agent_settled` event to close the run.
         if (e.sessionId && (
           e.code === "pi_prompt_failed"
@@ -357,6 +389,21 @@ export const useAgentStore = defineStore("agent", {
         } else {
           this.runEndedFromWorking[sid] = wasWorking;
           delete this.runStartedAt[sid];
+          const pendingError = this.pendingModelErrors[sid];
+          if (pendingError) {
+            this.errors = [
+              ...this.errors.filter((error) =>
+                error.sessionId !== sid || error.code !== pendingError.code || error.message !== pendingError.message,
+              ),
+              { sessionId: sid, code: pendingError.code, message: pendingError.message },
+            ];
+            this.runOutcomes[sid] = "failed";
+            const lastUser = [...(this.streams[sid] ?? [])]
+              .reverse()
+              .find((message) => message.role === "user");
+            if (lastUser) this.markUserMessageFailed(sid, lastUser.id, pendingError.message);
+            delete this.pendingModelErrors[sid];
+          }
         }
         if (e.status === "idle" && typeof e.durationMs === "number") {
           const lastAssistant = [...(this.streams[sid] ?? [])]
@@ -427,6 +474,7 @@ export const useAgentStore = defineStore("agent", {
           m.id === e.messageId ? { ...m, parts: appendDeltaToKind(m.parts, "thinking", e.delta) } : m,
         );
       } else if (e.type === "message_end") {
+        delete this.pendingModelErrors[sid];
         this.streams[sid] = list.map((m) => {
           if (m.id !== e.messageId) return m;
           let parts = m.parts;
