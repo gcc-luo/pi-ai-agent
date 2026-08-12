@@ -447,7 +447,6 @@ onMounted(async () => {
 watch(() => props.sessionId, async (sessionId, previousSessionId) => {
   agent.unsubscribe(previousSessionId);
   agent.subscribe(sessionId);
-  expandedRunIds.value = new Set();
   kbSearchByMessage.value = {};
   try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
@@ -1064,12 +1063,6 @@ const pendingTipLabel = computed(() => {
             </svg>
           </div>
         </div>
-        <div v-else-if="m.showHeader" class="msg-avatar-row">
-          <div class="msg-avatar assistant" aria-hidden="true">
-            <img src="/panda-agent-avatar-22px.svg" alt="PI Agent" />
-          </div>
-          <span class="msg-avatar-label">PI Agent</span>
-        </div>
         <AgentActivity
           v-if="m.showActivity && m.activity"
           :activity="m.activity"
@@ -1155,7 +1148,7 @@ const pendingTipLabel = computed(() => {
         <!-- KB search call card (shown under user messages) -->
         <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
         <div
-          v-if="!m.statusOnly"
+          v-if="!m.statusOnly && m.showMessageActions && !m.streaming"
           class="msg-actions"
           :class="m.role"
         >
@@ -1614,37 +1607,26 @@ const pendingTipLabel = computed(() => {
   opacity: 0.6;
 }
 
-/* Assistant ─ left-aligned column: avatar above the body, teal rail anchoring the spine */
+/* Assistant replies are document-style content, not chat bubbles. */
 .msg.assistant {
   align-self: flex-start;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  max-width: min(880px, 90%);
-  padding: 8px 4px 12px 16px;
+  width: min(880px, 100%);
+  max-width: 100%;
+  padding: 4px 0 8px;
   border: none;
   background: transparent;
   box-shadow: none;
   border-radius: 0;
   animation: msgInLeft 0.3s var(--ease-out) both;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .msg.assistant::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to bottom,
-    var(--accent) 0%,
-    rgba(0, 221, 179, 0.45) 35%,
-    rgba(0, 221, 179, 0.08) 100%
-  );
+  display: none;
 }
 
 .msg.assistant.continued {
@@ -1770,6 +1752,15 @@ const pendingTipLabel = computed(() => {
 
 .msg.assistant .msg-actions {
   text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
+.msg.assistant:hover .msg-actions,
+.msg.assistant:focus-within .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Match Codex's live-answer rhythm: keep transient metadata out of the way
@@ -1802,6 +1793,13 @@ const pendingTipLabel = computed(() => {
   .msg.assistant.streaming .msg-content:last-of-type :deep(h2:last-child)::after,
   .msg.assistant.streaming .msg-content:last-of-type :deep(h3:last-child)::after {
     animation: none;
+  }
+}
+
+@media (hover: none) {
+  .msg.assistant .msg-actions {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

@@ -74,8 +74,8 @@ describe("ChatPanel running input", () => {
     });
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.get(".msg.assistant .agent-activity").text()).toContain("正在处理");
-    expect(wrapper.get(".msg.assistant .msg-avatar-label").text()).toBe("PI Agent");
+    expect(wrapper.get(".msg.assistant .agent-activity").text()).toContain("正在工作");
+    expect(wrapper.find(".msg.assistant .msg-avatar-label").exists()).toBe(false);
 
     agent.handle({
       type: "message_start",
@@ -90,7 +90,7 @@ describe("ChatPanel running input", () => {
     expect(wrapper.get(".msg.assistant").attributes("data-msg-id")).toBe("assistant-real");
   });
 
-  it("keeps the agent header above the activity and shows the explicit final reply", async () => {
+  it("keeps work activity separate from the avatar-free final reply", async () => {
     const agent = useAgentStore();
     agent.streams.s1 = [
       {
@@ -156,10 +156,10 @@ describe("ChatPanel running input", () => {
 
     const assistantMessages = wrapper.findAll(".msg.assistant");
     expect(assistantMessages).toHaveLength(2);
-    expect(assistantMessages[0]!.get(".msg-avatar-label").text()).toBe("PI Agent");
     expect(assistantMessages[0]!.find(".agent-activity").exists()).toBe(true);
-    expect(assistantMessages[0]!.element.firstElementChild?.classList.contains("msg-avatar-row")).toBe(true);
+    expect(assistantMessages[0]!.element.firstElementChild?.classList.contains("agent-activity")).toBe(true);
     expect(assistantMessages[1]!.text()).toContain("你好，我可以帮助你开发和排查项目。");
-    expect(wrapper.findAll(".msg.assistant .msg-avatar-label")).toHaveLength(1);
+    expect(wrapper.findAll(".msg.assistant .msg-avatar-label")).toHaveLength(0);
+    expect(wrapper.findAll(".msg.assistant .msg-actions")).toHaveLength(1);
   });
 });

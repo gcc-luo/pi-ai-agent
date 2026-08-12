@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "../i18n/index.js";
-import { renderMarkdown } from "../utils/markdown.js";
 import {
+  activityTargetForTool,
   formatProcessingDuration,
   type AgentActivity,
+  type AgentActivityItem,
   type AgentActivityLabel,
 } from "../utils/chat-run-presentation.js";
+
+const PREVIEW_LIMIT = 5;
 
 const props = defineProps<{
   activity: AgentActivity;
@@ -18,6 +21,15 @@ defineEmits<{ (event: "toggle"): void }>();
 
 const { t } = useI18n();
 const detailsId = computed(() => `agent-activity-${props.activity.runId.replace(/[^a-zA-Z0-9_-]/g, "-")}`);
+const isLive = computed(() => props.activity.status === "running" || props.activity.status === "waiting_permission");
+const showToggle = computed(() => props.canToggle && (
+  isLive.value ? props.activity.items.length > PREVIEW_LIMIT : props.activity.items.length > 0
+));
+const visibleItems = computed(() => {
+  if (props.expanded) return props.activity.items;
+  if (isLive.value) return props.activity.items.slice(-PREVIEW_LIMIT);
+  return [];
+});
 
 const labelKeys: Record<AgentActivityLabel, string> = {
   analyzeRequest: "chat.activityAnalyzeRequest",
@@ -47,43 +59,60 @@ function toolResultText(result: unknown): string {
     const value = result as Record<string, unknown>;
     if (typeof value.content === "string") return value.content;
     if (Array.isArray(value.content)) {
-      const text = value.content
+      const resultText = value.content
         .filter((part): part is { text: string } => !!part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string")
         .map((part) => part.text)
         .join("\n");
-      if (text) return text;
+      if (resultText) return resultText;
     }
   }
   return formatJson(result);
 }
 
-function toolPreview(args: unknown): string {
-  if (!args || typeof args !== "object") return formatJson(args);
-  const value = args as Record<string, unknown>;
-  const preview = value.command ?? value.path ?? value.query ?? value.url;
-  return typeof preview === "string" ? preview : formatJson(args);
+function compactText(value: string, limit = 120): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function itemStatus(item: AgentActivity["items"][number]): string {
-  if (item.status === "running") return t("chat.toolRunning");
-  if (item.status === "failed") return t("chat.toolFailed");
-  if (item.durationMs !== null && item.durationMs !== undefined) {
-    return t("chat.activityWorked", { duration: formatProcessingDuration(item.durationMs) });
+function itemTitle(item: AgentActivityItem): string {
+  if (item.part.kind === "text") return compactText(item.part.text);
+  if (item.part.kind === "thinking") {
+    if (item.status === "running") return t("chat.thinkingRunning");
+    if (item.durationMs !== null && item.durationMs !== undefined) {
+      return t("chat.thinkingWorked", { duration: formatProcessingDuration(item.durationMs) });
+    }
+    return t("chat.thinkingCompleted");
   }
-  return t("chat.toolDone");
+  if (item.part.kind === "tool_call") {
+    const target = activityTargetForTool(item.part.name, item.part.args);
+    return target ? `${activityLabel(item.label)} ${target}` : activityLabel(item.label);
+  }
+  return activityLabel(item.label);
 }
+
+const completedCounts = computed(() => {
+  const counts = new Map<AgentActivityLabel, number>();
+  for (const item of props.activity.items) {
+    if (item.kind !== "tool") continue;
+    counts.set(item.label, (counts.get(item.label) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3)
+    .map(([label, count]) => t("chat.activityTypeCount", { action: activityLabel(label), count }));
+});
 </script>
 
 <template>
   <section class="agent-activity" :class="activity.status">
     <component
-      :is="canToggle ? 'button' : 'div'"
-      :type="canToggle ? 'button' : undefined"
+      :is="showToggle ? 'button' : 'div'"
+      :type="showToggle ? 'button' : undefined"
       class="activity-summary"
-      :class="[activity.status, { toggleable: canToggle }]"
-      :aria-expanded="canToggle ? expanded : undefined"
-      :aria-controls="canToggle ? detailsId : undefined"
-      @click="canToggle && $emit('toggle')"
+      :class="[activity.status, { toggleable: showToggle }]"
+      :aria-expanded="showToggle ? expanded : undefined"
+      :aria-controls="showToggle ? detailsId : undefined"
+      @click="showToggle && $emit('toggle')"
     >
       <span class="activity-state-icon" aria-hidden="true">
         <span v-if="activity.status === 'running'" class="activity-spinner" />
@@ -102,69 +131,68 @@ function itemStatus(item: AgentActivity["items"][number]): string {
             ? t('chat.activityWaitingPermission')
             : activity.status === 'failed'
               ? t('chat.activityFailed')
-          : activity.status === 'interrupted'
-            ? t('chat.activityInterrupted')
-            : activity.durationMs === null
-              ? t('chat.activityCompleted')
-              : t('chat.activityWorked', { duration: formatProcessingDuration(activity.durationMs) }) }}
+              : activity.status === 'interrupted'
+                ? t('chat.activityInterrupted')
+                : activity.durationMs === null
+                  ? t('chat.activityCompleted')
+                  : t('chat.activityWorked', { duration: formatProcessingDuration(activity.durationMs) }) }}
       </span>
-      <template v-if="activity.status === 'running' || activity.status === 'waiting_permission'">
+      <template v-if="isLive">
         <span class="activity-separator" aria-hidden="true">·</span>
         <span>{{ formatProcessingDuration(activity.durationMs ?? 0) }}</span>
       </template>
-      <template v-if="activity.items.length > 0">
+      <template v-else v-for="countLabel in completedCounts" :key="countLabel">
         <span class="activity-separator" aria-hidden="true">·</span>
-        <span>{{ t('chat.activityStepCount', { count: activity.items.length }) }}</span>
+        <span class="activity-count">{{ countLabel }}</span>
       </template>
       <template v-if="activity.failedCount > 0">
         <span class="activity-separator" aria-hidden="true">·</span>
         <span class="activity-failures">{{ t('chat.activityFailureCount', { count: activity.failedCount }) }}</span>
       </template>
-      <template v-else-if="activity.status === 'running'">
+      <template v-else-if="isLive && visibleItems.length === 0">
         <span class="activity-separator activity-current-separator" aria-hidden="true">·</span>
-        <span class="activity-current">
-          {{ t('chat.activityCurrent', { action: activityLabel(activity.currentLabel) }) }}
-        </span>
+        <span class="activity-current">{{ activityLabel(activity.currentLabel) }}</span>
       </template>
-      <svg v-if="canToggle" class="activity-chevron" :class="{ expanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <svg v-if="showToggle" class="activity-chevron" :class="{ expanded }" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </component>
 
-    <div v-if="expanded" :id="detailsId" class="activity-details">
+    <div v-if="visibleItems.length" :id="detailsId" class="activity-details" :class="{ preview: !expanded }">
       <div
-        v-for="item in activity.items"
+        v-for="item in visibleItems"
         :key="item.id"
         class="activity-item"
         :class="[item.kind, item.status]"
       >
-        <div
-          v-if="item.kind === 'message' && item.part.kind === 'text'"
-          class="activity-message"
-          v-html="renderMarkdown(item.part.text)"
-        />
-        <div v-else-if="item.part.kind === 'thinking'" class="activity-thinking">
-          {{ item.part.text }}
-        </div>
-        <details v-else-if="item.part.kind === 'tool_call'" class="activity-work-step" :open="item.status === 'running'">
+        <details v-if="item.part.kind === 'thinking'" class="activity-work-step thinking-step">
+          <summary class="activity-item-heading">
+            <span class="activity-item-mark thinking-mark" aria-hidden="true">✦</span>
+            <span class="activity-item-title">{{ itemTitle(item) }}</span>
+            <svg class="activity-item-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </summary>
+          <div class="activity-thinking">{{ item.part.text }}</div>
+        </details>
+
+        <details v-else-if="item.part.kind === 'tool_call'" class="activity-work-step">
           <summary class="activity-item-heading">
             <span class="activity-item-mark" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M2 4.4 7 1.8l5 2.6L7 7 2 4.4Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-                <path d="m2 7 5 2.6L12 7M2 9.6l5 2.6 5-2.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <span v-if="item.status === 'running'" class="activity-spinner small" />
+              <span v-else-if="item.status === 'failed'" class="activity-error-mark">!</span>
+              <span v-else class="activity-done-mark">✓</span>
             </span>
-            <span class="activity-item-duration">{{ itemStatus(item) }}</span>
+            <span class="activity-item-title">{{ itemTitle(item) }}</span>
             <svg class="activity-item-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </summary>
           <div class="activity-step-detail">
             <div class="activity-tool-meta">
-              <span>{{ activityLabel(item.label) }}</span>
+              <span>Tool</span>
               <code>{{ item.part.name }}</code>
             </div>
-            <div class="activity-tool-preview">{{ toolPreview(item.part.args) }}</div>
             <div class="activity-section">
               <span class="activity-label">{{ t('chat.toolArgs') }}</span>
               <pre>{{ formatJson(item.part.args) }}</pre>
@@ -179,7 +207,22 @@ function itemStatus(item: AgentActivity["items"][number]): string {
             </div>
           </div>
         </details>
-        <pre v-else-if="item.part.kind === 'raw'" class="activity-raw">{{ formatJson(item.part.data) }}</pre>
+
+        <div v-else-if="item.part.kind === 'text'" class="activity-item-heading commentary-step">
+          <span class="activity-item-mark" aria-hidden="true">·</span>
+          <span class="activity-item-title">{{ itemTitle(item) }}</span>
+        </div>
+
+        <details v-else-if="item.part.kind === 'raw'" class="activity-work-step">
+          <summary class="activity-item-heading">
+            <span class="activity-item-mark" aria-hidden="true">·</span>
+            <span class="activity-item-title">{{ itemTitle(item) }}</span>
+            <svg class="activity-item-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M4.5 2.5 8 6 4.5 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </summary>
+          <pre class="activity-raw">{{ formatJson(item.part.data) }}</pre>
+        </details>
       </div>
     </div>
   </section>
@@ -188,7 +231,8 @@ function itemStatus(item: AgentActivity["items"][number]): string {
 <style scoped>
 .agent-activity {
   min-width: 0;
-  margin: 2px 0 6px;
+  width: min(880px, 100%);
+  margin: 2px 0 8px;
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -204,23 +248,17 @@ function itemStatus(item: AgentActivity["items"][number]): string {
   background: transparent;
   color: var(--text-muted);
   cursor: default;
+  font: inherit;
   text-align: left;
 }
 
-.activity-summary.toggleable {
-  cursor: pointer;
-}
-
+.activity-summary.toggleable { cursor: pointer; }
 .activity-summary.toggleable:hover,
-.activity-summary.toggleable:focus-visible {
-  color: var(--text-secondary);
-}
+.activity-summary.toggleable:focus-visible { color: var(--text-secondary); }
 
 .activity-summary.failed,
 .activity-failures,
-.activity-item.failed .activity-item-heading {
-  color: var(--rose, #e0526f);
-}
+.activity-item.failed .activity-item-heading { color: var(--rose, #e0526f); }
 
 .activity-state-icon {
   width: 14px;
@@ -235,49 +273,35 @@ function itemStatus(item: AgentActivity["items"][number]): string {
 .activity-spinner {
   width: 10px;
   height: 10px;
+  box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: activity-spin 0.8s linear infinite;
 }
 
+.activity-spinner.small { width: 9px; height: 9px; }
 .activity-state,
-.activity-failures {
-  flex: 0 0 auto;
-  font-weight: 600;
-}
-
-.activity-separator {
-  color: var(--text-faint, var(--text-muted));
-}
-
-.activity-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.activity-failures { flex: 0 0 auto; font-weight: 600; }
+.activity-separator { color: var(--text-faint, var(--text-muted)); }
+.activity-current,
+.activity-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .activity-chevron {
   margin-left: auto;
   flex: 0 0 auto;
   transition: transform var(--transition-fast);
 }
-
-.activity-chevron.expanded {
-  transform: rotate(90deg);
-}
+.activity-chevron.expanded { transform: rotate(90deg); }
 
 .activity-details {
   margin-left: 7px;
-  padding: 1px 0 4px 18px;
+  padding: 1px 0 4px 17px;
   border-left: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
 }
 
-.activity-item {
-  padding: 5px 0;
-}
-
+.activity-item { min-width: 0; padding: 3px 0; }
+.activity-work-step { min-width: 0; }
 .activity-item-heading {
   display: flex;
   align-items: center;
@@ -285,58 +309,38 @@ function itemStatus(item: AgentActivity["items"][number]): string {
   min-width: 0;
   padding: 2px 0;
   list-style: none;
+  color: var(--text-muted);
   cursor: pointer;
 }
-
 .activity-item-heading::-webkit-details-marker { display: none; }
-
+.commentary-step { cursor: default; }
 .activity-item-mark {
   width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  text-align: center;
 }
-
-.activity-item-duration {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
+.thinking-mark { color: var(--accent); font-size: 13px; }
+.activity-done-mark { color: var(--text-faint, var(--text-muted)); }
+.activity-error-mark { color: var(--rose, #e0526f); font-weight: 700; }
+.activity-item-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-item-chevron {
   margin-left: auto;
   flex: 0 0 auto;
+  opacity: 0.65;
   transition: transform var(--transition-fast);
 }
-
-.activity-work-step[open] .activity-item-chevron { transform: rotate(90deg); }
-
-.activity-message {
-  padding: 4px 18px 5px 0;
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.activity-message :deep(p) { margin: 0; }
-.activity-message :deep(code) {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--bg-elevated) 84%, var(--text-primary) 6%);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
-.activity-thinking,
-.activity-tool-preview {
-  margin: 4px 0 0;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
+.activity-work-step[open] > .activity-item-heading .activity-item-chevron { transform: rotate(90deg); }
 
 .activity-thinking {
-  padding: 3px 18px 4px 0;
-  font-style: italic;
+  margin: 5px 18px 3px 22px;
+  padding: 8px 10px;
+  border-left: 1px solid var(--border-default);
+  color: var(--text-muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .activity-step-detail {
@@ -347,24 +351,10 @@ function itemStatus(item: AgentActivity["items"][number]): string {
   background: color-mix(in srgb, var(--bg-elevated) 68%, transparent);
 }
 
-.activity-tool-meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.activity-tool-meta code {
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-}
-
+.activity-tool-meta { display: flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 10px; }
+.activity-tool-meta code { color: var(--text-primary); font-family: var(--font-mono); }
 .activity-section,
-.activity-raw {
-  margin: 7px 0 0;
-}
-
+.activity-raw { margin: 7px 0 0; }
 .activity-label {
   display: block;
   margin-bottom: 3px;
@@ -373,7 +363,6 @@ function itemStatus(item: AgentActivity["items"][number]): string {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-
 .activity-section pre,
 .activity-raw {
   max-height: 280px;
@@ -390,19 +379,17 @@ function itemStatus(item: AgentActivity["items"][number]): string {
   word-break: break-word;
 }
 
-@keyframes activity-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes activity-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
+  .activity-count:nth-of-type(n + 2),
   .activity-current-separator,
-  .activity-current {
-    display: none;
-  }
+  .activity-current { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .activity-spinner { animation: none; }
-  .activity-chevron { transition: none; }
+  .activity-chevron,
+  .activity-item-chevron { transition: none; }
 }
 </style>

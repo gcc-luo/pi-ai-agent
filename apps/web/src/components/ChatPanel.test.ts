@@ -1,19 +1,17 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const componentPath = resolve(process.cwd(), "src/components/ChatPanel.vue");
-const avatarPath = resolve(process.cwd(), "public/panda-agent-avatar-22px.svg");
 
-describe("ChatPanel PI Agent avatar", () => {
-  it("uses the uncropped 22px panda SVG for assistant message headers", async () => {
+describe("ChatPanel assistant presentation", () => {
+  it("renders assistant replies as avatar-free document content", async () => {
     const source = await readFile(componentPath, "utf8");
-    const avatar = await stat(avatarPath);
 
-    expect(avatar.isFile()).toBe(true);
-    expect(source).toContain('src="/panda-agent-avatar-22px.svg"');
-    expect(source).toContain('alt="PI Agent"');
-    expect(source).not.toContain("padding: 2px;");
+    expect(source).not.toContain('src="/panda-agent-avatar-22px.svg"');
+    expect(source).toContain("Assistant replies are document-style content");
+    expect(source).toContain("width: min(880px, 100%);");
+    expect(source).toContain("v-if=\"!m.statusOnly && m.showMessageActions && !m.streaming\"");
   });
 
   it("does not force the conversation to scroll when toggling agent history", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MessagePart } from "@pi-web-ui/shared";
 import {
+  activityTargetForTool,
   annotateChatRuns,
   buildAgentActivity,
   formatProcessingDuration,
@@ -146,6 +147,21 @@ describe("buildAgentActivity", () => {
   });
 });
 
+describe("activityTargetForTool", () => {
+  it("extracts the useful argument for common tools", () => {
+    expect(activityTargetForTool("Read", { file_path: "src/App.vue" })).toBe("src/App.vue");
+    expect(activityTargetForTool("Bash", { command: "pnpm test" })).toBe("pnpm test");
+    expect(activityTargetForTool("Grep", { pattern: "MessageStream" })).toBe("MessageStream");
+  });
+
+  it("keeps summaries on one short line", () => {
+    const result = activityTargetForTool("Bash", { command: `echo ${"value ".repeat(40)}` });
+    expect(result).not.toContain("\n");
+    expect(result.length).toBeLessThanOrEqual(120);
+    expect(result.endsWith("…")).toBe(true);
+  });
+});
+
 describe("annotateChatRuns", () => {
   it("keeps the PI Agent header above the run while working and after completion", () => {
     const processMessage = activityMessage("a1", [{ kind: "thinking", text: "分析" }]);
@@ -243,6 +259,32 @@ describe("annotateChatRuns", () => {
       hideNonTextContent: false,
     });
     expect(result[1]!.activity).toMatchObject({ operationCount: 1, currentLabel: "searchCode" });
+  });
+
+  it("settles the work group as soon as the final answer starts streaming", () => {
+    const result = annotateChatRuns(
+      [
+        user("u1"),
+        activityMessage("a1", [{
+          kind: "tool_call",
+          toolCallId: "call-1",
+          name: "Read",
+          args: { file_path: "src/App.vue" },
+          status: "complete",
+          result: "ok",
+        }]),
+        {
+          ...assistant("a2"),
+          streaming: true,
+          hasVisibleContent: true,
+          parts: [{ kind: "text" as const, text: "这是最终回答的开头。" }],
+        },
+      ],
+      { isBusy: true, activeElapsedMs: 9_000, expandedRunIds: new Set() },
+    );
+
+    expect(result[1]!.activity).toMatchObject({ status: "complete", durationMs: 9_000 });
+    expect(result[2]).toMatchObject({ hidden: false, streaming: true, showMessageActions: true });
   });
 
   it("renders only one visible activity block for a tool-only active run", () => {

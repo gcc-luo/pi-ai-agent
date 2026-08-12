@@ -9,6 +9,7 @@ export interface ChatRunSource {
   hasVisibleContent?: boolean;
   artifacts?: ArtifactItem[];
   parts?: MessagePart[];
+  streaming?: boolean;
 }
 
 interface ChatMessageSource {
@@ -121,6 +122,7 @@ export interface ChatRunAnnotation {
   hideActivityText: boolean;
   statusOnly: boolean;
   showActivity: boolean;
+  showMessageActions: boolean;
   activity: AgentActivity | null;
 }
 
@@ -184,6 +186,42 @@ function commandFromArgs(args: unknown): string {
   return typeof command === "string" ? command.toLowerCase() : "";
 }
 
+function stringArg(args: unknown, keys: string[]): string {
+  if (!args || typeof args !== "object") return "";
+  const value = args as Record<string, unknown>;
+  for (const key of keys) {
+    if (typeof value[key] === "string" && value[key].trim()) return value[key].trim();
+  }
+  return "";
+}
+
+/** Extract the useful, human-readable subject of a tool call for its one-line summary. */
+export function activityTargetForTool(name: string, args: unknown): string {
+  const lower = name.toLowerCase();
+  let target = "";
+
+  if (/bash|shell|command|exec/.test(lower)) {
+    target = stringArg(args, ["command", "cmd"]);
+  } else if (/read|write|edit|patch|file/.test(lower)) {
+    target = stringArg(args, ["file_path", "path", "filename", "name"]);
+  } else if (/search|find|grep|glob|ripgrep/.test(lower)) {
+    target = stringArg(args, ["pattern", "query", "path", "glob"]);
+  } else if (lower.startsWith("browser_")) {
+    target = stringArg(args, ["url", "query", "text"]);
+  } else if (lower.startsWith("computer_")) {
+    target = stringArg(args, ["app", "action", "text"]);
+  }
+
+  if (!target) {
+    target = stringArg(args, [
+      "file_path", "path", "command", "cmd", "pattern", "query", "url", "name", "task",
+    ]);
+  }
+
+  const singleLine = target.replace(/\s+/g, " ");
+  return singleLine.length > 120 ? `${singleLine.slice(0, 117)}…` : singleLine;
+}
+
 export function activityLabelForTool(name: string, args: unknown): AgentActivityLabel {
   const lower = name.toLowerCase();
   const command = commandFromArgs(args);
@@ -215,6 +253,7 @@ export function buildAgentActivity(
   activeElapsedMs: number | null,
   outcome: "interrupted" | "failed" | null = null,
   waitingForPermission = false,
+  answerStreaming = false,
 ): AgentActivity {
   const items: AgentActivityItem[] = [];
   const toolIndexes = new Map<string, number>();
@@ -250,6 +289,7 @@ export function buildAgentActivity(
           label: "analyzeRequest",
           status: "complete",
           part,
+          durationMs: messageDurationMs,
         });
         return;
       }
@@ -285,6 +325,10 @@ export function buildAgentActivity(
   });
 
   const tools = items.filter((item) => item.kind === "tool");
+  const lastItem = items.at(-1);
+  if (isActive && !answerStreaming && lastItem?.kind === "thinking") {
+    lastItem.status = "running";
+  }
   const failedCount = tools.filter((item) => item.status === "failed").length;
   const completedCount = tools.filter((item) => item.status !== "running").length;
   const currentTool = [...tools].reverse().find((item) => item.status === "running")
@@ -299,6 +343,8 @@ export function buildAgentActivity(
     runId,
     status: waitingForPermission
       ? "waiting_permission"
+      : answerStreaming
+        ? "complete"
       : isActive
         ? "running"
         : outcome === "interrupted"
@@ -362,6 +408,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
         hideActivityText: false,
         statusOnly: false,
         showActivity: false,
+        showMessageActions: true,
         activity: null,
       };
     }
@@ -375,9 +422,15 @@ export function annotateChatRuns<T extends ChatRunSource>(
     const responseIndex = relativeResponseIndex === null
       ? null
       : indexes[relativeResponseIndex]!;
+    const responseMessage = relativeResponseIndex === null
+      ? null
+      : runMessages[relativeResponseIndex]!;
     const isFirst = index === firstIndex;
     const isResponse = index === responseIndex;
     const isActive = options.isBusy && runId === latestRunId;
+    const answerStreaming = isActive
+      && responseMessage?.streaming === true
+      && hasStandaloneContent(responseMessage);
     const runExpanded = options.expandedRunIds.has(runId);
     const runArtifacts = artifactsByRun.get(runId) ?? [];
     const activity = buildAgentActivity(
@@ -387,6 +440,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       options.activeElapsedMs,
       runId === latestRunId ? (options.outcome ?? null) : null,
       isActive && options.waitingForPermission === true,
+      answerStreaming,
     );
     const responseHasVisibleContent = responseIndex !== null
       && (hasStandaloneContent(messages[responseIndex]!) || runArtifacts.length > 0);
@@ -422,6 +476,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       hideActivityText,
       statusOnly,
       showActivity: isFirst && (isActive || activity.items.length > 0),
+      showMessageActions: isResponse,
       activity: isFirst ? activity : null,
     };
   });
