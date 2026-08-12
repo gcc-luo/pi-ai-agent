@@ -141,6 +141,16 @@ apps/desktop/src-tauri/target/release/bundle/
 
 根据操作系统会生成不同格式的安装包，例如 Windows 的 `.msi` / `.exe`、macOS 的 `.dmg` 和 Linux 的 `.deb` / `.AppImage`。
 
+macOS 用户应从 GitHub Release 下载 `.dmg`，打开后将应用拖入“应用程序”目录。
+`*.app.tar.gz` 是 Tauri 自动更新专用产物，不作为手动安装包分发。
+
+CI 在未配置 Apple 证书时对 macOS 应用执行 ad-hoc 签名，避免 Apple Silicon 将浏览器下载的应用判断为
+“已损坏”。正式对外发布时，建议在 GitHub Actions 中配置
+`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、
+`APPLE_PASSWORD` 和 `APPLE_TEAM_ID`，由 Tauri 完成 Developer ID 签名与公证。
+仅使用 ad-hoc 签名时，首次启动可能提示无法验证开发者，可右键应用选择“打开”；
+完成 Developer ID 签名与公证后无需此操作。
+
 如需单独准备 sidecar：
 
 ```bash

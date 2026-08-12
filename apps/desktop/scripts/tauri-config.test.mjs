@@ -34,7 +34,7 @@ test("refreshes the bundled server runtime before packaging", () => {
   assert.doesNotMatch(releaseWorkflow, /pnpm build -- --target/);
   assert.match(
     releaseWorkflow,
-    /pnpm prepare-shell-runtime && pnpm prepare-sidecar && npx tauri build --target aarch64-apple-darwin/,
+    /npx tauri build --target aarch64-apple-darwin --bundles app,dmg/,
   );
   assert.match(
     releaseWorkflow,
@@ -42,6 +42,22 @@ test("refreshes the bundled server runtime before packaging", () => {
   );
   assert.doesNotMatch(releaseWorkflow, /pnpm verify-release-version --/);
   assert.match(releaseWorkflow, /pnpm verify-release-version "\$\{\{ github\.ref_name \}\}"/);
+});
+
+test("signs macOS apps and publishes a verified DMG installer", () => {
+  const releaseWorkflow = readFileSync(releaseWorkflowPath, "utf8");
+
+  assert.match(releaseWorkflow, /APPLE_CERTIFICATE:.*secrets\.APPLE_CERTIFICATE/);
+  assert.match(releaseWorkflow, /APPLE_ID:.*secrets\.APPLE_ID/);
+  assert.match(releaseWorkflow, /unset "\$variable"/);
+  assert.match(releaseWorkflow, /Missing required macOS signing secret/);
+  assert.match(releaseWorkflow, /export APPLE_SIGNING_IDENTITY="-"/);
+  assert.match(releaseWorkflow, /codesign --verify --deep --strict/);
+  assert.match(releaseWorkflow, /hdiutil verify/);
+  assert.match(releaseWorkflow, /name: macos-installer/);
+  assert.match(releaseWorkflow, /artifacts\/macos-installer\/\*\.dmg/);
+  assert.match(releaseWorkflow, /macOS 手动安装请下载 `\.dmg` 文件/);
+  assert.match(releaseWorkflow, /`\.app\.tar\.gz` 是应用自动更新专用文件/);
 });
 
 test("bundles a verified PortableGit runtime for the Windows shell fallback", () => {

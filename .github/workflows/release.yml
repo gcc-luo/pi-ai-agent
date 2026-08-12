@@ -46,15 +46,62 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm prepare-shell-runtime && pnpm prepare-sidecar && npx tauri build --target aarch64-apple-darwin
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          for variable in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!variable:-}" ]; then
+              unset "$variable"
+            fi
+          done
+
+          if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+            for required in APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!required:-}" ]; then
+                echo "Missing required macOS signing secret: $required" >&2
+                exit 1
+              fi
+            done
+          else
+            export APPLE_SIGNING_IDENTITY="-"
+          fi
+
+          pnpm prepare-shell-runtime
+          pnpm prepare-sidecar
+          npx tauri build --target aarch64-apple-darwin --bundles app,dmg
+
+      - name: Verify macOS bundles
+        run: |
+          set -euo pipefail
+
+          APP_PATH=$(find apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
+          DMG_PATH=$(find apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)
+
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          hdiutil verify "$DMG_PATH"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
+          if-no-files-found: error
           path: |
             apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
             apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+
+      - name: Upload macOS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          if-no-files-found: error
+          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 
   build-windows:
     name: Build Windows (x64)
@@ -116,6 +163,12 @@ jobs:
           name: macos-artifacts
           path: artifacts/macos
 
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installer
+          path: artifacts/macos-installer
+
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
@@ -174,10 +227,18 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          body: ${{ github.event.head_commit.message }}
+          body: |
+            ${{ github.event.head_commit.message }}
+
+            ## 下载说明
+
+            - macOS 手动安装请下载 `.dmg` 文件。
+            - `.app.tar.gz` 是应用自动更新专用文件，请勿手动下载解压安装。
+            - 未配置 Apple Developer 公证时，首次启动请右键应用并选择“打开”。
           draft: false
           prerelease: false
           files: |
+            artifacts/macos-installer/*.dmg
             artifacts/macos/*.app.tar.gz
             artifacts/macos/*.app.tar.gz.sig
             artifacts/windows/*.exe
