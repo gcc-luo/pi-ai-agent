@@ -25,7 +25,19 @@ export async function buildApp(config: Config, deps?: AppDeps): Promise<FastifyI
   });
 
   await app.register(cors, {
-    origin: true,
+    origin(origin, callback) {
+      // The server is a local desktop sidecar. Do not let arbitrary websites
+      // read or mutate its unauthenticated local APIs through the browser.
+      if (!origin) return callback(null, true);
+      try {
+        const url = new URL(origin);
+        const localHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        const tauriHost = url.hostname === "tauri.localhost";
+        callback(null, localHost || tauriHost);
+      } catch {
+        callback(null, false);
+      }
+    },
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });

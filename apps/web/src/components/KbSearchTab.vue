@@ -4,6 +4,7 @@ import { NInput, NButton, NSelect, NSpin, NEmpty } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import type { KbSearchHitDto } from "@pi-web-ui/shared";
+import DOMPurify from "dompurify";
 
 const props = defineProps<{ kbId: string }>();
 const { t } = useI18n();
@@ -44,8 +45,11 @@ async function handleSearch() {
 }
 
 function highlightSnippet(snippet: string): string {
-  // Wrap <b> tags from FTS5 snippet in a highlight class
-  return snippet.replace(/<b>(.*?)<\/b>/g, '<mark class="search-hl">$1</mark>');
+  const normalized = snippet.replace(/<b>(.*?)<\/b>/g, '<mark class="search-hl">$1</mark>');
+  return DOMPurify.sanitize(normalized, {
+    ALLOWED_TAGS: ["mark"],
+    ALLOWED_ATTR: ["class"],
+  });
 }
 </script>
 

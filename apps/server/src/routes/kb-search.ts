@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { EmbeddingModelConfig } from "../kb/embedding-client.js";
+import { resolveSearchScopes } from "../kb/search-scopes.js";
 
 export const kbSearchRoutes: FastifyPluginAsync = async (app) => {
   app.post("/kb-search", async (req, reply) => {
@@ -7,35 +7,21 @@ export const kbSearchRoutes: FastifyPluginAsync = async (app) => {
       query?: string;
       kbIds?: string[];
       fileIds?: string[];
+      scopes?: Array<{ kbId: string; fileIds?: string[] | null }>;
       limit?: number;
     } | null;
 
     if (!body?.query?.trim()) return reply.code(400).send({ error: "query_required" });
-    if (!body.kbIds?.length) return reply.code(400).send({ error: "kb_ids_required" });
+    const requestedScopes = body.scopes?.length
+      ? body.scopes
+      : body.kbIds?.map((kbId) => ({ kbId, fileIds: body.fileIds }));
+    if (!requestedScopes?.length) return reply.code(400).send({ error: "kb_ids_required" });
 
-    // Find embedding model config from the first KB that has one
-    let embeddingModel: EmbeddingModelConfig | undefined;
-    for (const kbId of body.kbIds) {
-      const kb = app.knowledgeBases.findById(kbId);
-      if (kb?.embeddingModelId) {
-        const model = app.models.findById(kb.embeddingModelId);
-        if (model && model.modelType === "embedding" && model.apiBaseUrl && model.apiKey) {
-          embeddingModel = {
-            apiBaseUrl: model.apiBaseUrl,
-            apiKey: model.apiKey,
-            modelId: model.id,
-          };
-          break;
-        }
-      }
-    }
+    const scopes = resolveSearchScopes(app, requestedScopes);
 
     const result = await app.kbSearch.search({
-      query: body.query.trim(),
-      kbIds: body.kbIds,
-      fileIds: body.fileIds,
+      query: body.query.trim(), scopes,
       limit: body.limit ?? 8,
-      embeddingModel,
     });
 
     return result;

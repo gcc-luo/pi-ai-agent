@@ -3,6 +3,8 @@ import fs from "node:fs";
 import { ClientEvent, ImageAttachment, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
 import { buildKbContext } from "../kb/inject-context.js";
+import { resolveSearchScopes } from "../kb/search-scopes.js";
+import { extractUserSearchQuery } from "../kb/query-text.js";
 import { ulid } from "../util/ulid.js";
 
 const DEFAULT_TITLE_MAX = 30;
@@ -326,54 +328,43 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             const kbIds = enabledBindings.map((b) => b.kbId);
             const allFileIds = enabledBindings.flatMap((b) => b.fileFilter ?? []);
             const fileIds = allFileIds.length > 0 ? allFileIds : undefined;
+            const searchQuery = extractUserSearchQuery(event.content);
 
             console.log(`[WS Agent] KB search start: messageId=${messageId} kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"}`);
 
             send({
               type: "kb_search", sessionId: session.id, messageId,
-              phase: "searching", query: event.content, kbIds, fileIds,
+              phase: "searching", query: searchQuery, kbIds, fileIds,
             });
 
             try {
               const searchStart = Date.now();
 
-              // Find embedding model from KBs
-              let embeddingModel: { apiBaseUrl: string; apiKey: string; modelId: string } | undefined;
-              for (const kbId of kbIds) {
-                const kb = app.knowledgeBases.findById(kbId);
-                if (kb?.embeddingModelId) {
-                  const model = app.models.findById(kb.embeddingModelId);
-                  if (model && model.modelType === "embedding" && model.apiBaseUrl && model.apiKey) {
-                    embeddingModel = {
-                      apiBaseUrl: model.apiBaseUrl,
-                      apiKey: model.apiKey,
-                      modelId: model.id,
-                    };
-                    break;
-                  }
-                }
-              }
+              const scopes = resolveSearchScopes(app, enabledBindings.map((binding) => ({
+                kbId: binding.kbId,
+                fileIds: binding.fileFilter,
+              })));
 
               const result = await app.kbSearch.search({
-                query: event.content, kbIds, fileIds, limit: 5,
-                embeddingModel,
+                query: searchQuery, scopes, limit: 5,
               });
               const searchMs = Date.now() - searchStart;
-              console.log(`[WS Agent] KB search done: hits=${result.hits.length} time=${searchMs}ms embedding=${!!embeddingModel}`);
+              console.log(`[WS Agent] KB search done: hits=${result.hits.length} time=${searchMs}ms vectorScopes=${scopes.filter((scope) => scope.embeddingModel).length}`);
 
               if (result.hits.length > 0) {
                 const { contextBlock, chunkMap } = buildKbContext(result.hits);
                 console.log(`[WS Agent] KB context built: blockLen=${contextBlock.length} chunks=${Object.keys(chunkMap).length}`);
                 send({
                   type: "kb_search", sessionId: session.id, messageId,
-                  phase: "done", query: event.content, kbIds, fileIds,
+                  phase: "done", query: searchQuery, kbIds, fileIds,
                   hits: result.hits, chunkMap, durationMs: result.durationMs,
                 });
                 content = `${contextBlock}\n\n${content}`;
                 kbSearchMeta = {
-                  phase: "done", query: event.content, kbIds, fileIds,
+                  phase: "done", query: searchQuery, kbIds, fileIds,
                   hits: result.hits.map((h, i) => ({
-                    localId: i + 1, chunkId: h.chunkId, kbName: h.kbName,
+                    localId: i + 1, chunkId: h.chunkId, segmentId: h.segmentId,
+                    revision: h.revision, kbName: h.kbName,
                     fileName: h.fileName, titlePath: h.titlePath,
                     pageStart: h.pageStart, pageEnd: h.pageEnd,
                   })),
@@ -383,7 +374,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                 console.log(`[WS Agent] KB search empty: no hits for query`);
                 send({
                   type: "kb_search", sessionId: session.id, messageId,
-                  phase: "empty", query: event.content, kbIds, fileIds,
+                  phase: "empty", query: searchQuery, kbIds, fileIds,
                 });
               }
             } catch (err: any) {
@@ -391,7 +382,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
               if (err.stack) console.error(err.stack);
               send({
                 type: "kb_search", sessionId: session.id, messageId,
-                phase: "failed", query: event.content, kbIds, fileIds,
+                phase: "failed", query: searchQuery, kbIds, fileIds,
                 error: err.message,
               });
             }

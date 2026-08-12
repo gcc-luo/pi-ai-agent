@@ -11,8 +11,8 @@ interface MdToken {
   lang?: string;
 }
 
-export async function parseMd(filePath: string, _opts?: ParseOptions): Promise<ParsedDocument> {
-  const content = await fs.readFile(filePath, "utf8");
+export async function parseMd(filePath: string, opts?: ParseOptions): Promise<ParsedDocument> {
+  const content = await fs.readFile(filePath, { encoding: "utf8", signal: opts?.signal });
   if (!content.trim()) {
     return { sections: [], charCount: 0, pageCount: null };
   }

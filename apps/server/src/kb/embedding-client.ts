@@ -1,9 +1,11 @@
 import { ModelDto } from "@pi-web-ui/shared";
+import { createHash } from "node:crypto";
 
 export interface EmbeddingModelConfig {
   apiBaseUrl: string;
   apiKey: string;
   modelId: string;
+  modelVersion?: string;
 }
 
 export interface EmbeddingResult {
@@ -12,6 +14,8 @@ export interface EmbeddingResult {
 }
 
 const EMBEDDING_TIMEOUT_MS = 30_000;
+const DEFAULT_BATCH_SIZE = 64;
+const MAX_ATTEMPTS = 3;
 
 /**
  * Generate embeddings for multiple texts using an OpenAI-compatible API.
@@ -58,7 +62,52 @@ export async function getEmbeddings(
   const embeddings = sorted.map((d) => d.embedding);
   const dimension = embeddings[0]?.length ?? 0;
 
+  if (embeddings.length !== texts.length) {
+    throw new Error(`Embedding API returned ${embeddings.length} vectors for ${texts.length} inputs`);
+  }
+  if (dimension === 0 || embeddings.some((v) => v.length !== dimension || v.some((n) => !Number.isFinite(n)))) {
+    throw new Error("Embedding API returned invalid or inconsistent vectors");
+  }
+
   console.log(`[Embedding] response: dimension=${dimension} tokens=${data.usage?.total_tokens ?? "?"}`);
+
+  return { embeddings, dimension };
+}
+
+/**
+ * Generate embeddings in bounded batches with retry/backoff. Providers commonly
+ * reject very large input arrays even when every individual chunk is valid.
+ */
+export async function getEmbeddingsBatched(
+  config: EmbeddingModelConfig,
+  texts: string[],
+  batchSize = DEFAULT_BATCH_SIZE,
+): Promise<EmbeddingResult> {
+  const embeddings: number[][] = [];
+  let dimension = 0;
+
+  for (let offset = 0; offset < texts.length; offset += batchSize) {
+    const batch = texts.slice(offset, offset + batchSize);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const result = await getEmbeddings(config, batch);
+        if (dimension !== 0 && result.dimension !== dimension) {
+          throw new Error(`Embedding dimension changed from ${dimension} to ${result.dimension}`);
+        }
+        dimension = result.dimension;
+        embeddings.push(...result.embeddings);
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * 3 ** (attempt - 1)));
+        }
+      }
+    }
+    if (lastError) throw lastError;
+  }
 
   return { embeddings, dimension };
 }
@@ -135,5 +184,13 @@ export function modelToEmbeddingConfig(model: ModelDto): EmbeddingModelConfig | 
     apiBaseUrl: model.apiBaseUrl,
     apiKey: model.apiKey ?? "",
     modelId: model.id,
+    modelVersion: embeddingModelVersion(model.apiBaseUrl, model.id),
   };
+}
+
+export function embeddingModelVersion(apiBaseUrl: string, modelId: string): string {
+  return createHash("sha256")
+    .update(`${apiBaseUrl.replace(/\/+$/, "")}\u0000${modelId}`)
+    .digest("hex")
+    .slice(0, 16);
 }

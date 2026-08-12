@@ -3,7 +3,7 @@ import mammoth from "mammoth";
 import { ParsedDocument, ParsedSection, ParseOptions } from "./types.js";
 
 export async function parseDocx(filePath: string, opts?: ParseOptions): Promise<ParsedDocument> {
-  const buffer = await fs.readFile(filePath);
+  const buffer = await fs.readFile(filePath, { signal: opts?.signal });
 
   let html: string;
   try {
@@ -12,6 +12,7 @@ export async function parseDocx(filePath: string, opts?: ParseOptions): Promise<
       { styleMap: [] },
     );
     html = result.value;
+    opts?.signal?.throwIfAborted();
   } catch (err: any) {
     throw new Error(`docx_invalid: ${err.message}`);
   }

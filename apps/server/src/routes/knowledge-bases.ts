@@ -1,4 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export const knowledgeBasesRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async () => app.knowledgeBases.list());
@@ -35,19 +37,39 @@ export const knowledgeBasesRoutes: FastifyPluginAsync = async (app) => {
       const dup = app.knowledgeBases.findByName(name);
       if (dup && dup.id !== kb.id) return reply.code(409).send({ error: "name_exists" });
     }
-    app.knowledgeBases.update(req.params.id, {
-      name: body?.name?.trim(),
-      description: body?.description,
-      enabled: body?.enabled,
-      embeddingModelId: body?.embeddingModelId ?? null,
-    });
+    if (body?.embeddingModelId) {
+      const model = app.models.findById(body.embeddingModelId);
+      if (!model || model.modelType !== "embedding") {
+        return reply.code(400).send({ error: "invalid_embedding_model" });
+      }
+    }
+    const patch: Partial<{
+      name: string; description: string | null; enabled: boolean;
+      embeddingModelId: string | null;
+    }> = {};
+    if (body?.name !== undefined) patch.name = body.name.trim();
+    if (body?.description !== undefined) patch.description = body.description;
+    if (body?.enabled !== undefined) patch.enabled = body.enabled;
+    if (body && Object.prototype.hasOwnProperty.call(body, "embeddingModelId")) {
+      patch.embeddingModelId = body.embeddingModelId ?? null;
+    }
+    app.knowledgeBases.update(req.params.id, patch);
+    if (patch.embeddingModelId !== undefined && patch.embeddingModelId !== kb.embeddingModelId) {
+      for (const file of app.kbFiles.listByKb(req.params.id)) app.kbParseWorker.enqueue(file.id);
+    }
     return app.knowledgeBases.findById(req.params.id);
   });
 
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const kb = app.knowledgeBases.findById(req.params.id);
     if (!kb) return reply.code(404).send({ error: "not_found" });
+    for (const file of app.kbFiles.listByKb(req.params.id)) app.kbChunks.deleteByFile(file.id);
     app.knowledgeBases.delete(req.params.id);
+    const kbRoot = path.resolve(app.config.kbFilesDir);
+    const target = path.resolve(kbRoot, req.params.id);
+    if (target.startsWith(`${kbRoot}${path.sep}`)) {
+      await fs.rm(target, { recursive: true, force: true });
+    }
     return reply.code(204).send();
   });
 };

@@ -19,6 +19,8 @@ import { KbChunkRepository } from "./db/repositories/kb-chunk.js";
 import { SessionKbBindingRepository } from "./db/repositories/session-kb-binding.js";
 import { KbSearchService } from "./kb/search-service.js";
 import { ParsePipeline } from "./kb/parse-pipeline.js";
+import { KbParseJobRepository } from "./db/repositories/kb-parse-job.js";
+import { KbParseJobWorker } from "./kb/parse-job-worker.js";
 import { tokenizeForFts } from "./kb/fts-tokenize.js";
 import { buildApp } from "./app.js";
 import { projectsRoutes } from "./routes/projects.js";
@@ -86,6 +88,7 @@ export async function buildConfiguredApp(config: Config) {
   const kbChunks = new KbChunkRepository(db);
   const kbBindings = new SessionKbBindingRepository(db);
   const kbSearch = new KbSearchService(db);
+  const kbParseJobs = new KbParseJobRepository(db);
   const sessionStates = new SessionStateStore();
   const experts = new ExpertRepository(db);
   const scheduledTasks = new ScheduledTaskRepository(db);
@@ -131,8 +134,12 @@ export async function buildConfiguredApp(config: Config) {
   const app = await buildApp(config, {
     db, projects, sessions, messages, models, sessionStates, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
-    scheduledTasks, taskLogs, channels, channelConversations, plugins, config,
+    kbParseJobs, scheduledTasks, taskLogs, channels, channelConversations, plugins, config,
   });
+  const kbParseWorker = new KbParseJobWorker(kbParseJobs, parsePipeline, app.log);
+  (app as any).kbParseWorker = kbParseWorker;
+  app.addHook("onReady", async () => kbParseWorker.start());
+  app.addHook("onClose", async () => kbParseWorker.stop());
   const browserManager = new BrowserSessionManager({ logger: app.log });
   (app as any).browserManager = browserManager;
   const computerManager = new ComputerSessionManager(app.log);
@@ -243,7 +250,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(skillsRoutes, { prefix: "/api/skills" });
   await app.register(skillStoreRoutes, { prefix: "/api/skill-store" });
   await app.register(knowledgeBasesRoutes, { prefix: "/api/knowledge-bases" });
-  await app.register(createKbFilesRoutes(parsePipeline, config.kbFilesDir), { prefix: "/api" });
+  await app.register(createKbFilesRoutes(kbParseWorker, config.kbFilesDir), { prefix: "/api" });
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(browserRoutes, { prefix: "/api" });
@@ -304,12 +311,12 @@ function rebuildFtsIndexIfNeeded(db: import("better-sqlite3").Database): void {
   if (chunkCount === 0) return;
 
   console.log(`[KB FTS] rebuilding index: ${chunkCount} chunks to tokenize with jieba...`);
-  const chunks = db.prepare("SELECT rowid, content FROM kb_chunks").all() as { rowid: number; content: string }[];
+  const chunks = db.prepare("SELECT rowid, title_path, content FROM kb_chunks").all() as { rowid: number; title_path: string | null; content: string }[];
 
   const insert = db.prepare("INSERT INTO kb_chunks_fts (rowid, content) VALUES (?, ?)");
   const tx = db.transaction(() => {
     for (const chunk of chunks) {
-      insert.run(chunk.rowid, tokenizeForFts(chunk.content));
+      insert.run(chunk.rowid, tokenizeForFts(chunk.title_path ? `${chunk.title_path}\n${chunk.content}` : chunk.content));
     }
   });
   tx();

@@ -66,6 +66,13 @@ export class KnowledgeBaseRepository {
     return rows.map((r) => toDto(r, this.getStats(r.id)));
   }
 
+  listByEmbeddingModel(modelId: string): KbDto[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM knowledge_bases WHERE embedding_model_id = ?"
+    ).all(modelId) as Row[];
+    return rows.map((r) => toDto(r, this.getStats(r.id)));
+  }
+
   findByName(name: string): KbDto | null {
     const r = this.db.prepare("SELECT * FROM knowledge_bases WHERE name = ?").get(name) as Row | undefined;
     if (!r) return null;

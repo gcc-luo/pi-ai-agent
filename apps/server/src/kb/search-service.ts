@@ -5,9 +5,17 @@ import { segmentQuery } from "./fts-tokenize.js";
 
 export interface SearchInput {
   query: string;
-  kbIds: string[];
+  kbIds?: string[];
   fileIds?: string[];
   limit?: number;
+  embeddingModel?: EmbeddingModelConfig;
+  scopes?: SearchScope[];
+}
+
+export interface SearchScope {
+  kbId: string;
+  /** null/undefined means every searchable file in this KB. */
+  fileIds?: string[] | null;
   embeddingModel?: EmbeddingModelConfig;
 }
 
@@ -19,6 +27,7 @@ export interface SearchResult {
 const FTS_CANDIDATE_LIMIT = 20;
 const VECTOR_CANDIDATE_LIMIT = 20;
 const RRF_K = 60;  // RRF constant — higher value compresses rank differences
+const MIN_VECTOR_SIMILARITY = 0.35;
 
 type ScoredCandidate = { hit: KbSearchHitDto; score: number; embedding: Buffer | null };
 
@@ -27,9 +36,11 @@ export class KbSearchService {
 
   async search(input: SearchInput): Promise<SearchResult> {
     const start = performance.now();
-    const { query, kbIds, fileIds, limit = 8, embeddingModel } = input;
+    const { query, limit = 8 } = input;
+    const scopes = normalizeScopes(input);
+    const kbIds = scopes.map((scope) => scope.kbId);
 
-    console.log(`[KB Search] ─── start ─── query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] fileIds=${fileIds ? `[${fileIds.join(",")}]` : "all"} limit=${limit} embedding=${!!embeddingModel}`);
+    console.log(`[KB Search] ─── start ─── query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] limit=${limit} vectorSpaces=${scopes.filter((s) => s.embeddingModel).length}`);
 
     if (!query.trim() || !kbIds.length) {
       console.log(`[KB Search] ─── done (empty input, 0ms)`);
@@ -38,20 +49,21 @@ export class KbSearchService {
 
     // ── Step 1: FTS5 keyword search ──
     const t1 = performance.now();
-    const ftsCandidates = this.ftsSearchPhase(query, kbIds, fileIds);
+    const ftsCandidates = this.ftsSearchPhase(query, scopes);
     console.log(`[KB Search] Step 1/FTS5 keyword: ${ftsCandidates.length} candidates (${Math.round(performance.now() - t1)}ms)`);
 
     // ── Step 1b: instr fallback for short queries (≤2 CJK chars) ──
     if (ftsCandidates.length < limit && isShortCjkQuery(query)) {
       const t1b = performance.now();
-      const instrHits = this.instrFallback(query, kbIds, fileIds, limit - ftsCandidates.length);
+      const instrHits = this.instrFallback(query, scopes, limit - ftsCandidates.length);
       if (instrHits.length > 0) {
         console.log(`[KB Search] Step 1b/instr fallback: +${instrHits.length} hits (${Math.round(performance.now() - t1b)}ms)`);
         ftsCandidates.push(...instrHits);
       }
     }
 
-    if (ftsCandidates.length === 0 && !embeddingModel) {
+    const vectorGroups = groupVectorScopes(scopes);
+    if (ftsCandidates.length === 0 && vectorGroups.length === 0) {
       const ms = Math.round(performance.now() - start);
       console.log(`[KB Search] ─── done (no results, ${ms}ms)`);
       return { hits: [], durationMs: ms };
@@ -59,9 +71,12 @@ export class KbSearchService {
 
     // ── Step 2: Vector search (independent retrieval) ──
     let vectorCandidates: ScoredCandidate[] = [];
-    if (embeddingModel) {
+    if (vectorGroups.length > 0) {
       const t2 = performance.now();
-      vectorCandidates = await this.vectorSearch(query, embeddingModel, kbIds, fileIds, VECTOR_CANDIDATE_LIMIT);
+      const vectorLists = await Promise.all(vectorGroups.map(({ model, scopes: groupScopes }) =>
+        this.vectorSearch(query, model, groupScopes, VECTOR_CANDIDATE_LIMIT)
+      ));
+      vectorCandidates = vectorLists.flat();
       console.log(`[KB Search] Step 2/vector search: ${vectorCandidates.length} candidates (${Math.round(performance.now() - t2)}ms)`);
     } else {
       console.log(`[KB Search] Step 2/vector search: skipped (no embedding model)`);
@@ -70,7 +85,7 @@ export class KbSearchService {
     // ── Step 3: Merge & rank ──
     let hits: KbSearchHitDto[];
     let strategy: string;
-    if (embeddingModel && vectorCandidates.length > 0) {
+    if (vectorCandidates.length > 0) {
       hits = rrfMerge(ftsCandidates, vectorCandidates, limit);
       strategy = "RRF merge (FTS + vector)";
     } else if (ftsCandidates.length > 0) {
@@ -109,37 +124,41 @@ export class KbSearchService {
 
   private ftsSearchPhase(
     query: string,
-    kbIds: string[],
-    fileIds: string[] | undefined,
+    scopes: SearchScope[],
   ): ScoredCandidate[] {
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) return [];
     // Extract query words for JS-based snippet highlighting
     const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
     console.log(`[KB Search]   ftsQuery="${ftsQuery}" words=[${queryWords.join(", ")}]`);
-    return this.ftsSearch(ftsQuery, kbIds, fileIds, FTS_CANDIDATE_LIMIT, queryWords);
+    return this.ftsSearch(ftsQuery, scopes, FTS_CANDIDATE_LIMIT, queryWords);
   }
 
   private ftsSearch(
     ftsQuery: string,
-    kbIds: string[],
-    fileIds: string[] | undefined,
+    scopes: SearchScope[],
     limit: number,
     queryWords: string[],
   ): ScoredCandidate[] {
-    const kbPlaceholders = kbIds.map(() => "?").join(",");
+    const scopeFilter = buildScopeFilter(scopes, "c");
     // Note: no snippet() — FTS5 snippet offsets are wrong when the index is
     // pre-tokenized (spaces between CJK chars) but the external content table
     // stores the original text. We build snippets in JS instead.
     let sql = `
       SELECT
         c.rowid AS chunkId,
+        c.segment_uid AS segmentId,
+        c.generation AS revision,
         c.kb_id AS kbId,
         c.file_id AS fileId,
         c.seq,
         c.title_path AS titlePath,
         c.page_start AS pageStart,
         c.page_end AS pageEnd,
+        c.modality,
+        c.time_start_ms AS timeStartMs,
+        c.time_end_ms AS timeEndMs,
+        c.bbox_json AS bboxJson,
         c.content,
         c.embedding,
         bm25(kb_chunks_fts) AS score,
@@ -150,30 +169,26 @@ export class KbSearchService {
       JOIN kb_files f ON f.id = c.file_id
       JOIN knowledge_bases kb ON kb.id = c.kb_id
       WHERE kb_chunks_fts MATCH ?
-        AND c.kb_id IN (${kbPlaceholders})
+        AND (${scopeFilter.sql})
         AND c.generation = f.parse_generation
         AND f.parse_generation > 0
         AND f.enabled = 1
         AND kb.enabled = 1
     `;
 
-    const params: (string | number)[] = [ftsQuery, ...kbIds];
+    const params: (string | number)[] = [ftsQuery, ...scopeFilter.params];
 
-    if (fileIds && fileIds.length > 0) {
-      const filePlaceholders = fileIds.map(() => "?").join(",");
-      sql += ` AND c.file_id IN (${filePlaceholders})`;
-      params.push(...fileIds);
-    }
-
-    sql += ` ORDER BY bm25(kb_chunks_fts) DESC LIMIT ?`;
+    // SQLite FTS5 returns lower BM25 values for better matches.
+    sql += ` ORDER BY bm25(kb_chunks_fts) ASC LIMIT ?`;
     params.push(limit);
 
     const rows = this.db.prepare(sql).all(...params) as any[];
 
     return rows.map((row) => {
-      const hit = rowToHit(row);
+      const hit = rowToHit({ ...row, score: -row.score });
       hit.snippet = buildHighlightSnippet(row.content, queryWords);
-      return { hit, score: row.score, embedding: row.embedding };
+      hit.keywordScore = -row.score;
+      return { hit, score: -row.score, embedding: row.embedding };
     });
   }
 
@@ -181,23 +196,28 @@ export class KbSearchService {
 
   private instrFallback(
     query: string,
-    kbIds: string[],
-    fileIds: string[] | undefined,
+    scopes: SearchScope[],
     limit: number,
   ): ScoredCandidate[] {
     const keyword = query.trim();
     if (!keyword) return [];
 
-    const kbPlaceholders = kbIds.map(() => "?").join(",");
+    const scopeFilter = buildScopeFilter(scopes, "c");
     let sql = `
       SELECT
         c.rowid AS chunkId,
+        c.segment_uid AS segmentId,
+        c.generation AS revision,
         c.kb_id AS kbId,
         c.file_id AS fileId,
         c.seq,
         c.title_path AS titlePath,
         c.page_start AS pageStart,
         c.page_end AS pageEnd,
+        c.modality,
+        c.time_start_ms AS timeStartMs,
+        c.time_end_ms AS timeEndMs,
+        c.bbox_json AS bboxJson,
         c.content,
         c.embedding,
         kb.name AS kbName,
@@ -206,20 +226,14 @@ export class KbSearchService {
       JOIN kb_files f ON f.id = c.file_id
       JOIN knowledge_bases kb ON kb.id = c.kb_id
       WHERE instr(c.content, ?) > 0
-        AND c.kb_id IN (${kbPlaceholders})
+        AND (${scopeFilter.sql})
         AND c.generation = f.parse_generation
         AND f.parse_generation > 0
         AND f.enabled = 1
         AND kb.enabled = 1
     `;
 
-    const params: (string | number)[] = [keyword, ...kbIds];
-
-    if (fileIds && fileIds.length > 0) {
-      const filePlaceholders = fileIds.map(() => "?").join(",");
-      sql += ` AND c.file_id IN (${filePlaceholders})`;
-      params.push(...fileIds);
-    }
+    const params: (string | number)[] = [keyword, ...scopeFilter.params];
 
     sql += ` LIMIT ?`;
     params.push(limit);
@@ -239,8 +253,7 @@ export class KbSearchService {
   private async vectorSearch(
     query: string,
     embeddingModel: EmbeddingModelConfig,
-    kbIds: string[],
-    fileIds: string[] | undefined,
+    scopes: SearchScope[],
     limit: number,
   ): Promise<ScoredCandidate[]> {
     // Generate query embedding
@@ -254,38 +267,47 @@ export class KbSearchService {
     }
 
     // Load all chunks with embeddings from the target KBs
-    const kbPlaceholders = kbIds.map(() => "?").join(",");
+    const scopeFilter = buildScopeFilter(scopes, "c");
     let sql = `
       SELECT
         c.rowid AS chunkId,
+        c.segment_uid AS segmentId,
+        c.generation AS revision,
         c.kb_id AS kbId,
         c.file_id AS fileId,
         c.seq,
         c.title_path AS titlePath,
         c.page_start AS pageStart,
         c.page_end AS pageEnd,
+        c.modality,
+        c.time_start_ms AS timeStartMs,
+        c.time_end_ms AS timeEndMs,
+        c.bbox_json AS bboxJson,
         c.content,
-        c.embedding,
+        v.embedding,
         kb.name AS kbName,
         f.name AS fileName
       FROM kb_chunks c
+      JOIN kb_segment_vectors v ON v.chunk_id = c.rowid
       JOIN kb_files f ON f.id = c.file_id
       JOIN knowledge_bases kb ON kb.id = c.kb_id
-      WHERE c.kb_id IN (${kbPlaceholders})
+      WHERE (${scopeFilter.sql})
         AND c.generation = f.parse_generation
         AND f.parse_generation > 0
         AND f.enabled = 1
         AND kb.enabled = 1
-        AND c.embedding IS NOT NULL
+        AND v.vector_space = 'text'
+        AND v.model_id = ?
+        AND v.model_version = ?
+        AND v.dimension = ?
     `;
 
-    const params: (string | number)[] = [...kbIds];
-
-    if (fileIds && fileIds.length > 0) {
-      const filePlaceholders = fileIds.map(() => "?").join(",");
-      sql += ` AND c.file_id IN (${filePlaceholders})`;
-      params.push(...fileIds);
-    }
+    const params: (string | number)[] = [
+      ...scopeFilter.params,
+      embeddingModel.modelId,
+      embeddingModel.modelVersion ?? "unknown",
+      queryEmbedding.length,
+    ];
 
     const rows = this.db.prepare(sql).all(...params) as any[];
 
@@ -295,8 +317,11 @@ export class KbSearchService {
       if (!row.embedding) continue;
       const chunkEmb = decodeEmbedding(row.embedding);
       const score = cosineSimilarity(queryEmbedding, chunkEmb);
+      if (score < MIN_VECTOR_SIMILARITY) continue;
+      const hit = rowToHit(row);
+      hit.vectorScore = score;
       scored.push({
-        hit: rowToHit(row),
+        hit,
         score,
         embedding: row.embedding,
       });
@@ -306,6 +331,39 @@ export class KbSearchService {
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, limit);
   }
+}
+
+function normalizeScopes(input: SearchInput): SearchScope[] {
+  if (input.scopes?.length) return input.scopes;
+  return (input.kbIds ?? []).map((kbId) => ({
+    kbId,
+    fileIds: input.fileIds,
+    embeddingModel: input.embeddingModel,
+  }));
+}
+
+function buildScopeFilter(scopes: SearchScope[], alias: string): { sql: string; params: string[] } {
+  const params: string[] = [];
+  const clauses = scopes.map((scope) => {
+    params.push(scope.kbId);
+    if (!scope.fileIds?.length) return `${alias}.kb_id = ?`;
+    params.push(...scope.fileIds);
+    return `(${alias}.kb_id = ? AND ${alias}.file_id IN (${scope.fileIds.map(() => "?").join(",")}))`;
+  });
+  return { sql: clauses.length ? clauses.join(" OR ") : "0", params };
+}
+
+function groupVectorScopes(scopes: SearchScope[]): { model: EmbeddingModelConfig; scopes: SearchScope[] }[] {
+  const groups = new Map<string, { model: EmbeddingModelConfig; scopes: SearchScope[] }>();
+  for (const scope of scopes) {
+    const model = scope.embeddingModel;
+    if (!model) continue;
+    const key = `${model.apiBaseUrl}\u0000${model.modelId}\u0000${model.modelVersion ?? "unknown"}`;
+    const group = groups.get(key) ?? { model, scopes: [] };
+    group.scopes.push(scope);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
 
 // ─── RRF (Reciprocal Rank Fusion) ───
@@ -339,6 +397,7 @@ function rrfMerge(
     const rrf = 1 / (RRF_K + rank + 1);
     if (existing) {
       existing.rrfScore += rrf;
+      existing.hit.vectorScore = c.hit.vectorScore;
     } else {
       rrfScores.set(chunkId, { hit: c.hit, rrfScore: rrf });
     }
@@ -436,6 +495,8 @@ function buildInstrSnippet(content: string, keyword: string): string {
 function rowToHit(row: any): KbSearchHitDto {
   return {
     chunkId: row.chunkId,
+    segmentId: row.segmentId ?? `${row.fileId}:${row.revision ?? 0}:${row.seq}`,
+    revision: row.revision ?? 0,
     kbId: row.kbId,
     kbName: row.kbName,
     fileId: row.fileId,
@@ -444,8 +505,17 @@ function rowToHit(row: any): KbSearchHitDto {
     titlePath: row.titlePath,
     pageStart: row.pageStart,
     pageEnd: row.pageEnd,
+    modality: row.modality ?? "text",
+    timeStartMs: row.timeStartMs ?? null,
+    timeEndMs: row.timeEndMs ?? null,
+    bbox: parseJsonObject(row.bboxJson),
     content: row.content,
     snippet: row.snippet ?? "",
     score: row.score ?? 0,
   };
+}
+
+function parseJsonObject(value: unknown): any | null {
+  if (typeof value !== "string" || !value) return null;
+  try { return JSON.parse(value); } catch { return null; }
 }

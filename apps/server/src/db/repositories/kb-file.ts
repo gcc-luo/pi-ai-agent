@@ -5,16 +5,19 @@ import { ulid } from "../../util/ulid.js";
 type Row = {
   id: string; kb_id: string; name: string; ext: string; source: string;
   size: number; storage_path: string; status: string; enabled: number;
-  parse_generation: number; fail_reason: string | null;
+  parse_generation: number; active_revision_id: string | null; fail_reason: string | null;
   char_count: number | null; page_count: number | null; chunk_count: number | null;
   last_parsed_at: number | null; created_at: number; updated_at: number;
+  asset_kind: "document" | "image" | "video" | "audio";
 };
 
 function toDto(r: Row): KbFileDto {
   return {
     id: r.id, kbId: r.kb_id, name: r.name, ext: r.ext, source: r.source,
+    assetKind: r.asset_kind ?? "document",
     size: r.size, status: r.status as KbFileDto["status"], enabled: r.enabled === 1,
-    parseGeneration: r.parse_generation, failReason: r.fail_reason,
+    parseGeneration: r.parse_generation, activeRevisionId: r.active_revision_id ?? null,
+    failReason: r.fail_reason,
     charCount: r.char_count, pageCount: r.page_count, chunkCount: r.chunk_count,
     lastParsedAt: r.last_parsed_at, createdAt: r.created_at, updatedAt: r.updated_at,
   };
@@ -25,17 +28,18 @@ export class KbFileRepository {
 
   create(input: {
     kbId: string; name: string; ext: string; source: string;
-    size: number; storagePath: string;
+    size: number; storagePath: string; assetKind?: "document" | "image" | "video" | "audio";
   }): KbFileDto {
     const id = ulid();
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO kb_files (id, kb_id, name, ext, source, size, storage_path, status, enabled, parse_generation, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 0, ?, ?)
-    `).run(id, input.kbId, input.name, input.ext, input.source, input.size, input.storagePath, now, now);
+      INSERT INTO kb_files (id, kb_id, name, ext, source, size, storage_path, asset_kind, status, enabled, parse_generation, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, 0, ?, ?)
+    `).run(id, input.kbId, input.name, input.ext, input.source, input.size, input.storagePath, input.assetKind ?? "document", now, now);
     return {
       id, kbId: input.kbId, name: input.name, ext: input.ext, source: input.source,
-      size: input.size, status: "pending", enabled: true, parseGeneration: 0,
+      size: input.size, assetKind: input.assetKind ?? "document",
+      status: "pending", enabled: true, parseGeneration: 0, activeRevisionId: null,
       failReason: null, charCount: null, pageCount: null, chunkCount: null,
       lastParsedAt: null, createdAt: now, updatedAt: now,
     };
@@ -118,31 +122,26 @@ export class KbFileRepository {
 
   updateStatus(id: string, patch: {
     status: string; failReason?: string | null;
-    parseGeneration?: number; charCount?: number | null;
+    parseGeneration?: number; activeRevisionId?: string | null; charCount?: number | null;
     pageCount?: number | null; chunkCount?: number | null;
     lastParsedAt?: number | null;
   }): void {
-    this.db.prepare(`
-      UPDATE kb_files SET
-        status = ?,
-        fail_reason = ?,
-        parse_generation = COALESCE(?, parse_generation),
-        char_count = ?,
-        page_count = ?,
-        chunk_count = ?,
-        last_parsed_at = ?,
-        updated_at = ?
-      WHERE id = ?
-    `).run(
-      patch.status,
-      patch.failReason !== undefined ? patch.failReason : null,
-      patch.parseGeneration ?? null,
-      patch.charCount !== undefined ? patch.charCount : null,
-      patch.pageCount !== undefined ? patch.pageCount : null,
-      patch.chunkCount !== undefined ? patch.chunkCount : null,
-      patch.lastParsedAt !== undefined ? patch.lastParsedAt : null,
-      Date.now(), id,
-    );
+    const assignments = ["status = ?"];
+    const params: unknown[] = [patch.status];
+    const add = (column: string, value: unknown): void => {
+      assignments.push(`${column} = ?`);
+      params.push(value);
+    };
+    if (patch.failReason !== undefined) add("fail_reason", patch.failReason);
+    if (patch.parseGeneration !== undefined) add("parse_generation", patch.parseGeneration);
+    if (patch.activeRevisionId !== undefined) add("active_revision_id", patch.activeRevisionId);
+    if (patch.charCount !== undefined) add("char_count", patch.charCount);
+    if (patch.pageCount !== undefined) add("page_count", patch.pageCount);
+    if (patch.chunkCount !== undefined) add("chunk_count", patch.chunkCount);
+    if (patch.lastParsedAt !== undefined) add("last_parsed_at", patch.lastParsedAt);
+    add("updated_at", Date.now());
+    params.push(id);
+    this.db.prepare(`UPDATE kb_files SET ${assignments.join(", ")} WHERE id = ?`).run(...params);
   }
 
   setEnabled(id: string, enabled: boolean): void {
@@ -175,6 +174,25 @@ export class KbFileRepository {
     ).run(Date.now(), id);
     const row = this.db.prepare("SELECT parse_generation FROM kb_files WHERE id = ?").get(id) as { parse_generation: number };
     return row.parse_generation;
+  }
+
+  nextParseGeneration(id: string): number {
+    const row = this.db.prepare(`
+      SELECT MAX(generation) AS max_generation FROM (
+        SELECT generation FROM kb_chunks WHERE file_id = ?
+        UNION ALL
+        SELECT generation FROM kb_asset_revisions WHERE file_id = ?
+      )
+    `).get(id, id) as { max_generation: number | null };
+    const file = this.findById(id);
+    if (!file) throw new Error("knowledge base file not found");
+    return Math.max(file.parseGeneration, row.max_generation ?? 0) + 1;
+  }
+
+  markPending(id: string): void {
+    this.db.prepare(
+      "UPDATE kb_files SET status = 'pending', fail_reason = NULL, updated_at = ? WHERE id = ?"
+    ).run(Date.now(), id);
   }
 
   setParsing(id: string): void {

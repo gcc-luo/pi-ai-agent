@@ -14,6 +14,8 @@ import type { KbFileRepository } from "../db/repositories/kb-file.js";
 import type { KbChunkRepository } from "../db/repositories/kb-chunk.js";
 import type { SessionKbBindingRepository } from "../db/repositories/session-kb-binding.js";
 import type { KbSearchService } from "../kb/search-service.js";
+import type { KbParseJobRepository } from "../db/repositories/kb-parse-job.js";
+import type { KbParseJobWorker } from "../kb/parse-job-worker.js";
 import type { ExpertRepository } from "../db/repositories/expert.js";
 import type { ScheduledTaskRepository, TaskLogRepository } from "../db/repositories/scheduled-task.js";
 import type { TaskScheduler } from "../services/task-scheduler.js";
@@ -43,6 +45,8 @@ declare module "fastify" {
     kbChunks: KbChunkRepository;
     kbBindings: SessionKbBindingRepository;
     kbSearch: KbSearchService;
+    kbParseJobs: KbParseJobRepository;
+    kbParseWorker: KbParseJobWorker;
     experts: ExpertRepository;
     scheduledTasks: ScheduledTaskRepository;
     taskLogs: TaskLogRepository;

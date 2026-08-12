@@ -7,10 +7,15 @@ export interface Chunk {
   pageEnd: number | null;
   content: string;
   charCount: number;
+  modality: "text" | "image" | "video" | "audio";
+  timeStartMs: number | null;
+  timeEndMs: number | null;
+  bbox: { x: number; y: number; width: number; height: number } | null;
 }
 
 const TARGET_MIN = 800;
 const TARGET_MAX = 1200;
+const OVERLAP_SIZE = 120;
 
 export function chunkDocument(doc: ParsedDocument): Chunk[] {
   if (!doc.sections.length) return [];
@@ -20,11 +25,12 @@ export function chunkDocument(doc: ParsedDocument): Chunk[] {
 
   // Group sections into chunks: accumulate text up to TARGET_MAX,
   // split at section boundaries when possible.
-  let buffer: { content: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }[] = [];
+  let buffer: ParsedSection[] = [];
   let bufferLen = 0;
   let currentTitlePath: string | null = null;
   let currentPageStart: number | null = null;
   let currentPageEnd: number | null = null;
+  let currentModality: Chunk["modality"] | null = null;
 
   function flushBuffer(): void {
     if (!buffer.length) return;
@@ -41,16 +47,27 @@ export function chunkDocument(doc: ParsedDocument): Chunk[] {
       pageEnd: currentPageEnd,
       content: text,
       charCount: text.length,
+      modality: buffer[0]?.modality ?? "text",
+      timeStartMs: buffer[0]?.timeStartMs ?? null,
+      timeEndMs: buffer.at(-1)?.timeEndMs ?? null,
+      bbox: buffer.length === 1 ? buffer[0]?.bbox ?? null : null,
     });
     buffer = [];
     bufferLen = 0;
     currentTitlePath = null;
     currentPageStart = null;
     currentPageEnd = null;
+    currentModality = null;
   }
 
   for (const section of doc.sections) {
     const sectionLen = section.content.length;
+    const sectionModality = section.modality ?? "text";
+
+    // Never merge content from different retrieval/vector spaces into one
+    // segment. This is required once OCR regions, image captions and video
+    // transcripts are emitted by multimodal parsers.
+    if (buffer.length > 0 && currentModality !== sectionModality) flushBuffer();
 
     if (sectionLen > TARGET_MAX) {
       // Flush current buffer first
@@ -65,6 +82,10 @@ export function chunkDocument(doc: ParsedDocument): Chunk[] {
           pageEnd: section.pageEnd,
           content: sub,
           charCount: sub.length,
+          modality: section.modality ?? "text",
+          timeStartMs: section.timeStartMs ?? null,
+          timeEndMs: section.timeEndMs ?? null,
+          bbox: section.bbox ?? null,
         });
       }
     } else if (bufferLen + sectionLen > TARGET_MAX && buffer.length > 0) {
@@ -77,6 +98,7 @@ export function chunkDocument(doc: ParsedDocument): Chunk[] {
 
     function addToBuffer(s: ParsedSection): void {
       if (!currentTitlePath && s.titlePath) currentTitlePath = s.titlePath;
+      currentModality = s.modality ?? "text";
       if (s.pageStart != null) {
         if (currentPageStart == null) currentPageStart = s.pageStart;
         currentPageEnd = s.pageEnd ?? s.pageStart;
@@ -86,6 +108,10 @@ export function chunkDocument(doc: ParsedDocument): Chunk[] {
         titlePath: s.titlePath,
         pageStart: s.pageStart,
         pageEnd: s.pageEnd,
+        modality: s.modality,
+        timeStartMs: s.timeStartMs,
+        timeEndMs: s.timeEndMs,
+        bbox: s.bbox,
       });
       bufferLen += s.content.length;
     }
@@ -113,7 +139,8 @@ function splitLongText(text: string, minSize: number, maxSize: number): string[]
     }
 
     result.push(remaining.slice(0, splitAt).trim());
-    remaining = remaining.slice(splitAt).trim();
+    const nextStart = Math.max(0, splitAt - OVERLAP_SIZE);
+    remaining = remaining.slice(nextStart).trim();
   }
 
   if (remaining.trim()) {

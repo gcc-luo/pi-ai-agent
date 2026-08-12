@@ -1,13 +1,14 @@
 import { ParsedDocument, ParsedSection, ParseOptions } from "./types.js";
 
-export async function parsePdf(filePath: string, _opts?: ParseOptions): Promise<ParsedDocument> {
+export async function parsePdf(filePath: string, opts?: ParseOptions): Promise<ParsedDocument> {
   const { extractText } = await import("unpdf");
   const fs = await import("node:fs/promises");
 
-  const buffer = await fs.readFile(filePath);
+  const buffer = await fs.readFile(filePath, { signal: opts?.signal });
   // pdfjs-dist 显式拒绝 Node.js Buffer，需要转换为纯 Uint8Array
   const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   const result = await extractText(data);
+  opts?.signal?.throwIfAborted();
 
   const sections: ParsedSection[] = [];
   let totalChars = 0;

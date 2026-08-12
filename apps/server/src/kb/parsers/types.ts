@@ -3,6 +3,10 @@ export interface ParsedSection {
   content: string;
   pageStart: number | null;
   pageEnd: number | null;
+  modality?: "text" | "image" | "video" | "audio";
+  timeStartMs?: number | null;
+  timeEndMs?: number | null;
+  bbox?: { x: number; y: number; width: number; height: number } | null;
 }
 
 export interface ParsedDocument {

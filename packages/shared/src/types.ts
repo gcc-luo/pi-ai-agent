@@ -336,10 +336,12 @@ export interface KbFileDto {
   name: string;
   ext: string;
   source: string;
+  assetKind: "document" | "image" | "video" | "audio";
   size: number;
   status: "pending" | "parsing" | "ready" | "failed";
   enabled: boolean;
   parseGeneration: number;
+  activeRevisionId: string | null;
   failReason: string | null;
   charCount: number | null;
   pageCount: number | null;
@@ -360,6 +362,7 @@ export interface KbFilePage {
 
 export interface KbChunkDto {
   id: number;
+  segmentId: string;
   kbId: string;
   fileId: string;
   seq: number;
@@ -368,6 +371,11 @@ export interface KbChunkDto {
   pageEnd: number | null;
   content: string;
   charCount: number;
+  modality: "text" | "image" | "video" | "audio";
+  timeStartMs: number | null;
+  timeEndMs: number | null;
+  bbox: { x: number; y: number; width: number; height: number } | null;
+  parentChunkId: number | null;
   createdAt: number;
 }
 
@@ -380,6 +388,9 @@ export interface KbBindingDto {
 
 export interface KbSearchHitDto {
   chunkId: number;
+  /** Stable identifier for this segment revision. */
+  segmentId: string;
+  revision: number;
   kbId: string;
   kbName: string;
   fileId: string;
@@ -388,18 +399,29 @@ export interface KbSearchHitDto {
   titlePath: string | null;
   pageStart: number | null;
   pageEnd: number | null;
+  modality: "text" | "image" | "video" | "audio";
+  timeStartMs: number | null;
+  timeEndMs: number | null;
+  bbox: { x: number; y: number; width: number; height: number } | null;
   content: string;
   snippet: string;
   score: number;
+  keywordScore?: number;
+  vectorScore?: number;
 }
 
 export interface ChunkMeta {
   chunkId: number;
+  segmentId?: string;
+  revision?: number;
   kbName: string;
   fileName: string;
   titlePath: string | null;
   pageStart: number | null;
   pageEnd: number | null;
+  modality?: "text" | "image" | "video" | "audio";
+  timeStartMs?: number | null;
+  timeEndMs?: number | null;
 }
 
 export interface Result<T, E = string> {

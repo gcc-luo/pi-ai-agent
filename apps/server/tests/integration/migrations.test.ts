@@ -16,6 +16,9 @@ describe("migrations", () => {
     expect(names).toContain("plugin_settings");
     expect(names).toContain("session_plugins");
     expect(names).toContain("plugin_audit_logs");
+    expect(names).toContain("kb_asset_revisions");
+    expect(names).toContain("kb_segment_vectors");
+    expect(names).toContain("kb_parse_jobs");
   });
 
   it("is idempotent", () => {
@@ -30,5 +33,15 @@ describe("migrations", () => {
     runMigrations(db);
     const cols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
     expect(cols.map((c) => c.name)).toContain("deleted_at");
+  });
+
+  it("adds the active revision pointer and multimodal segment columns", () => {
+    runMigrations(db);
+    const fileColumns = db.prepare("PRAGMA table_info(kb_files)").all() as { name: string }[];
+    const chunkColumns = db.prepare("PRAGMA table_info(kb_chunks)").all() as { name: string }[];
+    expect(fileColumns.map((column) => column.name)).toContain("active_revision_id");
+    expect(chunkColumns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      "segment_uid", "modality", "time_start_ms", "time_end_ms", "bbox_json",
+    ]));
   });
 });

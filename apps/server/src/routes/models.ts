@@ -278,6 +278,11 @@ export const modelsRoutes: FastifyPluginAsync = async (app) => {
     if (!m) return reply.code(404).send({ error: "not found" });
     const { id, ...patch } = body;
     app.models.update(id, patch);
+    if (m.modelType === "embedding" && patch.apiBaseUrl !== undefined && patch.apiBaseUrl !== m.apiBaseUrl) {
+      for (const kb of app.knowledgeBases.listByEmbeddingModel(id)) {
+        for (const file of app.kbFiles.listByKb(kb.id)) app.kbParseWorker.enqueue(file.id);
+      }
+    }
     return app.models.findById(id);
   });
 

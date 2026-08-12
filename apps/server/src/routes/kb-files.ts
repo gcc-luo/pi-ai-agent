@@ -1,15 +1,22 @@
 import { FastifyPluginAsync } from "fastify";
 import path from "node:path";
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
+import AdmZip from "adm-zip";
 import { ulid } from "../util/ulid.js";
-import { ParsePipeline } from "../kb/parse-pipeline.js";
+import { KbParseJobWorker } from "../kb/parse-job-worker.js";
+import { resolveKbStoragePath } from "../kb/storage-path.js";
 
 const ALLOWED_EXT = new Set(["txt", "md", "pdf", "docx"]);
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_IMPORT_COUNT = 20;
+const ALLOWED_MIME = new Map([
+  ["txt", new Set(["text/plain", "application/octet-stream"])],
+  ["md", new Set(["text/markdown", "text/plain", "application/octet-stream"])],
+  ["pdf", new Set(["application/pdf", "application/octet-stream"])],
+  ["docx", new Set(["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"])],
+]);
 
-export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: string): FastifyPluginAsync {
+export function createKbFilesRoutes(parseJobs: KbParseJobWorker, kbFilesDir: string): FastifyPluginAsync {
   return async (app) => {
     // GET /api/knowledge-bases/:kbId/files — 文件列表（分页 + 服务端过滤）
     app.get<{
@@ -51,8 +58,8 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       const fileId = ulid();
       const content = body.content ?? "";
       const size = Buffer.byteLength(content, "utf8");
-      const relativePath = `${req.params.kbId}/${fileId}-${name}`;
-      const fullPath = path.join(kbFilesDir, relativePath);
+      const relativePath = `${req.params.kbId}/${fileId}.${body.ext}`;
+      const fullPath = resolveKbStoragePath(kbFilesDir, relativePath);
 
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, "utf8");
@@ -66,12 +73,7 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
         storagePath: relativePath,
       });
 
-      // Async parse
-      setImmediate(() => {
-        parsePipeline.parseFile(file.id).catch((err) => {
-          app.log.error({ err, fileId: file.id, name: file.name }, "KB file parse failed (create)");
-        });
-      });
+      parseJobs.enqueue(file.id);
 
       console.log(`[KB Import] created file: fileId=${file.id} name=${file.name} ext=${file.ext} size=${size} kbId=${req.params.kbId}`);
 
@@ -84,7 +86,8 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       if (!kb) return reply.code(404).send({ error: "kb_not_found" });
 
       const parts = req.parts();
-      const files: { name: string; ext: string; buffer: Buffer }[] = [];
+      const files: { name: string; ext: string; mimeType: string; buffer: Buffer }[] = [];
+      const rejected: { name: string; error: string }[] = [];
 
       for await (const part of parts) {
         if (part.type === "file") {
@@ -99,12 +102,23 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
             await part.toBuffer(); // drain
             continue;
           }
+          const acceptedMime = ALLOWED_MIME.get(ext);
+          if (!acceptedMime?.has(part.mimetype.toLowerCase())) {
+            console.warn(`[KB Import] skipped MIME mismatch: name=${name} mime=${part.mimetype}`);
+            await part.toBuffer();
+            continue;
+          }
           const buffer = await part.toBuffer();
           if (buffer.length > MAX_FILE_SIZE) {
             console.warn(`[KB Import] skipped too large: name=${name} size=${buffer.length}`);
             return reply.code(400).send({ error: "too_large", name, limit: MAX_FILE_SIZE });
           }
-          files.push({ name, ext, buffer });
+          if (!isAllowedFileContent(ext, buffer)) {
+            console.warn(`[KB Import] skipped content signature mismatch: name=${name} ext=${ext}`);
+            rejected.push({ name: path.basename(name), error: "content_type_mismatch" });
+            continue;
+          }
+          files.push({ name: path.basename(name), ext, mimeType: part.mimetype, buffer });
         }
       }
 
@@ -113,7 +127,7 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       console.log(`[KB Import] kbId=${req.params.kbId} received ${files.length} file(s): ${files.map(f => `${f.name}(${f.ext},${f.buffer.length}B)`).join(", ")}`);
 
       const created: any[] = [];
-      const errors: { name: string; error: string }[] = [];
+      const errors: { name: string; error: string }[] = [...rejected];
 
       for (const f of files) {
         // Check duplicate name
@@ -124,8 +138,8 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
         }
 
         const fileId = ulid();
-        const relativePath = `${req.params.kbId}/${fileId}-${f.name}`;
-        const fullPath = path.join(kbFilesDir, relativePath);
+        const relativePath = `${req.params.kbId}/${fileId}.${f.ext}`;
+        const fullPath = resolveKbStoragePath(kbFilesDir, relativePath);
 
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.writeFile(fullPath, f.buffer);
@@ -141,11 +155,7 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
 
         console.log(`[KB Import] saved file: fileId=${file.id} name=${f.name} ext=${f.ext} size=${f.buffer.length}B path=${relativePath}`);
 
-        setImmediate(() => {
-          parsePipeline.parseFile(file.id).catch((err) => {
-            app.log.error({ err, fileId: file.id, name: f.name }, "KB file parse failed (import)");
-          });
-        });
+        parseJobs.enqueue(file.id);
 
         created.push(file);
       }
@@ -169,7 +179,7 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       }
       const storagePath = app.kbFiles.getStoragePath(req.params.id);
       if (!storagePath) return reply.code(404).send({ error: "file_missing" });
-      const fullPath = path.join(kbFilesDir, storagePath);
+      const fullPath = resolveKbStoragePath(kbFilesDir, storagePath);
       try {
         const content = await fs.readFile(fullPath, "utf8");
         return { name: file.name, content, size: file.size };
@@ -203,18 +213,14 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       if (body?.content !== undefined && (file.ext === "txt" || file.ext === "md")) {
         const storagePath = app.kbFiles.getStoragePath(req.params.id);
         if (storagePath) {
-          const fullPath = path.join(kbFilesDir, storagePath);
+          const fullPath = resolveKbStoragePath(kbFilesDir, storagePath);
           const buf = Buffer.from(body.content, "utf8");
           await fs.writeFile(fullPath, body.content, "utf8");
           app.kbFiles.updateStoragePath(req.params.id, buf.length, storagePath);
 
-          // Trigger reparse
+          // Trigger durable reparse
           console.log(`[KB Reparse] content updated: fileId=${req.params.id} name=${file.name}`);
-          setImmediate(() => {
-            parsePipeline.parseFile(req.params.id).catch((err) => {
-              app.log.error({ err, fileId: req.params.id, name: file.name }, "KB file reparse failed (update)");
-            });
-          });
+          parseJobs.enqueue(req.params.id);
         }
       }
 
@@ -237,11 +243,7 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       if (file.status === "parsing") return reply.code(409).send({ error: "already_parsing" });
 
       console.log(`[KB Reparse] triggered: fileId=${req.params.id} name=${file.name} ext=${file.ext} status=${file.status}`);
-      setImmediate(() => {
-        parsePipeline.parseFile(req.params.id).catch((err) => {
-          app.log.error({ err, fileId: req.params.id, name: file.name }, "KB file reparse failed (explicit)");
-        });
-      });
+      parseJobs.enqueue(req.params.id);
 
       return reply.code(202).send({ message: "reparse_queued" });
     });
@@ -251,18 +253,43 @@ export function createKbFilesRoutes(parsePipeline: ParsePipeline, kbFilesDir: st
       const file = app.kbFiles.findById(req.params.id);
       if (!file) return reply.code(404).send({ error: "not_found" });
 
+      const storagePath = app.kbFiles.getStoragePath(req.params.id);
       // Delete chunks first
       app.kbChunks.deleteByFile(req.params.id);
       // Delete file record
       app.kbFiles.delete(req.params.id);
       // Delete physical file
-      const storagePath = app.kbFiles.getStoragePath(req.params.id);
       if (storagePath) {
-        const fullPath = path.join(kbFilesDir, storagePath);
+        const fullPath = resolveKbStoragePath(kbFilesDir, storagePath);
         await fs.unlink(fullPath).catch(() => {});
       }
 
       return reply.code(204).send();
     });
   };
+}
+
+/** Validate file bytes instead of trusting only the client-supplied MIME. */
+export function isAllowedFileContent(ext: string, buffer: Buffer): boolean {
+  if (ext === "pdf") return buffer.subarray(0, 1024).indexOf(Buffer.from("%PDF-")) >= 0;
+  if (ext === "docx") {
+    if (buffer.length < 4 || buffer[0] !== 0x50 || buffer[1] !== 0x4b) return false;
+    try {
+      const archive = new AdmZip(buffer);
+      return archive.getEntry("[Content_Types].xml") !== null
+        && archive.getEntry("word/document.xml") !== null;
+    } catch {
+      return false;
+    }
+  }
+  if (ext === "txt" || ext === "md") {
+    if (buffer.includes(0)) return false;
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }

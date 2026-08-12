@@ -328,6 +328,114 @@ const MIGRATIONS = [
       SELECT id, 'browser-use', updated_at FROM sessions WHERE browser_enabled = 1;
     `,
   },
+  {
+    name: "020_kb_reliability_multimodal",
+    sql: `
+      ALTER TABLE kb_files ADD COLUMN asset_kind TEXT NOT NULL DEFAULT 'document';
+      ALTER TABLE kb_files ADD COLUMN active_revision_id TEXT;
+
+      ALTER TABLE kb_chunks ADD COLUMN modality TEXT NOT NULL DEFAULT 'text';
+      ALTER TABLE kb_chunks ADD COLUMN time_start_ms INTEGER;
+      ALTER TABLE kb_chunks ADD COLUMN time_end_ms INTEGER;
+      ALTER TABLE kb_chunks ADD COLUMN bbox_json TEXT;
+      ALTER TABLE kb_chunks ADD COLUMN parent_chunk_id INTEGER REFERENCES kb_chunks(rowid) ON DELETE SET NULL;
+      ALTER TABLE kb_chunks ADD COLUMN segment_uid TEXT;
+      UPDATE kb_chunks
+      SET segment_uid = file_id || ':' || generation || ':' || seq
+      WHERE segment_uid IS NULL;
+      CREATE UNIQUE INDEX idx_kb_chunks_segment_uid ON kb_chunks(segment_uid);
+
+      CREATE TABLE kb_segment_vectors (
+        chunk_id INTEGER NOT NULL REFERENCES kb_chunks(rowid) ON DELETE CASCADE,
+        vector_space TEXT NOT NULL,
+        modality TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        embedding BLOB NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (chunk_id, vector_space, model_id, model_version)
+      );
+      CREATE INDEX idx_kb_segment_vectors_space
+        ON kb_segment_vectors(vector_space, model_id, model_version, dimension);
+
+      INSERT OR IGNORE INTO kb_segment_vectors (
+        chunk_id, vector_space, modality, model_id, model_version,
+        dimension, embedding, created_at
+      )
+      SELECT
+        c.rowid, 'text', 'text', kb.embedding_model_id, 'legacy',
+        length(c.embedding) / 4, c.embedding, c.created_at
+      FROM kb_chunks c
+      JOIN knowledge_bases kb ON kb.id = c.kb_id
+      WHERE c.embedding IS NOT NULL AND kb.embedding_model_id IS NOT NULL;
+
+      CREATE TABLE kb_asset_revisions (
+        id TEXT PRIMARY KEY,
+        file_id TEXT NOT NULL REFERENCES kb_files(id) ON DELETE CASCADE,
+        generation INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        parser_version TEXT NOT NULL,
+        embedding_model_id TEXT,
+        embedding_model_version TEXT,
+        fail_reason TEXT,
+        created_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        UNIQUE(file_id, generation)
+      );
+      CREATE INDEX idx_kb_asset_revisions_file
+        ON kb_asset_revisions(file_id, generation DESC);
+
+      INSERT OR IGNORE INTO kb_asset_revisions (
+        id, file_id, generation, status, parser_version, created_at, completed_at
+      )
+      SELECT 'legacy:' || f.id || ':' || f.parse_generation,
+             f.id, f.parse_generation, 'ready', 'legacy',
+             COALESCE(f.last_parsed_at, f.created_at), f.last_parsed_at
+      FROM kb_files f
+      WHERE f.parse_generation > 0;
+
+      UPDATE kb_files
+      SET active_revision_id = 'legacy:' || id || ':' || parse_generation
+      WHERE parse_generation > 0;
+
+      CREATE TABLE kb_parse_jobs (
+        file_id TEXT PRIMARY KEY REFERENCES kb_files(id) ON DELETE CASCADE,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        available_at INTEGER NOT NULL,
+        leased_at INTEGER,
+        lease_expires_at INTEGER,
+        last_error TEXT,
+        rerun_requested INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_kb_parse_jobs_ready
+        ON kb_parse_jobs(status, available_at);
+
+      DROP TABLE IF EXISTS kb_chunks_fts;
+      CREATE VIRTUAL TABLE kb_chunks_fts USING fts5(
+        content,
+        content='kb_chunks',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      INSERT OR IGNORE INTO kb_parse_jobs (
+        file_id, status, attempts, max_attempts, available_at,
+        leased_at, last_error, created_at, updated_at
+      )
+      SELECT f.id, 'queued', 0, 3, CAST(strftime('%s','now') AS INTEGER) * 1000,
+             NULL, NULL, CAST(strftime('%s','now') AS INTEGER) * 1000,
+             CAST(strftime('%s','now') AS INTEGER) * 1000
+      FROM kb_files f
+      JOIN knowledge_bases kb ON kb.id = f.kb_id
+      WHERE f.status IN ('pending', 'parsing')
+         OR kb.embedding_model_id IS NOT NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

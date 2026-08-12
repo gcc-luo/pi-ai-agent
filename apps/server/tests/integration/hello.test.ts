@@ -31,4 +31,20 @@ describe("healthz", () => {
     expect(res.headers["access-control-allow-headers"]).toContain("content-type");
     await app.close();
   });
+
+  it("does not grant arbitrary websites CORS access to the local sidecar", async () => {
+    process.env.PI_WEB_UI_ROOT = `/tmp/pi-web-ui-test-${Date.now()}-${Math.random()}`;
+    const app = await buildApp(loadConfig());
+    const res = await app.inject({
+      method: "OPTIONS",
+      url: "/api/config",
+      headers: {
+        origin: "https://attacker.example",
+        "access-control-request-method": "PUT",
+      },
+    });
+
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+    await app.close();
+  });
 });
