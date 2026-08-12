@@ -72,6 +72,12 @@ export type ServerEvent =
       action: string;
       reason: string;
       intent?: string;
+      context?: {
+        url?: string;
+        target?: string;
+        windowId?: string;
+        files?: string[];
+      };
       expiresAt: number;
     };
 

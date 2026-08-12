@@ -9,7 +9,7 @@ import {
 } from "../computer/computer-session-manager.js";
 
 const BROWSER_ACTIONS = new Set([
-  "open", "navigate", "snapshot", "click", "fill", "select", "press",
+  "open", "navigate", "snapshot", "click", "fill", "upload", "select", "press",
   "hover", "scroll", "wait", "tabs", "screenshot", "console_errors",
   "network_errors", "close",
 ]);
@@ -106,7 +106,14 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
     Body: { action?: string; args?: Record<string, unknown> };
   }>("/internal/plugins/:sessionId/:pluginId/action", async (req, reply) => {
     const token = req.headers["x-pi-plugin-token"];
-    if (typeof token !== "string" || !app.processManager.validatePluginToken(req.params.sessionId, token)) {
+    if (
+      typeof token !== "string"
+      || !app.processManager.validatePluginToken(
+        req.params.sessionId,
+        req.params.pluginId,
+        token,
+      )
+    ) {
       return reply.code(403).send({ error: "forbidden" });
     }
     const session = app.sessions.findById(req.params.sessionId);
@@ -125,6 +132,9 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.raw.once("aborted", abort);
+    let auditRisk: "normal" | "sensitive" | "destructive" = "normal";
+    let auditApproved = false;
+    let auditDetails: Record<string, unknown> = {};
     try {
       if (req.params.pluginId === BROWSER_PLUGIN_ID) {
         if (!BROWSER_ACTIONS.has(action)) return reply.code(400).send({ error: "invalid browser action" });
@@ -136,7 +146,16 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
           signal: controller.signal,
         });
         const requiresConfirmation = result.requiresConfirmation === true;
+        auditRisk = requiresConfirmation ? "sensitive" : "normal";
         let approved = !requiresConfirmation;
+        auditApproved = approved;
+        auditDetails = {
+          requiresConfirmation,
+          riskReason: result.riskReason,
+          url: result.url,
+          target: result.target,
+          files: result.files,
+        };
         if (requiresConfirmation) {
           const state = app.sessionStates.get(session.id);
           approved = state
@@ -147,10 +166,18 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
                 reason: typeof result.riskReason === "string"
                   ? result.riskReason
                   : "该网页操作可能产生外部或不可逆影响",
+                context: {
+                  url: typeof result.url === "string" ? result.url : undefined,
+                  target: typeof result.target === "string" ? result.target : undefined,
+                  files: Array.isArray(result.files)
+                    ? result.files.filter((file): file is string => typeof file === "string")
+                    : undefined,
+                },
                 send: state.send,
                 signal: controller.signal,
               })
             : false;
+          auditApproved = approved;
           if (approved) {
             result = await app.browserManager.execute({
               sessionId: session.id,
@@ -173,10 +200,10 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
           pluginId: BROWSER_PLUGIN_ID,
           sessionId: session.id,
           action,
-          risk: requiresConfirmation ? "sensitive" : "normal",
-          approved,
+          risk: auditRisk,
+          approved: auditApproved,
           success: approved && result.ok !== false,
-          details: { requiresConfirmation },
+          details: auditDetails,
         });
         app.plugins.update(BROWSER_PLUGIN_ID, { lastError: null });
         return result;
@@ -186,7 +213,15 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(400).send({ error: "invalid computer action" });
         }
         const risk = computerRisk(action as ComputerAction, args);
+        auditRisk = risk.level;
         let approved = risk.level === "normal";
+        auditApproved = approved;
+        const computerState = app.computerManager.sessionStatus(session.id);
+        auditDetails = {
+          reason: risk.reason,
+          intent: args.intent,
+          windowId: computerState?.targetWindow,
+        };
         if (!approved) {
           const state = app.sessionStates.get(session.id);
           approved = state
@@ -196,10 +231,14 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
                 action,
                 reason: risk.reason ?? "该桌面操作需要用户确认",
                 intent: typeof args.intent === "string" ? args.intent : undefined,
+                context: {
+                  windowId: computerState?.targetWindow ?? undefined,
+                },
                 send: state.send,
                 signal: controller.signal,
               })
             : false;
+          auditApproved = approved;
           if (!approved) {
             app.plugins.appendAudit({
               pluginId: COMPUTER_PLUGIN_ID,
@@ -208,7 +247,7 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
               risk: risk.level,
               approved: false,
               success: false,
-              details: { reason: risk.reason, intent: args.intent },
+              details: auditDetails,
             });
             return {
               ok: false,
@@ -232,10 +271,10 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
           pluginId: COMPUTER_PLUGIN_ID,
           sessionId: session.id,
           action,
-          risk: risk.level,
-          approved,
+          risk: auditRisk,
+          approved: auditApproved,
           success: true,
-          details: { intent: args.intent },
+          details: auditDetails,
         });
         app.plugins.update(COMPUTER_PLUGIN_ID, { lastError: null });
         return result;
@@ -250,10 +289,10 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
         pluginId: req.params.pluginId,
         sessionId: session.id,
         action,
-        risk: "normal",
-        approved: false,
+        risk: auditRisk,
+        approved: auditApproved,
         success: false,
-        details: { error: message },
+        details: { ...auditDetails, error: message },
       });
       return reply.code(400).send({
         error: message,

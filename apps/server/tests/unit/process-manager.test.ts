@@ -259,9 +259,13 @@ describe("ProcessManager", () => {
       env: Record<string, string | undefined>;
     }).env;
 
-    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(true);
+    expect(manager.validatePluginToken(
+      "plugins", "browser-use", env.PI_WEB_UI_PLUGIN_TOKEN,
+    )).toBe(true);
     manager.revokePluginToken("plugins");
-    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(false);
+    expect(manager.validatePluginToken(
+      "plugins", "browser-use", env.PI_WEB_UI_PLUGIN_TOKEN,
+    )).toBe(false);
   });
 
   it("restarts the Pi process when browser tool availability changes", async () => {
@@ -295,6 +299,34 @@ describe("ProcessManager", () => {
     expect(args).not.toContain("browser-tools.ts");
     expect(proc.activePluginIds).toEqual(["computer-use"]);
     expect(env.PI_WEB_UI_PLUGIN_ENDPOINT).toContain("/api/internal/plugins");
-    expect(manager.validatePluginToken("plugins", env.PI_WEB_UI_PLUGIN_TOKEN)).toBe(true);
+    expect(manager.validatePluginToken(
+      "plugins", "computer-use", env.PI_WEB_UI_PLUGIN_TOKEN,
+    )).toBe(true);
+  });
+
+  it("issues independent credentials when multiple plugins are selected", async () => {
+    await manager.start({
+      sessionId: "plugins",
+      projectId: "p1",
+      workdir: "/tmp",
+      activePluginIds: ["browser-use", "computer-use"],
+    });
+    const env = (spawner.mock.calls[0]![2] as {
+      env: Record<string, string | undefined>;
+    }).env;
+
+    expect(env.PI_WEB_UI_PLUGIN_TOKEN).toBeUndefined();
+    expect(env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN).toBeTruthy();
+    expect(env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN).toBeTruthy();
+    expect(env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN).not.toBe(env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN);
+    expect(manager.validatePluginToken(
+      "plugins", "browser-use", env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN,
+    )).toBe(true);
+    expect(manager.validatePluginToken(
+      "plugins", "computer-use", env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN,
+    )).toBe(true);
+    expect(manager.validatePluginToken(
+      "plugins", "computer-use", env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN,
+    )).toBe(false);
   });
 });

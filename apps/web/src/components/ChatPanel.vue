@@ -938,10 +938,22 @@ const permissionMessage = computed(() => {
   const intent = pending.intent
     ? `\n${t("plugins.permissionIntent", { intent: pending.intent })}`
     : "";
+  const url = pending.context?.url
+    ? `\n${t("plugins.permissionUrl", { url: pending.context.url })}`
+    : "";
+  const target = pending.context?.target
+    ? `\n${t("plugins.permissionTarget", { target: pending.context.target })}`
+    : "";
+  const windowId = pending.context?.windowId
+    ? `\n${t("plugins.permissionWindow", { windowId: pending.context.windowId })}`
+    : "";
+  const files = pending.context?.files?.length
+    ? `\n${t("plugins.permissionFiles", { files: pending.context.files.join(", ") })}`
+    : "";
   return `${pending.reason}\n${t("plugins.permissionAction", {
     plugin: pending.pluginId,
     action: pending.action,
-  })}${intent}`;
+  })}${intent}${url}${target}${windowId}${files}`;
 });
 
 function respondToPermission(approved: boolean) {

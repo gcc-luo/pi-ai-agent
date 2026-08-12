@@ -93,6 +93,11 @@ pnpm --filter @pi-web-ui/web dev
 
 浏览器前端通过 Vite 将 `/api` 和 `/ws` 请求代理到本地服务端。
 
+Browser Use 默认只允许公网和 `localhost`，会阻止局域网、链路本地及云元数据地址。
+确需访问可信内网时可设置 `PI_BROWSER_ALLOW_PRIVATE_NETWORK=true`。Playwright 自带
+Chromium 缺失时会尝试使用系统 Chrome 或 Edge；均不可用时可执行
+`pnpm --filter @pi-web-ui/server browser:install`。
+
 ## 构建与发布
 
 ### 发布桌面端版本

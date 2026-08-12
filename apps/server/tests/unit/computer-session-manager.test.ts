@@ -5,6 +5,7 @@ import {
 } from "../../src/computer/computer-session-manager.js";
 import {
   isComputerPlatformSupported,
+  isUnsupportedWindowFocusError,
   parseComputerKeyCombo,
 } from "../../src/computer/computer-driver.js";
 import { Key } from "@nut-tree-fork/nut-js";
@@ -31,6 +32,13 @@ describe("Computer Use risk classification", () => {
     await expect(parseComputerKeyCombo("HyperKey")).rejects.toThrow("不支持的按键");
   });
 
+  it("recognizes the unimplemented macOS focus capability", () => {
+    expect(isUnsupportedWindowFocusError(
+      new Error("Method focusWindow is not implemented"),
+    )).toBe(true);
+    expect(isUnsupportedWindowFocusError(new Error("accessibility permission denied"))).toBe(false);
+  });
+
   it("blocks destructive keyboard and intent operations without confirmation", () => {
     expect(computerRisk("key", { key: "Alt+F4", intent: "关闭未保存文档" })).toMatchObject({
       level: "destructive",
@@ -45,6 +53,28 @@ describe("Computer Use risk classification", () => {
       level: "normal",
       reason: null,
     });
+  });
+
+  it("requires auditable intent for every desktop input", () => {
+    expect(computerRisk("click", {})).toMatchObject({
+      level: "sensitive",
+    });
+    expect(computerRisk("key", { key: "Enter" })).toMatchObject({
+      level: "sensitive",
+    });
+  });
+
+  it("requires a focused target window before desktop input", async () => {
+    const manager = new ComputerSessionManager({
+      error: () => undefined,
+    } as never);
+
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: ".",
+      action: "click",
+      args: { x: 10, y: 10, intent: "点击编辑区域" },
+    })).rejects.toThrow("必须先调用 computer_focus_window");
   });
 
   it("invalidates queued work when its session is closed", async () => {

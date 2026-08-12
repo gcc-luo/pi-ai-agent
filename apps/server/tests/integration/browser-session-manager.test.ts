@@ -39,6 +39,8 @@ describe("BrowserSessionManager", () => {
           <head><title>Browser fixture</title></head>
           <body>
             <label>Name <input id="name" placeholder="Your name"></label>
+            <label>Password <input id="password" type="password"></label>
+            <label>Attachment <input id="attachment" type="file"></label>
             <button id="submit" onclick="document.querySelector('#output').textContent =
               document.querySelector('#name').value">Submit</button>
             <div id="output"></div>
@@ -85,6 +87,43 @@ describe("BrowserSessionManager", () => {
       action: "fill",
       args: { ref: input!.ref, value: "Pi browser" },
     });
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: workdirA,
+      action: "fill",
+      args: { selector: "#password", value: "secret" },
+    })).resolves.toMatchObject({ ok: false, requiresConfirmation: true });
+    await fs.writeFile(path.join(workdirA, "upload.txt"), "safe upload fixture");
+    const blockedUpload = await manager.execute({
+      sessionId: "session-a",
+      workdir: workdirA,
+      action: "upload",
+      args: { selector: "#attachment", paths: ["upload.txt"] },
+    });
+    expect(blockedUpload).toMatchObject({
+      ok: false,
+      requiresConfirmation: true,
+    });
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: workdirA,
+      action: "upload",
+      args: { selector: "#attachment", paths: ["../outside.txt"], userConfirmed: true },
+    })).rejects.toThrow("必须位于当前项目工作区内");
+    await fs.writeFile(path.join(workdirB, "outside.txt"), "outside workspace");
+    await fs.symlink(path.join(workdirB, "outside.txt"), path.join(workdirA, "linked.txt"));
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: workdirA,
+      action: "upload",
+      args: { selector: "#attachment", paths: ["linked.txt"], userConfirmed: true },
+    })).rejects.toThrow("符号链接");
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: workdirA,
+      action: "upload",
+      args: { selector: "#attachment", paths: ["upload.txt"], userConfirmed: true },
+    })).resolves.toMatchObject({ ok: true, files: ["upload.txt"] });
     const blockedClick = await manager.execute({
       sessionId: "session-a",
       workdir: workdirA,

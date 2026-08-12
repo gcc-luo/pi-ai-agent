@@ -3,12 +3,20 @@ import {
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import fs from "node:fs/promises";
 
-const pluginEndpoint = process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
+const pluginEndpoint = process.env.PI_WEB_UI_BROWSER_PLUGIN_ENDPOINT
+  ?? process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
 const legacyEndpoint = process.env.PI_WEB_UI_BROWSER_ENDPOINT;
-const sessionId = process.env.PI_WEB_UI_SESSION_ID;
-const token = process.env.PI_WEB_UI_PLUGIN_TOKEN ?? process.env.PI_WEB_UI_BROWSER_TOKEN;
+const sessionId = process.env.PI_WEB_UI_BROWSER_SESSION_ID
+  ?? process.env.PI_WEB_UI_SESSION_ID;
+const token = process.env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN
+  ?? process.env.PI_WEB_UI_PLUGIN_TOKEN
+  ?? process.env.PI_WEB_UI_BROWSER_TOKEN;
 for (const key of [
+  "PI_WEB_UI_BROWSER_PLUGIN_ENDPOINT",
+  "PI_WEB_UI_BROWSER_PLUGIN_TOKEN",
+  "PI_WEB_UI_BROWSER_SESSION_ID",
   "PI_WEB_UI_PLUGIN_ENDPOINT",
   "PI_WEB_UI_PLUGIN_TOKEN",
   "PI_WEB_UI_BROWSER_ENDPOINT",
@@ -66,8 +74,26 @@ async function invoke(
         isError: true,
       };
     }
+    const textContent = { type: "text" as const, text: JSON.stringify(result, null, 2) };
+    if (action === "screenshot") {
+      const artifact = result.artifact as Record<string, unknown> | undefined;
+      if (typeof artifact?.absolutePath === "string") {
+        try {
+          const imageBuffer = await fs.readFile(artifact.absolutePath);
+          return {
+            content: [
+              textContent,
+              { type: "image" as const, data: imageBuffer.toString("base64"), mimeType: "image/png" },
+            ],
+            details: result,
+          };
+        } catch {
+          // Keep the artifact result usable even if image embedding fails.
+        }
+      }
+    }
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      content: [textContent],
       details: result,
     };
   } catch (error) {
@@ -171,6 +197,20 @@ export default function browserTools(pi: ExtensionAPI) {
     }),
     executionMode: "sequential",
     execute: run("fill"),
+  });
+
+  pi.registerTool({
+    name: "browser_upload",
+    label: "上传文件",
+    description: "把当前项目工作区内的一个或多个文件上传到页面文件输入框，执行前需要用户确认。",
+    parameters: Type.Object({
+      ...targetProperties,
+      paths: Type.Array(Type.String({ description: "相对当前项目工作区的文件路径" }), {
+        minItems: 1,
+      }),
+    }),
+    executionMode: "sequential",
+    execute: run("upload"),
   });
 
   pi.registerTool({

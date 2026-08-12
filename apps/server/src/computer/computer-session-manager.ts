@@ -20,6 +20,10 @@ export type ComputerAction =
   | "wait"
   | "get_cursor_position";
 
+const INPUT_ACTIONS = new Set<ComputerAction>([
+  "click", "double_click", "type", "key", "scroll", "drag",
+]);
+
 interface ComputerSessionState {
   sessionId: string;
   targetWindow: string | null;
@@ -69,8 +73,11 @@ export function computerRisk(
   if (sensitive.test(intent)) {
     return { level: "sensitive", reason: "该桌面操作可能提交、发送或处理敏感内容" };
   }
-  if (action === "key" && /delete|enter/.test(key) && intent) {
+  if (action === "key" && /delete|enter/.test(key)) {
     return { level: "sensitive", reason: "该按键可能触发提交或删除" };
+  }
+  if (INPUT_ACTIONS.has(action) && !intent) {
+    return { level: "sensitive", reason: "该桌面输入缺少可审计的操作意图" };
   }
   return { level: "normal", reason: null };
 }
@@ -206,15 +213,22 @@ export class ComputerSessionManager {
         if (input.action === "scroll") {
           args.delta = asFiniteNumber(args.delta, "delta", -360);
         }
-        if (new Set<ComputerAction>([
-          "click", "double_click", "type", "key", "scroll", "drag",
-        ]).has(input.action)) {
-          args.expectedWindowId = state.targetWindow ?? "";
+        if (INPUT_ACTIONS.has(input.action)) {
+          if (!state.targetWindow) {
+            throw new Error("执行桌面输入前必须先调用 computer_focus_window 绑定目标窗口");
+          }
+          args.expectedWindowId = state.targetWindow;
         }
         result = await runComputerAction(input.action, args, input.signal);
       }
 
-      if (input.action === "focus_window") state.targetWindow = String(args.windowId);
+      if (input.action === "focus_window") {
+        const focusedWindowId = result.windowId;
+        if (typeof focusedWindowId !== "string" || !focusedWindowId) {
+          throw new Error("Computer Use 未返回可绑定的活动窗口 ID");
+        }
+        state.targetWindow = focusedWindowId;
+      }
       const screen = result.screen as { width?: unknown; height?: unknown } | undefined;
       if (typeof screen?.width === "number") state.screenWidth = screen.width;
       if (typeof screen?.height === "number") state.screenHeight = screen.height;

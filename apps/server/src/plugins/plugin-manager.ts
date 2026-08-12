@@ -36,7 +36,7 @@ const MANIFESTS: PluginManifest[] = [
     defaultEnabled: true,
     tools: [
       "browser_open", "browser_navigate", "browser_snapshot", "browser_click",
-      "browser_fill", "browser_select", "browser_press", "browser_hover",
+      "browser_fill", "browser_upload", "browser_select", "browser_press", "browser_hover",
       "browser_scroll", "browser_wait", "browser_tabs", "browser_screenshot",
       "browser_console_errors", "browser_network_errors", "browser_close",
     ],

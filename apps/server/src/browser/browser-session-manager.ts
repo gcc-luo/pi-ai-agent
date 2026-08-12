@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { FastifyBaseLogger } from "fastify";
 import {
   chromium,
@@ -29,6 +31,7 @@ type BrowserAction =
   | "snapshot"
   | "click"
   | "fill"
+  | "upload"
   | "select"
   | "press"
   | "hover"
@@ -70,6 +73,8 @@ export interface BrowserSessionManagerOptions {
   logger: FastifyBaseLogger;
   headless?: boolean;
   launch?: typeof chromium.launch;
+  allowPrivateNetwork?: boolean;
+  lookup?: typeof dnsLookup;
 }
 
 export interface BrowserActionInput {
@@ -108,7 +113,7 @@ function normalizeError(error: unknown): string {
   return String(error);
 }
 
-function validateUrl(raw: unknown): string {
+function validateUrl(raw: unknown): URL {
   const value = asString(raw, "url", true)!;
   let parsed: URL;
   try {
@@ -119,7 +124,45 @@ function validateUrl(raw: unknown): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`不允许访问 ${parsed.protocol} 协议，仅支持 http 和 https`);
   }
-  return parsed.toString();
+  return parsed;
+}
+
+export type BrowserAddressScope = "public" | "private" | "loopback";
+
+export function browserAddressScope(address: string): BrowserAddressScope {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const mappedIpv4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized)?.[1];
+  if (mappedIpv4) return browserAddressScope(mappedIpv4);
+  if (isIP(normalized) === 4) {
+    const octets = normalized.split(".").map(Number);
+    const first = octets[0]!;
+    const second = octets[1]!;
+    if (first === 127) return "loopback";
+    if (
+      first === 0
+      || first === 10
+      || (first === 100 && second >= 64 && second <= 127)
+      || (first === 169 && second === 254)
+      || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 168)
+      || first >= 224
+    ) {
+      return "private";
+    }
+    return "public";
+  }
+  if (isIP(normalized) === 6) {
+    if (normalized === "::1") return "loopback";
+    if (
+      normalized === "::"
+      || /^(fc|fd)/.test(normalized)
+      || /^fe[89ab]/.test(normalized)
+      || normalized.startsWith("ff")
+    ) {
+      return "private";
+    }
+  }
+  return "public";
 }
 
 function safeFileName(value: string): string {
@@ -175,6 +218,10 @@ export class BrowserSessionManager {
   private readonly log: FastifyBaseLogger;
   private readonly headless: boolean;
   private readonly launch: typeof chromium.launch;
+  private readonly allowSystemBrowserFallback: boolean;
+  private readonly allowPrivateNetwork: boolean;
+  private readonly lookup: typeof dnsLookup;
+  private readonly resolvedHosts = new Map<string, Promise<string[]>>();
   private readonly starting = new Set<string>();
   private readonly startupErrors = new Map<string, string>();
   private readonly downloadTasks = new WeakMap<Download, Promise<BrowserArtifact>>();
@@ -183,6 +230,10 @@ export class BrowserSessionManager {
     this.log = options.logger;
     this.headless = options.headless ?? process.env.PI_BROWSER_HEADLESS === "true";
     this.launch = options.launch ?? chromium.launch.bind(chromium);
+    this.allowSystemBrowserFallback = options.launch === undefined;
+    this.allowPrivateNetwork = options.allowPrivateNetwork
+      ?? process.env.PI_BROWSER_ALLOW_PRIVATE_NETWORK === "true";
+    this.lookup = options.lookup ?? dnsLookup;
   }
 
   status(sessionId: string, enabled: boolean): BrowserCapabilityDto {
@@ -276,6 +327,8 @@ export class BrowserSessionManager {
             return await this.click(state, args);
           case "fill":
             return await this.fill(state, args);
+          case "upload":
+            return await this.upload(state, args);
           case "select":
             return await this.select(state, args);
           case "press":
@@ -332,7 +385,7 @@ export class BrowserSessionManager {
     let browser: Browser | undefined;
     let context: BrowserContext | undefined;
     try {
-      browser = await this.launch({ headless: this.headless });
+      browser = await this.launchBrowser();
       const downloadDir = this.artifactDirectory(workdir, "downloads");
       await fs.mkdir(downloadDir, { recursive: true });
       context = await browser.newContext({
@@ -354,6 +407,26 @@ export class BrowserSessionManager {
         status: "running",
         error: null,
       };
+      await context.route("**/*", async (route) => {
+        const requestUrl = route.request().url();
+        try {
+          const parsed = new URL(requestUrl);
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+            await this.assertNetworkAccess(parsed);
+          }
+          await route.continue();
+        } catch (error) {
+          const message = normalizeError(error);
+          pushUnique(state.networkErrors, {
+            type: "policy_blocked",
+            message,
+            url: requestUrl,
+            timestamp: Date.now(),
+          });
+          this.log.warn({ sessionId, url: requestUrl, err: message }, "browser request blocked by policy");
+          await route.abort("blockedbyclient");
+        }
+      });
       this.sessions.set(sessionId, state);
       this.attachContextEvents(state);
       browser.on("disconnected", () => {
@@ -397,6 +470,30 @@ export class BrowserSessionManager {
       // Best-effort cleanup.
     }
     this.log.info({ sessionId }, "browser session closed");
+  }
+
+  private async launchBrowser(): Promise<Browser> {
+    try {
+      return await this.launch({ headless: this.headless });
+    } catch (error) {
+      const message = normalizeError(error);
+      if (!this.allowSystemBrowserFallback || !/executable doesn't exist/i.test(message)) {
+        throw error;
+      }
+      const fallbackErrors: string[] = [];
+      for (const channel of ["chrome", "msedge"] as const) {
+        try {
+          this.log.info({ channel }, "playwright browser missing; trying system browser");
+          return await this.launch({ headless: this.headless, channel });
+        } catch (fallbackError) {
+          fallbackErrors.push(`${channel}: ${normalizeError(fallbackError)}`);
+        }
+      }
+      throw new Error(
+        `${message}；系统 Chrome/Edge 回退也不可用（${fallbackErrors.join("；")}）。`
+        + "请运行 pnpm --filter @pi-web-ui/server browser:install",
+      );
+    }
   }
 
   private attachContextEvents(state: ManagedBrowserSession): void {
@@ -503,8 +600,9 @@ export class BrowserSessionManager {
     args: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const url = validateUrl(args.url);
+    await this.assertNetworkAccess(url);
     const timeout = clampTimeout(args.timeoutMs);
-    const response = await state.currentPage.goto(url, {
+    const response = await state.currentPage.goto(url.toString(), {
       waitUntil: "domcontentloaded",
       timeout,
     });
@@ -690,8 +788,80 @@ export class BrowserSessionManager {
   ): Promise<Record<string, unknown>> {
     const value = typeof args.value === "string" ? args.value : asString(args.value, "value", true)!;
     const locator = await this.target(state, args);
+    const targetSummary = await locator.evaluate((element) => {
+      const html = element as HTMLElement;
+      return [
+        html.getAttribute("aria-label"),
+        html.getAttribute("name"),
+        html.getAttribute("type"),
+        html.getAttribute("autocomplete"),
+        html.getAttribute("placeholder"),
+      ].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 160);
+    });
+    if (
+      /password|one-time-code|cc-number|cc-csc|密码|验证码|信用卡/i.test(targetSummary)
+      && args.userConfirmed !== true
+    ) {
+      return {
+        ok: false,
+        requiresConfirmation: true,
+        riskReason: "该输入框可能接收密码、验证码或支付信息",
+        target: targetSummary,
+        url: state.currentPage.url(),
+      };
+    }
     await locator.fill(value, { timeout: clampTimeout(args.timeoutMs) });
     return { ok: true, url: state.currentPage.url(), valueLength: value.length };
+  }
+
+  private async upload(
+    state: ManagedBrowserSession,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const locator = this.resolveLocator(state.currentPage, args).first();
+    await locator.waitFor({ state: "attached", timeout: clampTimeout(args.timeoutMs) });
+    const rawPaths = Array.isArray(args.paths) ? args.paths : [args.path];
+    if (rawPaths.length === 0 || rawPaths.some((value) => typeof value !== "string" || !value.trim())) {
+      throw new Error("paths 必须包含至少一个工作区文件路径");
+    }
+    const realWorkdir = await fs.realpath(state.workdir);
+    const files = await Promise.all(rawPaths.map(async (value) => {
+      const requestedPath = path.resolve(state.workdir, String(value));
+      const relative = path.relative(state.workdir, requestedPath);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new Error("上传文件必须位于当前项目工作区内");
+      }
+      const absolutePath = await fs.realpath(requestedPath);
+      const realRelative = path.relative(realWorkdir, absolutePath);
+      if (realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
+        throw new Error("上传文件不能通过符号链接指向工作区外部");
+      }
+      return absolutePath;
+    }));
+    const targetSummary = await locator.evaluate((element) => {
+      const html = element as HTMLElement;
+      return [
+        html.getAttribute("aria-label"),
+        html.getAttribute("name"),
+        html.getAttribute("accept"),
+      ].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 160);
+    });
+    if (args.userConfirmed !== true) {
+      return {
+        ok: false,
+        requiresConfirmation: true,
+        riskReason: "上传文件会向外部页面披露工作区内容",
+        target: targetSummary,
+        files: files.map((file) => path.relative(realWorkdir, file).replaceAll("\\", "/")),
+        url: state.currentPage.url(),
+      };
+    }
+    await locator.setInputFiles(files, { timeout: clampTimeout(args.timeoutMs) });
+    return {
+      ok: true,
+      url: state.currentPage.url(),
+      files: files.map((file) => path.relative(realWorkdir, file).replaceAll("\\", "/")),
+    };
   }
 
   private async select(
@@ -699,6 +869,30 @@ export class BrowserSessionManager {
     args: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const locator = await this.target(state, args);
+    const targetSummary = await locator.evaluate((element) => {
+      const html = element as HTMLElement;
+      const labels = "labels" in element && (element as HTMLInputElement).labels
+        ? [...(element as HTMLInputElement).labels!]
+          .map((label) => label.textContent?.trim()).filter(Boolean).join(" ")
+        : "";
+      return [
+        html.getAttribute("aria-label"),
+        html.getAttribute("name"),
+        labels,
+      ].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 160);
+    });
+    const riskReason = dangerousActionReason(
+      `${targetSummary} ${String(args.optionLabel ?? "")} ${String(args.value ?? "")}`,
+    );
+    if (riskReason && args.userConfirmed !== true) {
+      return {
+        ok: false,
+        requiresConfirmation: true,
+        riskReason,
+        target: targetSummary,
+        url: state.currentPage.url(),
+      };
+    }
     const tag = await locator.evaluate((element) => element.tagName.toLowerCase());
     if (tag === "select") {
       const value = asString(args.value, "value");
@@ -817,7 +1011,9 @@ export class BrowserSessionManager {
       const page = await state.context.newPage();
       state.currentPage = page;
       if (args.url !== undefined) {
-        await page.goto(validateUrl(args.url), { waitUntil: "domcontentloaded", timeout: clampTimeout(args.timeoutMs) });
+        const url = validateUrl(args.url);
+        await this.assertNetworkAccess(url);
+        await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: clampTimeout(args.timeoutMs) });
       }
     } else if (action === "switch") {
       const index = asNumber(args.index, "index");
@@ -904,5 +1100,32 @@ export class BrowserSessionManager {
       throw new Error("浏览器产物目录超出工作空间");
     }
     return directory;
+  }
+
+  private async assertNetworkAccess(url: URL): Promise<void> {
+    if (this.allowPrivateNetwork) return;
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (hostname === "localhost" || hostname.endsWith(".localhost")) return;
+    if (isIP(hostname)) {
+      const scope = browserAddressScope(hostname);
+      if (scope === "loopback") return;
+      if (scope === "private") {
+        throw new Error(
+          `浏览器网络策略禁止访问私有地址 ${hostname}；如确需访问内网，请设置 PI_BROWSER_ALLOW_PRIVATE_NETWORK=true`,
+        );
+      }
+      return;
+    }
+    let pending = this.resolvedHosts.get(hostname);
+    if (!pending) {
+      pending = this.lookup(hostname, { all: true, verbatim: true })
+        .then((records) => records.map((record) => record.address));
+      this.resolvedHosts.set(hostname, pending);
+    }
+    const addresses = await pending;
+    const blocked = addresses.find((address) => browserAddressScope(address) !== "public");
+    if (blocked) {
+      throw new Error(`浏览器网络策略禁止 ${hostname} 解析到非公网地址 ${blocked}`);
+    }
   }
 }

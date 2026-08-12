@@ -10,9 +10,11 @@ describe("PluginPermissionService", () => {
       pluginId: "computer-use",
       action: "click",
       reason: "sensitive action",
+      context: { windowId: "42" },
       send,
     });
     const request = send.mock.calls[0]![0];
+    expect(request.context).toEqual({ windowId: "42" });
 
     expect(service.respond("session-b", request.requestId, true)).toBe(false);
     expect(service.respond("session-a", request.requestId, true)).toBe(true);

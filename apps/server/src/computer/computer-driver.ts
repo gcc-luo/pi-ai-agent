@@ -8,6 +8,7 @@ interface WindowRecord {
   id: string;
   title: string;
   bounds: { x: number; y: number; width: number; height: number };
+  isActive?: boolean;
 }
 
 const SUPPORTED_PLATFORMS = new Set<NodeJS.Platform>(["win32", "darwin", "linux"]);
@@ -32,6 +33,22 @@ function windowId(window: Window): string {
     throw new Error("桌面驱动未返回有效的窗口 ID");
   }
   return String(handle);
+}
+
+export function isUnsupportedWindowFocusError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /focusWindow|focus window/i.test(message) && /not implemented|unsupported/i.test(message);
+}
+
+async function bindableActiveWindow(): Promise<{ id: string; title: string }> {
+  const { getActiveWindow } = await loadComputerApi();
+  const window = await getActiveWindow();
+  const title = await window.getTitle();
+  if (!title.trim()) throw new Error("无法读取当前活动窗口");
+  if (SELF_WINDOW_PATTERN.test(title)) {
+    throw new Error("为防止递归误操作，Computer Use 不允许控制 PI AI Agent 自身窗口");
+  }
+  return { id: windowId(window), title };
 }
 
 async function describeWindow(window: Window): Promise<WindowRecord | null> {
@@ -109,13 +126,14 @@ async function assertInputTarget(
     throw new Error("为防止递归误操作，Computer Use 不允许控制 PI AI Agent 自身窗口");
   }
   if (!expectedWindowId) return;
-
-  const expected = await resolveWindow(expectedWindowId);
   if (windowId(active) !== expectedWindowId) {
     throw new Error("前台窗口已变化，操作已取消");
   }
-  if (point && !isPointInBounds(point, expected.record.bounds)) {
-    throw new Error("坐标不在目标窗口范围内");
+  if (point) {
+    const expected = await resolveWindow(expectedWindowId);
+    if (!isPointInBounds(point, expected.record.bounds)) {
+      throw new Error("坐标不在目标窗口范围内");
+    }
   }
 }
 
@@ -256,18 +274,68 @@ export async function runComputerAction(
     }
     if (action === "list_windows") {
       const bounds = await screenBounds();
-      const windows = (await listWindowRecords()).map(({ record }) => record);
-      return { ok: true, windows, screen: bounds };
+      const active = await getActiveWindow();
+      const activeWindowId = windowId(active);
+      const windows = (await listWindowRecords()).map(({ record }) => ({
+        ...record,
+        isActive: record.id === activeWindowId,
+      }));
+      return {
+        ok: true,
+        windows,
+        activeWindowId,
+        activeWindowTitle: await active.getTitle(),
+        screen: bounds,
+      };
     }
     if (action === "focus_window") {
-      const id = requiredString(args.windowId, "windowId");
-      const target = await resolveWindow(id);
-      await target.window.restore();
-      const focused = await target.window.focus();
-      if (!focused || windowId(await getActiveWindow()) !== id) {
-        throw new Error("系统拒绝聚焦目标窗口");
+      const requestedId = typeof args.windowId === "string" ? args.windowId.trim() : "";
+      const active = await bindableActiveWindow();
+      if (!requestedId) {
+        return {
+          ok: true,
+          windowId: active.id,
+          title: active.title,
+          activation: "bound_active",
+        };
       }
-      return { ok: true, windowId: id };
+      const id = requiredString(requestedId, "windowId");
+      if (active.id === id) {
+        return {
+          ok: true,
+          windowId: id,
+          title: active.title,
+          activation: "already_active",
+        };
+      }
+      const target = await resolveWindow(id);
+
+      let focusUnavailable = false;
+      try {
+        // macOS 直接尝试聚焦，避免额外依赖可能不可用的窗口恢复能力。
+        if (process.platform !== "darwin") await target.window.restore();
+        const focused = await target.window.focus();
+        if (!focused) focusUnavailable = true;
+      } catch (error) {
+        if (process.platform !== "darwin" || !isUnsupportedWindowFocusError(error)) throw error;
+        focusUnavailable = true;
+      }
+
+      if (windowId(await getActiveWindow()) !== id) {
+        if (process.platform === "darwin" && focusUnavailable) {
+          throw new Error(
+            `macOS 当前桌面驱动无法主动激活“${target.record.title}”。`
+            + "请先将该窗口切换到前台，再调用 computer_focus_window 绑定当前活动窗口",
+          );
+        }
+        throw new Error("系统拒绝激活目标窗口，请先将该窗口切换到前台后重试");
+      }
+      return {
+        ok: true,
+        windowId: id,
+        title: target.record.title,
+        activation: "focused",
+      };
     }
     if (action === "screenshot") {
       const outputPath = requiredString(args.path, "path");

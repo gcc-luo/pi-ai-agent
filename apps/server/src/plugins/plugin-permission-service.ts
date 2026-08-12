@@ -16,6 +16,12 @@ export class PluginPermissionService {
     action: string;
     reason: string;
     intent?: string;
+    context?: {
+      url?: string;
+      target?: string;
+      windowId?: string;
+      files?: string[];
+    };
     send: (event: ServerEvent) => void;
     signal?: AbortSignal;
     timeoutMs?: number;
@@ -49,6 +55,7 @@ export class PluginPermissionService {
         action: input.action,
         reason: input.reason,
         intent: input.intent,
+        context: input.context,
         expiresAt,
       });
     });

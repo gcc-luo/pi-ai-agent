@@ -152,7 +152,7 @@ export class ProcessManager extends EventEmitter {
   private browserEndpoint?: string;
   private pluginExtensions: Record<string, string>;
   private pluginEndpoint?: string;
-  private pluginTokens = new Map<string, string>();
+  private pluginTokens = new Map<string, Map<string, string>>();
   private isPluginEnabled: (pluginId: string) => boolean;
   private validateWorkdir: boolean;
 
@@ -264,17 +264,33 @@ export class ProcessManager extends EventEmitter {
         env.OPENAI_BASE_URL = cfg.apiBaseUrl;
       }
     }
-    let pluginToken: string | undefined;
+    let issuedPluginTokens: Map<string, string> | undefined;
     if (activePluginIds.length > 0) {
-      pluginToken = crypto.randomBytes(32).toString("hex");
-      this.pluginTokens.set(input.sessionId, pluginToken);
+      issuedPluginTokens = new Map(
+        activePluginIds.map((pluginId) => [pluginId, crypto.randomBytes(32).toString("hex")]),
+      );
+      this.pluginTokens.set(input.sessionId, issuedPluginTokens);
       env.PI_WEB_UI_PLUGIN_ENDPOINT = this.pluginEndpoint;
-      env.PI_WEB_UI_PLUGIN_TOKEN = pluginToken;
       env.PI_WEB_UI_SESSION_ID = input.sessionId;
+      // Keep the generic credential only for legacy single-plugin processes.
+      // A shared multi-plugin token would let one extension call another
+      // selected plugin's runtime.
+      if (activePluginIds.length === 1) {
+        env.PI_WEB_UI_PLUGIN_TOKEN = issuedPluginTokens.get(activePluginIds[0]!);
+      }
       // Compatibility for the existing Browser Use extension protocol.
       if (activePluginIds.includes("browser-use")) {
+        const browserToken = issuedPluginTokens.get("browser-use")!;
+        env.PI_WEB_UI_BROWSER_PLUGIN_ENDPOINT = this.pluginEndpoint;
+        env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN = browserToken;
+        env.PI_WEB_UI_BROWSER_SESSION_ID = input.sessionId;
         env.PI_WEB_UI_BROWSER_ENDPOINT = this.browserEndpoint;
-        env.PI_WEB_UI_BROWSER_TOKEN = pluginToken;
+        env.PI_WEB_UI_BROWSER_TOKEN = browserToken;
+      }
+      if (activePluginIds.includes("computer-use")) {
+        env.PI_WEB_UI_COMPUTER_PLUGIN_ENDPOINT = this.pluginEndpoint;
+        env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN = issuedPluginTokens.get("computer-use")!;
+        env.PI_WEB_UI_COMPUTER_SESSION_ID = input.sessionId;
       }
     } else {
       this.pluginTokens.delete(input.sessionId);
@@ -339,7 +355,7 @@ export class ProcessManager extends EventEmitter {
       if (exited) return;
       exited = true;
       proc.status = stopRequested || code === 0 ? "suspended" : "crashed";
-      if (pluginToken && this.pluginTokens.get(input.sessionId) === pluginToken) {
+      if (issuedPluginTokens && this.pluginTokens.get(input.sessionId) === issuedPluginTokens) {
         this.pluginTokens.delete(input.sessionId);
       }
       (proc as unknown as EventEmitter).emit("exit", code);
@@ -387,12 +403,12 @@ export class ProcessManager extends EventEmitter {
   }
 
   validateBrowserToken(sessionId: string, token: string | undefined): boolean {
-    return this.validatePluginToken(sessionId, token);
+    return this.validatePluginToken(sessionId, "browser-use", token);
   }
 
-  validatePluginToken(sessionId: string, token: string | undefined): boolean {
+  validatePluginToken(sessionId: string, pluginId: string, token: string | undefined): boolean {
     if (!token) return false;
-    const expected = this.pluginTokens.get(sessionId);
+    const expected = this.pluginTokens.get(sessionId)?.get(pluginId);
     if (!expected || expected.length !== token.length) return false;
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
   }

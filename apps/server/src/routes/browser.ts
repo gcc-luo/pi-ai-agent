@@ -6,6 +6,7 @@ const ACTIONS = new Set([
   "snapshot",
   "click",
   "fill",
+  "upload",
   "select",
   "press",
   "hover",
@@ -71,7 +72,7 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     const token = req.headers["x-pi-plugin-token"] ?? req.headers["x-pi-browser-token"];
     if (
       typeof token !== "string"
-      || !app.processManager.validatePluginToken(req.params.id, token)
+      || !app.processManager.validatePluginToken(req.params.id, "browser-use", token)
     ) {
       return reply.code(403).send({ error: "forbidden" });
     }
@@ -91,6 +92,9 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.raw.once("aborted", abort);
+    let auditRisk: "normal" | "sensitive" = "normal";
+    let auditApproved = false;
+    let auditDetails: Record<string, unknown> = { compatibilityRoute: true };
     try {
       let result = await app.browserManager.execute({
         sessionId: session.id,
@@ -100,7 +104,17 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
         signal: controller.signal,
       });
       const requiresConfirmation = result.requiresConfirmation === true;
+      auditRisk = requiresConfirmation ? "sensitive" : "normal";
       let approved = !requiresConfirmation;
+      auditApproved = approved;
+      auditDetails = {
+        compatibilityRoute: true,
+        requiresConfirmation,
+        riskReason: result.riskReason,
+        url: result.url,
+        target: result.target,
+        files: result.files,
+      };
       if (requiresConfirmation) {
         const state = app.sessionStates.get(session.id);
         approved = state
@@ -111,10 +125,18 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
               reason: typeof result.riskReason === "string"
                 ? result.riskReason
                 : "该网页操作可能产生外部或不可逆影响",
+              context: {
+                url: typeof result.url === "string" ? result.url : undefined,
+                target: typeof result.target === "string" ? result.target : undefined,
+                files: Array.isArray(result.files)
+                  ? result.files.filter((file): file is string => typeof file === "string")
+                  : undefined,
+              },
               send: state.send,
               signal: controller.signal,
             })
           : false;
+        auditApproved = approved;
         if (approved) {
           result = await app.browserManager.execute({
             sessionId: session.id,
@@ -137,14 +159,23 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
         pluginId: "browser-use",
         sessionId: session.id,
         action,
-        risk: requiresConfirmation ? "sensitive" : "normal",
-        approved,
+        risk: auditRisk,
+        approved: auditApproved,
         success: approved && result.ok !== false,
-        details: { compatibilityRoute: true, requiresConfirmation },
+        details: auditDetails,
       });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      app.plugins.appendAudit({
+        pluginId: "browser-use",
+        sessionId: session.id,
+        action,
+        risk: auditRisk,
+        approved: auditApproved,
+        success: false,
+        details: { ...auditDetails, error: message },
+      });
       return reply.code(400).send({ error: message });
     } finally {
       req.raw.off("aborted", abort);

@@ -2,10 +2,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import fs from "node:fs/promises";
 
-const endpoint = process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
-const sessionId = process.env.PI_WEB_UI_SESSION_ID;
-const token = process.env.PI_WEB_UI_PLUGIN_TOKEN;
+const endpoint = process.env.PI_WEB_UI_COMPUTER_PLUGIN_ENDPOINT
+  ?? process.env.PI_WEB_UI_PLUGIN_ENDPOINT;
+const sessionId = process.env.PI_WEB_UI_COMPUTER_SESSION_ID
+  ?? process.env.PI_WEB_UI_SESSION_ID;
+const token = process.env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN
+  ?? process.env.PI_WEB_UI_PLUGIN_TOKEN;
 for (const key of [
+  "PI_WEB_UI_COMPUTER_PLUGIN_ENDPOINT",
+  "PI_WEB_UI_COMPUTER_PLUGIN_TOKEN",
+  "PI_WEB_UI_COMPUTER_SESSION_ID",
   "PI_WEB_UI_PLUGIN_ENDPOINT",
   "PI_WEB_UI_PLUGIN_TOKEN",
   "PI_WEB_UI_SESSION_ID",
@@ -98,7 +104,8 @@ const intent = {
 export default function computerTools(pi: ExtensionAPI) {
   const guidelines = [
     "Computer Use 适合操作 Word、微信、Navicat、系统设置等桌面应用；普通网页优先使用 Browser Use。",
-    "操作前先调用 computer_list_windows 和 computer_screenshot，聚焦目标窗口后再使用坐标。",
+    "操作前先调用 computer_list_windows 和 computer_screenshot；窗口列表会通过 isActive 标识当前活动窗口。",
+    "调用 computer_focus_window 绑定输入目标。目标已经在前台时可省略 windowId 绑定当前活动窗口；macOS 无法主动激活时，应提示用户先切换窗口再重试，不要声称 Computer Use 不可用。",
     "每次关键操作后重新截图确认结果；坐标基于最近一次截图，不要凭空猜测。",
     "所有输入操作都要提供真实 intent；涉及发送、提交、删除、支付、覆盖或权限变更时，必须先获得用户明确确认。",
   ];
@@ -129,9 +136,11 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_focus_window",
     label: "聚焦窗口",
-    description: "恢复并聚焦指定顶层窗口。",
+    description: "激活并绑定指定顶层窗口；省略窗口 ID 时安全绑定当前活动窗口。macOS 驱动不能主动激活时会返回明确的切换提示。",
     parameters: Type.Object({
-      windowId: Type.String({ description: "computer_list_windows 返回的窗口 ID" }),
+      windowId: Type.Optional(Type.String({
+        description: "computer_list_windows 返回的窗口 ID；省略则绑定当前活动窗口",
+      })),
       ...intent,
     }),
     executionMode: "sequential",
