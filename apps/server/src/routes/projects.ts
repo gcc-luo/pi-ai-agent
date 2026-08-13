@@ -53,9 +53,6 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
       }
       app.sessionStates.delete(state.sessionId);
     }
-    for (const proc of app.tuiProcessManager.values()) {
-      if (proc.projectId === projectId) app.tuiProcessManager.stop(proc.sessionId);
-    }
     await Promise.allSettled(projectSessionIds.map((sessionId) =>
       app.pluginManager?.closeSession(sessionId)
         ?? app.browserManager?.close(sessionId)

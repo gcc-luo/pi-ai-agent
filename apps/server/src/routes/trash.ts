@@ -79,15 +79,11 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         }
         app.sessionStates.delete(state.sessionId);
       }
-      for (const proc of app.tuiProcessManager.values()) {
-        if (proc.projectId === body.id) app.tuiProcessManager.stop(proc.sessionId);
-      }
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
         app.pluginManager?.closeSession(sessionId)
           ?? app.browserManager?.close(sessionId)
           ?? Promise.resolve(),
       ));
-      for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(body.id);
     } else if (body.kind === "session") {
       // Kill running agent process for this session
@@ -98,10 +94,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(body.id);
       }
-      app.tuiProcessManager.stop(body.id);
       if (app.pluginManager) await app.pluginManager.closeSession(body.id);
       else if (app.browserManager) await app.browserManager.close(body.id);
-      app.tuiProcessManager.removeSessionHistory(body.id);
       app.sessions.destroyPermanently(body.id);
     } else {
       return reply.code(400).send({ error: "invalid kind" });
@@ -126,15 +120,11 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         try { state.process.kill(); } catch {}
         app.sessionStates.delete(state.sessionId);
       }
-      for (const proc of app.tuiProcessManager.values()) {
-        if (proc.projectId === p.id) app.tuiProcessManager.stop(proc.sessionId);
-      }
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
         app.pluginManager?.closeSession(sessionId)
           ?? app.browserManager?.close(sessionId)
           ?? Promise.resolve(),
       ));
-      for (const sessionId of projectSessionIds) app.tuiProcessManager.removeSessionHistory(sessionId);
       app.projects.destroyPermanently(p.id);
     }
 
@@ -148,10 +138,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(s.id);
       }
-      app.tuiProcessManager.stop(s.id);
       if (app.pluginManager) await app.pluginManager.closeSession(s.id);
       else if (app.browserManager) await app.browserManager.close(s.id);
-      app.tuiProcessManager.removeSessionHistory(s.id);
       app.sessions.destroyPermanently(s.id);
     }
 

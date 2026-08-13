@@ -437,8 +437,6 @@ async function loadMessages() {
 
 onMounted(async () => {
   agent.subscribe(props.sessionId);
-  // Make office mode the sole Pi writer before loading the canonical history.
-  try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
   await kbStore.loadAll();
@@ -448,7 +446,6 @@ watch(() => props.sessionId, async (sessionId, previousSessionId) => {
   agent.unsubscribe(previousSessionId);
   agent.subscribe(sessionId);
   kbSearchByMessage.value = {};
-  try { await api.activateOfficeSession(props.sessionId); } catch {}
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
 });

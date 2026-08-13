@@ -7,7 +7,6 @@ import { SessionRepository } from "./db/repositories/session.js";
 import { MessageRepository } from "./db/repositories/message.js";
 import { ModelRepository } from "./db/repositories/model.js";
 import { ProcessManager } from "./agent/process-manager.js";
-import { TuiProcessManager } from "./agent/tui-process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
 import { TrashSweeper } from "./services/trash-sweeper.js";
@@ -29,7 +28,6 @@ import { filesRoutes } from "./routes/files.js";
 import { configRoutes } from "./routes/config.js";
 import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
-import { terminalRoutes } from "./ws/terminal.js";
 import { fsRoutes } from "./routes/fs.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { skillStoreRoutes } from "./routes/skill-store.js";
@@ -182,16 +180,6 @@ export async function buildConfiguredApp(config: Config) {
     logger: app.log,
   });
   (app as any).processManager = processManager;
-  const tuiProcessManager = new TuiProcessManager({
-    command: config.piCommand,
-    args: config.piTuiArgs,
-    npmRegistry: config.piNpmRegistry,
-    provider: config.piProvider,
-    model: config.piModel,
-    sessionRootDir: config.piSessionRootDir,
-    logger: app.log,
-  });
-  (app as any).tuiProcessManager = tuiProcessManager;
   const wechatAgentService = new WeChatAgentService(
     channels, channelConversations, projects, sessions, messages, models, processManager, app.log,
   );
@@ -222,7 +210,6 @@ export async function buildConfiguredApp(config: Config) {
       processManager.revokePluginToken(id);
       const state = sessionStates.get(id);
       if (state) { state.process.kill(); sessionStates.delete(id); }
-      tuiProcessManager.stop(id);
       void pluginManager.closeSession(id);
       sessions.setStatus(id, "suspended");
     },
@@ -230,7 +217,6 @@ export async function buildConfiguredApp(config: Config) {
   app.addHook("onClose", async () => {
     sweeper.stop();
     await processManager.shutdown();
-    await tuiProcessManager.shutdown();
     pluginPermissions.shutdown();
     await pluginManager.shutdown();
     try {
@@ -286,7 +272,6 @@ export async function buildConfiguredApp(config: Config) {
 
 
   await app.register(agentRoutes);
-  await app.register(terminalRoutes);
 
   return app;
 }

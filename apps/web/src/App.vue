@@ -3,7 +3,6 @@ import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from 
 import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS, createDiscreteApi } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
-const TuiTerminalPanel = defineAsyncComponent(() => import("./components/TuiTerminalPanel.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
@@ -23,7 +22,6 @@ import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
 import { useThemeStore } from "./stores/theme.js";
-import { useModeStore } from "./stores/mode.js";
 import { useI18n } from "./i18n/index.js";
 
 const projectStore = useProjectStore();
@@ -33,7 +31,6 @@ const agent = useAgentStore();
 const trashStore = useTrashStore();
 const { message } = createDiscreteApi(["message"]);
 const themeStore = useThemeStore();
-const modeStore = useModeStore();
 const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
@@ -280,22 +277,6 @@ function closePreview() {
                   class="model-select"
                   @update:value="agent.switchModel($event, selectedSessionId ?? undefined)"
                 />
-                <!-- Mode switch temporarily hidden
-                <div class="workspace-mode-switch" role="group" :aria-label="t('settings.workMode')">
-                  <button
-                    type="button"
-                    class="workspace-mode-btn"
-                    :class="{ active: !modeStore.isCoding }"
-                    @click="modeStore.set('office')"
-                  >{{ t('settings.modeOffice') }}</button>
-                  <button
-                    type="button"
-                    class="workspace-mode-btn"
-                    :class="{ active: modeStore.isCoding }"
-                    @click="modeStore.set('coding')"
-                  >{{ t('settings.modeCoding') }}</button>
-                </div>
-                -->
                 <span class="connection-status" :class="connection.status">
                   <span class="conn-dot" />
                   {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
@@ -308,12 +289,8 @@ function closePreview() {
               <!-- Chat Area -->
               <div class="workspace-main">
                 <div class="workspace-chat">
-                  <TuiTerminalPanel
-                    v-if="modeStore.isCoding && selectedSessionId"
-                    :session-id="selectedSessionId"
-                  />
                   <ChatPanel
-                    v-else-if="selectedSessionId"
+                    v-if="selectedSessionId"
                     :session-id="selectedSessionId"
                     :project-id="selectedProjectId!"
                     @select-file="filePath = $event"
@@ -322,7 +299,7 @@ function closePreview() {
               </div>
 
               <!-- Right preview panel (slides in, office mode only) -->
-              <Transition name="preview-slide" v-if="!modeStore.isCoding">
+              <Transition name="preview-slide">
                 <div v-if="showPreview" class="workspace-preview">
                   <div class="preview-header">
                     <span class="preview-title">{{ filePath?.split('/').pop() }}</span>
@@ -440,32 +417,6 @@ function closePreview() {
 .model-select :deep(.n-base-selection-input) {
   background: transparent;
 }
-
-.workspace-mode-switch {
-  display: inline-flex;
-  flex-shrink: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-}
-
-.workspace-mode-btn {
-  min-width: 52px;
-  padding: 5px 9px;
-  border: 0;
-  border-right: 1px solid var(--border-default);
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-.workspace-mode-btn:last-child { border-right: 0; }
-.workspace-mode-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.workspace-mode-btn.active { background: var(--accent); color: #fff; }
 
 .connection-status {
   display: flex;

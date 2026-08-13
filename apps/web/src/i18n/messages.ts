@@ -788,10 +788,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "Switch between Chinese and English",
     "settings.theme": "Theme",
     "settings.themeDesc": "Choose light, dark, or gray theme",
-    "settings.workMode": "Work Mode",
-    "settings.workModeDesc": "Switch between office and coding interface",
-    "settings.modeOffice": "Office",
-    "settings.modeCoding": "Coding",
     // Update
     "update.title": "Update Available",
     "update.releaseNotes": "Release Notes",
@@ -1601,10 +1597,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.languageDesc": "切换中文 / English",
     "settings.theme": "主题",
     "settings.themeDesc": "选择浅色、深色或灰色主题",
-    "settings.workMode": "工作模式",
-    "settings.workModeDesc": "切换日常办公与开发者 Coding 界面",
-    "settings.modeOffice": "办公",
-    "settings.modeCoding": "Coding",
     // Update
     "update.title": "发现新版本",
     "update.releaseNotes": "更新说明",

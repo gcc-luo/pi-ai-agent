@@ -73,7 +73,6 @@ export const api = {
   updateSessionExpert: (id: string, expertId: string | null) =>
     request<SessionDto>("PUT", `/sessions/${id}`, { expertId }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
-  activateOfficeSession: (id: string) => request<void>("POST", `/sessions/${id}/activate-office`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
   getBrowserCapability: (sessionId: string) =>
     request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),

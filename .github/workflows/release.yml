@@ -37,7 +37,6 @@ jobs:
       - run: pnpm verify-release-version "${{ github.ref_name }}"
         working-directory: apps/desktop
 
-      - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
       - run: pnpm --filter @pi-web-ui/server build
       - run: pnpm --filter @pi-web-ui/web typecheck
 
@@ -165,7 +164,6 @@ jobs:
       - run: pnpm verify-release-version "${{ github.ref_name }}"
         working-directory: apps/desktop
 
-      - run: pnpm --filter @pi-web-ui/server test -- tests/unit/tui-process-manager.test.ts
       - run: pnpm --filter @pi-web-ui/server build
       - run: pnpm --filter @pi-web-ui/web typecheck
 

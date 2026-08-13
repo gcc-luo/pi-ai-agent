@@ -178,10 +178,6 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const startAgentState = async (model = requestedModel ?? app.models.getDefault()) => {
-        // A Web session has one canonical Pi JSONL timeline. Do not let RPC
-        // and TUI mutate it concurrently when the user changes presentation.
-        await app.tuiProcessManager.stopAndWait(session.id);
-
         app.log.info({ defaultModel: model ? `${model.provider}/${model.id} hasKey=${model.hasApiKey}` : "none" }, "resolving default model");
         const modelConfig = model ? {
           provider: model.provider,

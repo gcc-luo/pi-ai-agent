@@ -66,7 +66,6 @@ describe("ws agent reconnect", () => {
       models: new ModelRepository(db),
       sessionStates: new SessionStateStore(),
       processManager,
-      tuiProcessManager: { stopAndWait: async () => {} },
       kbBindings: { listBySession: () => [] },
       experts: { findById: () => null },
     });

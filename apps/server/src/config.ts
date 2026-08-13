@@ -15,7 +15,6 @@ export interface Config {
   logFile: string;
   piCommand: string;
   piArgs: string[];
-  piTuiArgs: string[];
   piNpmRegistry: string;
   piSessionRootDir: string;
   idleTimeoutMs: number;
@@ -32,18 +31,6 @@ export interface Config {
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
-
-function withoutRpcMode(args: string[]): string[] {
-  const result: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--mode" && args[i + 1] === "rpc") {
-      i++;
-      continue;
-    }
-    result.push(args[i]!);
-  }
-  return result;
-}
 
 export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
@@ -76,7 +63,6 @@ export function loadConfig(): Config {
         "rpc",
         "--no-extensions",
       ]);
-  const configuredTuiArgs = splitArgs(process.env.PI_TUI_ARGS);
   return {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "127.0.0.1",
@@ -85,16 +71,8 @@ export function loadConfig(): Config {
     logFile: process.env.LOG_FILE ?? path.join(root, "logs", "server.log"),
     piCommand,
     piArgs,
-    // The web terminal runs Pi's normal interactive interface, not its JSON-RPC mode.
-    // Set PI_TUI_ARGS explicitly when a custom Pi launcher needs different arguments.
-    piTuiArgs: embeddedAgent
-      ? [bundledAgentEntry!, ...(configuredTuiArgs ?? [])]
-      : (configuredTuiArgs ??
-        (configuredPiArgs ? withoutRpcMode(piArgs) : defaultNpxArgs)),
     piNpmRegistry: process.env.PI_NPM_REGISTRY ?? "https://registry.npmjs.org/",
-    // One private Pi JSONL directory per Web UI session. Keep the original
-    // tui-sessions location so existing Coding conversations remain usable.
-    piSessionRootDir: process.env.PI_SESSION_ROOT_DIR ?? path.join(root, "tui-sessions"),
+    piSessionRootDir: process.env.PI_SESSION_ROOT_DIR ?? path.join(root, "sessions"),
     piProvider: process.env.PI_PROVIDER ?? "",
     piModel: process.env.PI_MODEL ?? "",
     piAutoCompaction: process.env.PI_AUTO_COMPACTION !== "false",

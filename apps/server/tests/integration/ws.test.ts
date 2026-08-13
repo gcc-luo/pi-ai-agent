@@ -62,7 +62,6 @@ describe("ws agent", () => {
       db, projects, sessions, messages: new MessageRepository(db),
       models: new ModelRepository(db),
       processManager, sessionStates: new SessionStateStore(),
-      tuiProcessManager: { stopAndWait: async () => {} },
       kbBindings: { listBySession: () => [] },
       experts: { findById: () => null },
     });

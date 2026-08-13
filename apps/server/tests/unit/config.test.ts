@@ -30,8 +30,6 @@ describe("loadConfig bundled runtime", () => {
     vi.stubEnv("PI_BUNDLED_RUNTIME_DIR", runtimeDir);
     vi.stubEnv("PI_COMMAND", "");
     vi.stubEnv("PI_ARGS", "");
-    vi.stubEnv("PI_TUI_ARGS", "");
-
     const config = loadConfig();
 
     expect(config.piCommand).toBe(process.execPath);
@@ -41,7 +39,6 @@ describe("loadConfig bundled runtime", () => {
       "rpc",
       "--no-extensions",
     ]);
-    expect(config.piTuiArgs).toEqual([agentEntry]);
   });
 
   it("disables extension discovery for the default npx RPC process only", () => {
@@ -51,8 +48,6 @@ describe("loadConfig bundled runtime", () => {
     vi.stubEnv("PI_BUNDLED_RUNTIME_DIR", "");
     vi.stubEnv("PI_COMMAND", "");
     vi.stubEnv("PI_ARGS", "");
-    vi.stubEnv("PI_TUI_ARGS", "");
-
     const config = loadConfig();
 
     expect(config.piCommand).toBe("npx");
@@ -63,7 +58,6 @@ describe("loadConfig bundled runtime", () => {
       "rpc",
       "--no-extensions",
     ]);
-    expect(config.piTuiArgs).toEqual(["-y", "@earendil-works/pi-coding-agent"]);
   });
 
   it("preserves explicitly configured Pi arguments", () => {
@@ -73,12 +67,9 @@ describe("loadConfig bundled runtime", () => {
     vi.stubEnv("PI_BUNDLED_RUNTIME_DIR", "");
     vi.stubEnv("PI_COMMAND", "custom-pi");
     vi.stubEnv("PI_ARGS", "--mode rpc --verbose");
-    vi.stubEnv("PI_TUI_ARGS", "");
-
     const config = loadConfig();
 
     expect(config.piCommand).toBe("custom-pi");
     expect(config.piArgs).toEqual(["--mode", "rpc", "--verbose"]);
-    expect(config.piTuiArgs).toEqual(["--verbose"]);
   });
 });
