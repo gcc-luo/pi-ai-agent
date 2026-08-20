@@ -25,7 +25,9 @@ function toDto(r: ModelRow): ModelDto {
     provider: r.provider,
     modelType: normalizeModelType(r.model_type),
     apiBaseUrl: r.api_base_url,
-    apiKey: r.api_key,
+    // API keys are credentials, not display data. Callers that need to use a
+    // key must go through getApiKey() inside the server process.
+    apiKey: null,
     hasApiKey: r.api_key !== null && r.api_key !== "",
     isDefault: r.is_default === 1,
     createdAt: r.created_at,

@@ -90,7 +90,9 @@ function openEdit(m: (typeof agent.modelDtos)[0]) {
     provider: m.provider,
     modelType: m.modelType ?? "text",
     apiBaseUrl: m.apiBaseUrl ?? "",
-    apiKey: m.apiKey ?? "",
+    // The API never returns the stored secret. Keep the edit field empty so an
+    // empty value means "leave the existing key unchanged".
+    apiKey: "",
     isDefault: m.isDefault,
   };
   testResult.value = null;
@@ -227,7 +229,7 @@ function setDefault(id: string) {
       <NDrawerContent :title="editingId ? t('model.edit') : t('model.add')" :native-scrollbar="false">
         <NForm label-placement="top">
           <NFormItem :label="t('model.id')">
-            <NInput v-model:value="form.id" :placeholder="t('model.idPlaceholder')" :disabled="!!editingId" />
+            <NInput v-model:value="form.id" :placeholder="t('model.idPlaceholder')" :readonly="!!editingId" />
           </NFormItem>
           <NFormItem :label="t('model.label')">
             <NInput v-model:value="form.label" :placeholder="t('model.labelPlaceholder')" />

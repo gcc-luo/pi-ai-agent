@@ -11,6 +11,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "checkJs": false,
     "types": ["node"]
   },
   "include": ["scripts/**/*"],

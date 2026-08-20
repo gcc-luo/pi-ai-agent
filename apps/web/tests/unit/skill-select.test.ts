@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mount, flushPromises } from "@vue/test-utils";
+import { DOMWrapper, mount, flushPromises } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import SkillSelect from "../../src/components/SkillSelect.vue";
@@ -16,7 +16,7 @@ describe("SkillSelect", () => {
     return mount(SkillSelect, {
       global: {
         stubs: {
-          Modal: { template: '<div v-if="show"><slot/></div>', props: ["show"] },
+          ConfirmDialog: true,
         },
       },
     });
@@ -41,9 +41,9 @@ describe("SkillSelect", () => {
     await nextTick();
     await nextTick();
     // open the dropdown
-    await w.find("[data-test='skill-toggle']").trigger("click");
+    await w.find(".skill-trigger").trigger("click");
     await nextTick();
-    expect(w.text()).toContain("No skills yet");
+    expect(new DOMWrapper(document.body).text()).toContain("暂无技能");
   });
 
   it("renders skills in the dropdown", async () => {
@@ -61,9 +61,9 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await flushPromises();
     await nextTick();
-    await w.find("[data-test='skill-toggle']").trigger("click");
+    await w.find(".skill-trigger").trigger("click");
     await nextTick();
-    await w.find("[data-test='skill-item']").trigger("click");
+    await new DOMWrapper(document.body).find("[data-test='skill-item']").trigger("click");
     const events = w.emitted();
     expect(events.select).toEqual([["a-skill"]]);
   });
@@ -75,9 +75,9 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await nextTick();
     await nextTick();
-    await w.find("[data-test='skill-toggle']").trigger("click");
+    await w.find(".skill-trigger").trigger("click");
     await nextTick();
-    await w.find("[data-test='skill-import-btn']").trigger("click");
+    await new DOMWrapper(document.body).find("[data-test='skill-import-btn']").trigger("click");
     expect(w.emitted().import).toBeDefined();
   });
 
@@ -89,8 +89,8 @@ describe("SkillSelect", () => {
     const w = mountSelect();
     await flushPromises();
     await nextTick();
-    await w.find("[data-test='skill-toggle']").trigger("click");
+    await w.find(".skill-trigger").trigger("click");
     await nextTick();
-    expect(w.find("[data-test='uninstall-btn']").exists()).toBe(true);
+    expect(new DOMWrapper(document.body).find("[data-test='uninstall-btn']").exists()).toBe(true);
   });
 });

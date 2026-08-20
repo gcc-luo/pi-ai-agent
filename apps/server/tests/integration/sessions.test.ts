@@ -6,7 +6,6 @@ import { openDatabase } from "../../src/db/sqlite.js";
 import { ProjectRepository } from "../../src/db/repositories/project.js";
 import { SessionRepository } from "../../src/db/repositories/session.js";
 import { MessageRepository } from "../../src/db/repositories/message.js";
-import { WorkdirManager } from "../../src/workdir/manager.js";
 import { ProcessManager } from "../../src/agent/process-manager.js";
 import { SessionStateStore } from "../../src/agent/session-state.js";
 import { sessionsRoutes } from "../../src/routes/sessions.js";
@@ -21,18 +20,17 @@ describe("sessions routes", () => {
     process.env.PI_WEB_UI_ROOT = tmp;
     const config = loadConfig();
     const db = openDatabase(config.dbPath);
-    const workdirs = new WorkdirManager({ root: config.workdirRoot });
     const projects = new ProjectRepository(db);
-    const p = projects.create({ name: "p", workdir: config.workdirRoot + "/x" });
-    workdirs.create(p.id);
-    db.prepare("UPDATE projects SET workdir = ? WHERE id = ?").run(workdirs.path(p.id), p.id);
+    const workdir = fs.mkdtempSync(path.join(tmp, "workdir-"));
+    const p = projects.create({ name: "p", workdir });
     projectId = p.id;
     const sessions = new SessionRepository(db);
     const messages = new MessageRepository(db);
     app = await buildApp(config, {
-      db, projects, sessions, messages, workdirs,
+      db, projects, sessions, messages,
       processManager: new ProcessManager({ command: "pi", args: [], logger: { info() {}, warn() {}, error() {} } as any }),
       sessionStates: new SessionStateStore(),
+      config,
     });
     await app.register(sessionsRoutes, { prefix: "/api" });
   });

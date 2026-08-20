@@ -37,8 +37,8 @@ describe("projects edit/delete routes", () => {
   });
   afterEach(async () => {
     await app.close();
-    fs.rmSync(tmp, { recursive: true, force: true });
-    fs.rmSync(workdir, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+    fs.rmSync(workdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   });
 
   async function createProject(name = "demo"): Promise<{ id: string }> {

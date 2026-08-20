@@ -6,6 +6,7 @@ import { buildKbContext } from "../kb/inject-context.js";
 import { resolveSearchScopes } from "../kb/search-scopes.js";
 import { extractUserSearchQuery } from "../kb/query-text.js";
 import { ulid } from "../util/ulid.js";
+import { SessionEventBuffer } from "../agent/session-event-buffer.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
@@ -65,6 +66,8 @@ function isFileModifyingTool(name: string, args: unknown): boolean {
 }
 
 export const agentRoutes: FastifyPluginAsync = async (app) => {
+  const eventBuffer = app.sessionEvents ?? new SessionEventBuffer();
+  if (!app.sessionEvents) (app as any).sessionEvents = eventBuffer;
   const persistedToolCalls = new Map<string, {
     sessionId: string;
     messageId: string;
@@ -103,8 +106,12 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
   };
 
   app.get("/ws/agent", { websocket: true }, (connection) => {
-    const send = (event: ServerEvent) => {
+    const write = (event: ServerEvent) => {
       try { connection.send(JSON.stringify(event)); } catch {}
+    };
+    const send = (event: ServerEvent) => {
+      const sessionId = "sessionId" in event ? event.sessionId : undefined;
+      write(sessionId ? eventBuffer.append(sessionId, event) : event);
     };
 
     connection.on("message", async (raw: Buffer) => {
@@ -118,6 +125,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       if (event.type === "subscribe") {
         const state = app.sessionStates.get(session.id);
         if (state) state.send = send;
+        eventBuffer.replay(session.id, event.afterEventSeq, write);
         send({
           type: "agent_status",
           sessionId: session.id,

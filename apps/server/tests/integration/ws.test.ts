@@ -27,6 +27,14 @@ function makeFakeProc() {
   return proc;
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt >= timeoutMs) throw new Error("timed out waiting for WebSocket event");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe("ws agent", () => {
   let tmp: string;
   let app: Awaited<ReturnType<typeof buildApp>>;
@@ -110,12 +118,12 @@ describe("ws agent", () => {
     ws.send(JSON.stringify({ type: "send", sessionId, content: "second" }));
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(received).toContainEqual({
+    expect(received).toContainEqual(expect.objectContaining({
       type: "error",
       sessionId,
       code: "agent_busy",
       message: "模型仍在处理上一条消息，请等待完成后再发送。",
-    });
+    }));
     expect(app.messages.listBySession(sessionId).map((message) => message.content)).toEqual(["first"]);
     ws.close();
   });
@@ -148,7 +156,7 @@ describe("ws agent", () => {
       content: "describe",
       model: "model-b",
     }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => spawnArgs.length >= 1);
     expect(spawnArgs[0]).toEqual(expect.arrayContaining(["--provider", "openai", "--model", "model-b"]));
 
     ws.send(JSON.stringify({
@@ -156,15 +164,16 @@ describe("ws agent", () => {
       sessionId,
       model: "model-a",
     }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => spawnArgs.length >= 2);
 
     expect(spawnArgs[1]).toEqual(expect.arrayContaining(["--provider", "openai", "--model", "model-a"]));
-    expect(received).toContainEqual({
+    await waitFor(() => received.some((event) => event.type === "model_changed"));
+    expect(received).toContainEqual(expect.objectContaining({
       type: "model_changed",
       sessionId,
       provider: "openai",
       model: "model-a",
-    });
+    }));
     ws.close();
   });
 });

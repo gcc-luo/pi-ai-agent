@@ -16,11 +16,28 @@ describe("ChatPanel skill insertion", () => {
       props: { sessionId: "s1", projectId: "p1" },
       global: {
         stubs: {
-          Modal: { template: '<div v-if="show"><slot/></div>', props: ["show"] },
-          Input: {
-            template: '<textarea :value="value" @input="$emit(\'update:value\', $event.target.value)" @keydown="$emit(\'keydown\', $event)"></textarea>',
-            props: ["value"],
+          NModal: { template: '<div><slot/></div>' },
+          NInput: {
+            inheritAttrs: false,
+            template: '<div v-bind="$attrs"><textarea :value="value" @input="$emit(\'update:value\', $event.target.value)" @keydown="$emit(\'keydown\', $event)"></textarea></div>',
+            props: ["value", "type"],
           },
+          SkillSelect: {
+            emits: ["select", "import"],
+            data: () => ({ open: false }),
+            template: `<div>
+              <button data-test="skill-toggle" @click="open = true">skills</button>
+              <button v-if="open" data-test="skill-item" @click="$emit('select', 'demo-skill')">demo</button>
+              <button v-if="open" data-test="skill-import-btn" @click="$emit('import')">import</button>
+            </div>`,
+          },
+          ChatExpertPicker: true,
+          ChatKbPicker: true,
+          PluginSelect: true,
+          ConfirmDialog: true,
+          FileViewer: true,
+          ArtifactCard: true,
+          ImportSkillDialog: { template: '<div data-test="import-skill-dialog" />' },
         },
       },
     });
@@ -31,7 +48,7 @@ describe("ChatPanel skill insertion", () => {
     await nextTick();
   }
 
-  it("inserts /skill:<name> into empty textarea on select", async () => {
+  it("shows the selected skill as a composer chip", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify([
       { name: "demo-skill", description: "d", path: "/d/SKILL.md" },
     ]), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -42,11 +59,10 @@ describe("ChatPanel skill insertion", () => {
     await openSkillDropdown(w);
     await w.find("[data-test='skill-item']").trigger("click");
     await nextTick();
-    const textarea = w.find("textarea").element as HTMLTextAreaElement;
-    expect(textarea.value).toBe("/skill:demo-skill ");
+    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
   });
 
-  it("appends /skill:<name> with separator when textarea has content", async () => {
+  it("keeps the message text separate from selected skills", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify([
       { name: "demo-skill", description: "d", path: "/d/SKILL.md" },
     ]), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -59,10 +75,11 @@ describe("ChatPanel skill insertion", () => {
     await openSkillDropdown(w);
     await w.find("[data-test='skill-item']").trigger("click");
     await nextTick();
-    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text /skill:demo-skill ");
+    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text");
+    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
   });
 
-  it("does not double-space when textarea ends with whitespace", async () => {
+  it("preserves whitespace in the message text when selecting a skill", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify([
       { name: "demo-skill", description: "d", path: "/d/SKILL.md" },
     ]), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -75,7 +92,8 @@ describe("ChatPanel skill insertion", () => {
     await openSkillDropdown(w);
     await w.find("[data-test='skill-item']").trigger("click");
     await nextTick();
-    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text\n/skill:demo-skill ");
+    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text\n");
+    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
   });
 
   it("opens ImportSkillDialog when import is emitted", async () => {

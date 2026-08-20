@@ -23,7 +23,7 @@ describe("KbSearchService", () => {
     chunks = new KbChunkRepository(db);
     search = new KbSearchService(db);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); });
 
   function addFile(kbId: string, name: string, content: string): string {
     const file = files.create({ kbId, name, ext: "txt", source: "created", size: content.length, storagePath: `${kbId}/${name}` });

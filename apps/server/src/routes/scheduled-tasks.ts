@@ -1,5 +1,29 @@
 import { FastifyPluginAsync } from "fastify";
 import type { TaskType } from "@pi-web-ui/shared";
+import { Cron } from "croner";
+
+function validateTaskInput(input: {
+  name?: unknown;
+  cronExpression?: unknown;
+  taskType?: unknown;
+  payload?: unknown;
+}): string | null {
+  if (typeof input.name !== "string" || !input.name.trim()) return "name required";
+  if (input.name.trim().length > 200) return "name too long";
+  if (typeof input.cronExpression !== "string" || !input.cronExpression.trim()) return "cronExpression required";
+  if (input.cronExpression.length > 120) return "cronExpression too long";
+  try { new Cron(input.cronExpression); } catch { return "invalid cronExpression"; }
+  if (input.taskType !== "prompt" && input.taskType !== "reminder") return "invalid taskType";
+  if (input.payload !== undefined) {
+    if (typeof input.payload !== "string" || input.payload.length > 100_000) return "invalid payload";
+    try {
+      const payload = JSON.parse(input.payload || "{}");
+      const key = input.taskType === "prompt" ? "prompt" : "message";
+      if (typeof payload?.[key] !== "string" || !payload[key].trim()) return `${key} required`;
+    } catch { return "invalid payload"; }
+  }
+  return null;
+}
 
 export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
   // List all tasks
@@ -19,9 +43,8 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       createNewSession?: boolean;
       enabled?: boolean;
     };
-    if (!body?.name) return reply.code(400).send({ error: "name required" });
-    if (!body?.cronExpression) return reply.code(400).send({ error: "cronExpression required" });
-    if (!body?.taskType) return reply.code(400).send({ error: "taskType required" });
+    const validationError = validateTaskInput(body);
+    if (validationError) return reply.code(400).send({ error: validationError });
 
     // Validate project if provided
     if (body.projectId) {
@@ -67,6 +90,16 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       createNewSession?: boolean;
       enabled?: boolean;
     };
+
+    const current = app.scheduledTasks.findById(req.params.id);
+    if (!current) return reply.code(404).send({ error: "not found" });
+    const validationError = validateTaskInput({
+      name: body.name ?? current.name,
+      cronExpression: body.cronExpression ?? current.cronExpression,
+      taskType: body.taskType ?? current.taskType,
+      payload: body.payload ?? current.payload,
+    });
+    if (validationError) return reply.code(400).send({ error: validationError });
 
     // Validate project if provided
     if (body.projectId) {
@@ -114,7 +147,8 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
     const task = app.scheduledTasks.findById(req.params.id);
     if (!task) return reply.code(404).send({ error: "not found" });
 
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const requestedLimit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const limit = Number.isFinite(requestedLimit) ? Math.min(200, Math.max(1, requestedLimit)) : 50;
     return app.taskLogs.listByTaskId(req.params.id, limit);
   });
 

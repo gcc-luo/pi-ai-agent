@@ -50,6 +50,7 @@ watch(() => updateStore.status, (newStatus) => {
 
     <!-- Nav Menu -->
     <div class="nav-menu">
+      <div class="nav-group-label">{{ t('nav.groupWorkspace') }}</div>
       <button
         class="nav-item"
         :class="{ active: activeNav === 'chat' }"
@@ -74,6 +75,7 @@ watch(() => updateStore.status, (newStatus) => {
         <span class="nav-label">{{ t('nav.model') }}</span>
       </button>
 
+      <div class="nav-group-label">{{ t('nav.groupResources') }}</div>
       <button
         class="nav-item"
         :class="{ active: activeNav === 'skill-store' }"
@@ -121,6 +123,7 @@ watch(() => updateStore.status, (newStatus) => {
         <span class="nav-label">{{ t('nav.experts') }}</span>
       </button>
 
+      <div class="nav-group-label">{{ t('nav.groupAutomation') }}</div>
       <button
         class="nav-item"
         :class="{ active: activeNav === 'channels' }"
@@ -148,6 +151,7 @@ watch(() => updateStore.status, (newStatus) => {
         <span class="nav-label">{{ t('nav.scheduledTasks') }}</span>
       </button>
 
+      <div class="nav-group-label">{{ t('nav.groupSystem') }}</div>
       <button
         class="nav-item"
         :class="{ active: activeNav === 'trash' }"
@@ -233,6 +237,14 @@ watch(() => updateStore.status, (newStatus) => {
   flex-direction: column;
   padding: 0 12px;
   gap: 4px;
+}
+
+.nav-group-label {
+  padding: 9px 8px 3px;
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
 }
 
 .nav-item {

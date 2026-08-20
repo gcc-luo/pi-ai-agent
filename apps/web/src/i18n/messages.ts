@@ -34,6 +34,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "welcome.title": "PI Workspace",
     "welcome.sub": "Select a project from the sidebar or create a new one to begin.",
     "welcome.hint": "to create a new project",
+    "welcome.emptyTitle": "Start your first workspace",
+    "welcome.emptySub": "Create a project, open a session, and let the agent work with your files.",
+    "welcome.stepProject": "Choose a project folder",
+    "welcome.stepSession": "Create a conversation",
+    "welcome.stepPrompt": "Send your first task",
+    "welcome.createProject": "Create your first project",
+    "welcome.createSession": "Create a new session",
 
     // Chat
     "chat.empty": "Start a conversation with the agent",
@@ -178,7 +185,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "model.apiBaseUrl": "API Base URL",
     "model.apiBaseUrlPlaceholder": "Leave empty for default",
     "model.apiKey": "API Key",
-    "model.apiKeyPlaceholder": "Enter API key for this model",
+    "model.apiKeyPlaceholder": "Enter a new key to replace the existing one",
     "model.isDefault": "Set as default",
     "model.hasKey": "Key configured",
     "model.noKey": "No key",
@@ -193,6 +200,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Nav
     "nav.chat": "Chat",
     "nav.model": "Models",
+    "nav.groupWorkspace": "WORKSPACE",
+    "nav.groupResources": "RESOURCES",
+    "nav.groupAutomation": "AUTOMATION",
+    "nav.groupSystem": "SYSTEM",
     "nav.skillStore": "Skill Store",
     "nav.plugins": "Plugins",
     "plugins.title": "Plugins",
@@ -807,13 +818,6 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.currentVersion": "Current Version",
 
 
-    // Coding mode
-    "coding.thinking": "thinking...",
-    "coding.toolRunning": "running...",
-    "coding.toolDone": "done",
-    "coding.placeholder": "Send a message...",
-    "coding.send": "Send",
-    "coding.stop": "Stop",
 
     // Artifacts
     "artifact.preview": "Preview",
@@ -851,6 +855,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     "welcome.title": "PI 工作台",
     "welcome.sub": "从侧边栏选择一个项目或创建新项目以开始。",
     "welcome.hint": "创建新项目",
+    "welcome.emptyTitle": "从第一个工作区开始",
+    "welcome.emptySub": "创建项目、打开会话，然后让 Agent 在你的文件上工作。",
+    "welcome.stepProject": "选择项目目录",
+    "welcome.stepSession": "创建一个会话",
+    "welcome.stepPrompt": "发送第一个任务",
+    "welcome.createProject": "创建第一个项目",
+    "welcome.createSession": "创建新会话",
 
     "chat.empty": "开始与 Agent 对话",
     "chat.roleUser": "你",
@@ -990,7 +1001,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "model.apiBaseUrl": "API 基础 URL",
     "model.apiBaseUrlPlaceholder": "留空使用默认值",
     "model.apiKey": "API 密钥",
-    "model.apiKeyPlaceholder": "输入此模型的 API 密钥",
+    "model.apiKeyPlaceholder": "输入新密钥以替换已有密钥",
     "model.isDefault": "设为默认",
     "model.hasKey": "密钥已配置",
     "model.noKey": "无密钥",
@@ -1004,6 +1015,10 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     "nav.chat": "对话",
     "nav.model": "模型",
+    "nav.groupWorkspace": "工作区",
+    "nav.groupResources": "资源",
+    "nav.groupAutomation": "自动化",
+    "nav.groupSystem": "系统",
     "nav.skillStore": "技能",
     "nav.plugins": "插件",
     "plugins.title": "插件管理",
@@ -1617,12 +1632,6 @@ export const messages: Record<Locale, Record<string, string>> = {
 
 
     // Coding 模式
-    "coding.thinking": "思考中...",
-    "coding.toolRunning": "执行中...",
-    "coding.toolDone": "完成",
-    "coding.placeholder": "输入消息...",
-    "coding.send": "发送",
-    "coding.stop": "停止",
 
     // 交付物
     "artifact.preview": "预览",

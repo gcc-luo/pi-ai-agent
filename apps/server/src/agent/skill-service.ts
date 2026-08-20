@@ -187,7 +187,7 @@ export class SkillService {
   }
 
   uninstall(name: string): void {
-    if (!name || name.includes("..") || path.isAbsolute(name)) {
+    if (!NAME_RE.test(name) || name.length > 64) {
       throw new Error("invalid skill name");
     }
     const dir = path.join(this.skillsDir, name);

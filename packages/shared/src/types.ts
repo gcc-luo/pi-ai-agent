@@ -12,11 +12,11 @@ export type ClientEvent =
   | { type: "permission_response"; sessionId: string; requestId: string; approved: boolean }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }
-  | { type: "subscribe"; sessionId: string }
+  | { type: "subscribe"; sessionId: string; afterEventSeq?: number }
   | { type: "ping" };
 
 // WebSocket events: server → client
-export type ServerEvent =
+type ServerEventPayload =
   | { type: "message_start"; sessionId: string; messageId: string; role: "user" | "assistant"; timestamp?: number }
   | { type: "message_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "thinking_delta"; sessionId: string; messageId: string; delta: string }
@@ -80,6 +80,12 @@ export type ServerEvent =
       };
       expiresAt: number;
     };
+
+/**
+ * Monotonic sequence assigned by the server per session. Clients can use it
+ * to deduplicate events and request a replay after reconnecting.
+ */
+export type ServerEvent = ServerEventPayload & { eventSeq?: number };
 
 export interface ToolCall {
   toolCallId: string;

@@ -28,9 +28,19 @@ export interface Config {
   skillStoreTimeoutMs: number;
   skillsMpApiKey: string;
   kbFilesDir: string;
+  backupDir: string;
+  authToken: string;
 }
 
 const defaultRoot = path.join(os.homedir(), ".pi-web-ui");
+
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "localhost"
+    || normalized === "127.0.0.1"
+    || normalized === "::1"
+    || normalized === "[::1]";
+}
 
 export function loadConfig(): Config {
   const root = process.env.PI_WEB_UI_ROOT ?? defaultRoot;
@@ -66,6 +76,7 @@ export function loadConfig(): Config {
   return {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? "127.0.0.1",
+    authToken: process.env.PI_WEB_UI_AUTH_TOKEN ?? "",
     dbPath: path.join(root, "pi-web-ui.sqlite"),
     logLevel: process.env.LOG_LEVEL ?? "info",
     logFile: process.env.LOG_FILE ?? path.join(root, "logs", "server.log"),
@@ -85,5 +96,8 @@ export function loadConfig(): Config {
     // Items in trash are permanently deleted after this retention period.
     trashRetentionMs: Number(process.env.TRASH_RETENTION_DAYS ?? 30) * 24 * 60 * 60 * 1000,
     kbFilesDir: process.env.PI_KB_FILES_DIR ?? path.join(root, "kb-files"),
+    backupDir: process.env.PI_BACKUP_DIR?.startsWith("~/")
+      ? path.join(os.homedir(), process.env.PI_BACKUP_DIR.slice(2))
+      : (process.env.PI_BACKUP_DIR ?? path.join(root, "backups")),
   };
 }

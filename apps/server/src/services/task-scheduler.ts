@@ -6,6 +6,7 @@ import type { TaskExecutor } from "./task-executor.js";
 
 export class TaskScheduler {
   private jobs = new Map<string, Cron>();
+  private runningTasks = new Set<string>();
   private running = false;
   private executor: TaskExecutor | null = null;
 
@@ -24,6 +25,8 @@ export class TaskScheduler {
   start(): void {
     if (this.running) return;
     this.running = true;
+    const recovered = this.logs.recoverRunning();
+    if (recovered > 0) this.logger.warn(`[TaskScheduler] recovered ${recovered} interrupted execution(s)`);
     const enabled = this.tasks.listEnabled();
     this.logger.info(`[TaskScheduler] starting with ${enabled.length} enabled task(s)`);
     for (const task of enabled) {
@@ -106,67 +109,78 @@ export class TaskScheduler {
   }
 
   private async runTask(task: ScheduledTaskDto): Promise<void> {
+    if (this.runningTasks.has(task.id)) {
+      this.logger.warn(`[TaskScheduler] skipped overlapping execution for task "${task.name}" (${task.id})`);
+      return;
+    }
+    this.runningTasks.add(task.id);
     const log = this.logs.create(task.id);
     let output = "";
-    let status: "success" | "failed" = "success";
+    let status: "success" | "failed" = "failed";
     let sessionId: string | null = null;
+    const maxAttempts = 3;
 
     try {
-      const payload = JSON.parse(task.payload || "{}");
-
-      switch (task.taskType) {
-        case "prompt": {
-          const promptText = payload.prompt || "";
-
-          if (task.projectId && this.executor) {
-            // Execute the prompt through the agent pipeline
-            this.logger.info(`[TaskScheduler] executing prompt task "${task.name}" via agent: ${promptText.slice(0, 100)}`);
-            const result = await this.executor.executePrompt({
-              taskName: task.name,
-              projectId: task.projectId,
-              promptText,
-              taskId: task.id,
-              createNewSession: task.createNewSession,
-            });
-            sessionId = result.sessionId;
-            output = result.response
-              ? `会话已创建，AI 回复如下:\n\n${result.response}`
-              : `会话已创建 (sessionId: ${result.sessionId})，请前往对话查看回复。`;
-            this.logger.info(`[TaskScheduler] prompt task "${task.name}" completed, session=${sessionId}`);
-          } else {
-            // No project or executor — fall back to recording only
-            output = `[自动提问] ${task.name}\n\n提示词: ${promptText}\n\n提示: 请为任务指定目标项目以启用自动执行。`;
-            this.logger.info(`[TaskScheduler] recorded prompt task "${task.name}" (no project/executor)`);
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const result = await this.executeOnce(task);
+          output = result.output;
+          sessionId = result.sessionId;
+          status = "success";
+          break;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          output = `执行失败（第 ${attempt}/${maxAttempts} 次）: ${message}`;
+          this.logger.error(`[TaskScheduler] task "${task.name}" (${task.id}) attempt ${attempt} failed: ${message}`);
+          if (attempt < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
           }
-          break;
-        }
-        case "reminder": {
-          const message = payload.message || "";
-          output = `[提醒] ${task.name}\n\n${message}`;
-          this.logger.info(`[TaskScheduler] executed reminder task "${task.name}": ${message.slice(0, 100)}`);
-          break;
-        }
-        default: {
-          output = `[未知任务类型] ${task.taskType}`;
-          status = "failed";
         }
       }
-    } catch (err) {
-      output = `执行失败: ${err instanceof Error ? err.message : String(err)}`;
-      status = "failed";
-      this.logger.error(`[TaskScheduler] task "${task.name}" (${task.id}) failed: ${err}`);
-    }
+      if (sessionId) this.logs.setSessionId(log.id, sessionId);
+      this.logs.finish(log.id, status, output);
 
-    // Update session ID if we created a session
-    if (sessionId) {
-      this.logs.setSessionId(log.id, sessionId);
+      const now = Date.now();
+      const job = this.jobs.get(task.id);
+      const nextRun = job?.nextRun();
+      this.tasks.updateLastRun(task.id, now, nextRun ? nextRun.getTime() : null);
+    } finally {
+      this.runningTasks.delete(task.id);
     }
-    this.logs.finish(log.id, status, output);
+  }
 
-    // Update last_run_at and next_run_at
-    const now = Date.now();
-    const job = this.jobs.get(task.id);
-    const nextRun = job?.nextRun();
-    this.tasks.updateLastRun(task.id, now, nextRun ? nextRun.getTime() : null);
+  private async executeOnce(task: ScheduledTaskDto): Promise<{ output: string; sessionId: string | null }> {
+    const payload = JSON.parse(task.payload || "{}");
+    switch (task.taskType) {
+      case "prompt": {
+        const promptText = payload.prompt || "";
+        if (task.projectId && this.executor) {
+          this.logger.info(`[TaskScheduler] executing prompt task "${task.name}" via agent: ${promptText.slice(0, 100)}`);
+          const result = await this.executor.executePrompt({
+            taskName: task.name,
+            projectId: task.projectId,
+            promptText,
+            taskId: task.id,
+            createNewSession: task.createNewSession,
+          });
+          return {
+            sessionId: result.sessionId,
+            output: result.response
+              ? `会话已创建，AI 回复如下:\n\n${result.response}`
+              : `会话已创建 (sessionId: ${result.sessionId})，请前往对话查看回复。`,
+          };
+        }
+        return {
+          sessionId: null,
+          output: `[自动提问] ${task.name}\n\n提示词: ${promptText}\n\n提示: 请为任务指定目标项目以启用自动执行。`,
+        };
+      }
+      case "reminder": {
+        const message = payload.message || "";
+        return { sessionId: null, output: `[提醒] ${task.name}\n\n${message}` };
+      }
+      default:
+        throw new Error(`未知任务类型: ${task.taskType}`);
+    }
   }
 }

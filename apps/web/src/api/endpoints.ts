@@ -3,6 +3,16 @@ import { isTauri } from "../utils/platform.js";
 let apiBase = "/api";
 let webSocketBase: string | undefined;
 
+export function authToken(): string | undefined {
+  const token = import.meta.env.VITE_PI_WEB_UI_AUTH_TOKEN;
+  return typeof token === "string" && token ? token : undefined;
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = authToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function initializeBackendEndpoint(): Promise<void> {
   if (!isTauri()) return;
 
@@ -20,9 +30,13 @@ export function apiUrl(path: string): string {
 }
 
 export function webSocketUrl(path: string): string {
-  if (webSocketBase) return `${webSocketBase}${path}`;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${location.host}${path}`;
+  let url: string;
+  if (webSocketBase) url = `${webSocketBase}${path}`;
+  else {
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    url = `${protocol}://${location.host}${path}`;
+  }
+  return url;
 }
 
 async function waitForBackend(healthUrl: string): Promise<void> {

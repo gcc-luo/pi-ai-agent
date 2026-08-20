@@ -105,16 +105,16 @@ describe("ws agent reconnect", () => {
     await waitForOpen(ws2);
     ws2.send(JSON.stringify({ type: "subscribe", sessionId }));
     await new Promise((r) => setTimeout(r, 50));
-    expect(ws2Received).toContainEqual({
+    expect(ws2Received).toContainEqual(expect.objectContaining({
       type: "agent_status",
       sessionId,
       status: "working",
-    });
-    expect(ws2Received).toContainEqual({
+    }));
+    expect(ws2Received).toContainEqual(expect.objectContaining({
       type: "session_status",
       sessionId,
       status: "active",
-    });
+    }));
 
     ws2Received.length = 0;
     ws2.send(JSON.stringify({ type: "send", sessionId, content: "second" }));

@@ -244,4 +244,16 @@ export class TaskLogRepository {
       .prepare("UPDATE task_logs SET session_id = ? WHERE id = ?")
       .run(sessionId, id);
   }
+
+  /** Mark executions interrupted by a process restart as failed. */
+  recoverRunning(): number {
+    const result = this.db.prepare(
+      `UPDATE task_logs
+       SET status = 'failed',
+           output = CASE WHEN output = '' THEN '应用重启导致任务中断。' ELSE output || char(10) || '应用重启导致任务中断。' END,
+           finished_at = ?
+       WHERE status = 'running'`,
+    ).run(Date.now());
+    return result.changes;
+  }
 }

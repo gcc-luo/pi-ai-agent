@@ -36,6 +36,15 @@ export default defineConfig({
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
     // produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_DEBUG,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-ui": ["naive-ui"],
+          "vendor-editor": ["highlight.js", "marked"],
+          "vendor-spreadsheet": ["xlsx"],
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",

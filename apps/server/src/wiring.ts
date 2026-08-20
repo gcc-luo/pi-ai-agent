@@ -8,6 +8,7 @@ import { MessageRepository } from "./db/repositories/message.js";
 import { ModelRepository } from "./db/repositories/model.js";
 import { ProcessManager } from "./agent/process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
+import { SessionEventBuffer } from "./agent/session-event-buffer.js";
 import { IdleSweeper } from "./agent/idle-sweeper.js";
 import { TrashSweeper } from "./services/trash-sweeper.js";
 import { SkillService } from "./agent/skill-service.js";
@@ -56,6 +57,7 @@ import { ComputerSessionManager } from "./computer/computer-session-manager.js";
 import { PluginManager } from "./plugins/plugin-manager.js";
 import { pluginsRoutes } from "./routes/plugins.js";
 import { PluginPermissionService } from "./plugins/plugin-permission-service.js";
+import { backupsRoutes } from "./routes/backups.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -88,6 +90,7 @@ export async function buildConfiguredApp(config: Config) {
   const kbSearch = new KbSearchService(db);
   const kbParseJobs = new KbParseJobRepository(db);
   const sessionStates = new SessionStateStore();
+  const sessionEvents = new SessionEventBuffer();
   const experts = new ExpertRepository(db);
   const scheduledTasks = new ScheduledTaskRepository(db);
   const taskLogs = new TaskLogRepository(db);
@@ -130,7 +133,7 @@ export async function buildConfiguredApp(config: Config) {
 
   // Build app first so we can pass app.log to ProcessManager
   const app = await buildApp(config, {
-    db, projects, sessions, messages, models, sessionStates, skills, skillStore,
+    db, projects, sessions, messages, models, sessionStates, sessionEvents, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
     kbParseJobs, scheduledTasks, taskLogs, channels, channelConversations, plugins, config,
   });
@@ -244,6 +247,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
   await app.register(channelsRoutes, { prefix: "/api/channels" });
+  await app.register(backupsRoutes, { prefix: "/api/backups" });
 
   // Rebuild channel adapters from persisted configs so test/send works
   // immediately after restart without a re-save.

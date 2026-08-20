@@ -7,7 +7,7 @@
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
   PluginDto,
 } from "@pi-web-ui/shared";
-import { apiUrl } from "./endpoints.js";
+import { apiUrl, authHeaders } from "./endpoints.js";
 
 export interface ModelOption {
   id: string;
@@ -19,6 +19,13 @@ export interface ConfigDto {
   provider: string | null;
   model: string | null;
   models: ModelOption[];
+}
+
+export interface DatabaseBackupDto {
+  name: string;
+  path: string;
+  size: number;
+  createdAt: number;
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -34,7 +41,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       try {
         const res = await fetch(apiUrl(path), {
           method,
-          headers: body ? { "Content-Type": "application/json" } : undefined,
+          headers: {
+            ...authHeaders(),
+            ...(body ? { "Content-Type": "application/json" } : {}),
+          },
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         });
@@ -98,7 +108,7 @@ export const api = {
   importSkillZip: (file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return fetch(apiUrl("/skills/import-zip"), { method: "POST", body: form }).then(async (res) => {
+    return fetch(apiUrl("/skills/import-zip"), { method: "POST", headers: authHeaders(), body: form }).then(async (res) => {
       const text = await res.text();
       let data: any = null;
       if (text) try { data = JSON.parse(text); } catch { data = { error: text }; }
@@ -175,7 +185,7 @@ export const api = {
   importKbFiles: (kbId: string, files: File[]) => {
     const form = new FormData();
     for (const f of files) form.append("file", f);
-    return fetch(apiUrl(`/knowledge-bases/${kbId}/files/import`), { method: "POST", body: form }).then(async (res) => {
+    return fetch(apiUrl(`/knowledge-bases/${kbId}/files/import`), { method: "POST", headers: authHeaders(), body: form }).then(async (res) => {
       const data = await res.json().catch(() => ({ error: "parse_failed" }));
       if (!res.ok) throw new Error((data as any)?.error ?? `import failed: ${res.status}`);
       return data as { imported: KbFileDto[]; errors: { name: string; error: string }[] };
@@ -240,6 +250,12 @@ export const api = {
     request<TaskLogDto[]>("GET", `/scheduled-tasks/${id}/logs${limit ? `?limit=${limit}` : ""}`),
   runScheduledTask: (id: string) =>
     request<{ message: string }>("POST", `/scheduled-tasks/${id}/run`),
+
+  // ─── Database backups ───
+  listDatabaseBackups: () => request<DatabaseBackupDto[]>("GET", "/backups"),
+  createDatabaseBackup: () => request<DatabaseBackupDto>("POST", "/backups"),
+  validateDatabaseBackup: (name: string) =>
+    request<{ ok: boolean; error?: string }>("POST", `/backups/${encodeURIComponent(name)}/validate`),
 
   // ─── Channels ───
   listChannelDescriptors: () =>

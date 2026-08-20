@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -47,12 +48,14 @@ function mimeFor(filename: string): string {
 
 async function buildTree(root: string, rel: string, depth: number): Promise<FileNodeDto[]> {
   if (depth > 6) return [];
-  const abs = path.join(root, rel);
+  const abs = resolveSafe(root, rel, true);
+  if (!abs) return [];
   const entries = await fs.readdir(abs, { withFileTypes: true });
   const out: FileNodeDto[] = [];
   for (const e of entries) {
     if (e.name.startsWith(".") && e.name !== ".pi-web") continue;
     if (e.name === "node_modules") continue;
+    if (e.isSymbolicLink()) continue;
     const childRel = rel === "/" ? e.name : `${rel}/${e.name}`;
     if (e.isDirectory()) {
       out.push({ name: e.name, path: childRel, type: "directory", children: await buildTree(root, childRel, depth + 1) });
@@ -66,13 +69,38 @@ async function buildTree(root: string, rel: string, depth: number): Promise<File
 
 // Resolve `rel` against `workdir` and refuse anything that escapes the workdir.
 // Returns the absolute path if safe, null otherwise. `rel` must be a relative
-// path like "src/foo.ts"; "/" (the root marker) and absolute paths are rejected.
-function resolveSafe(workdir: string, rel: string): string | null {
-  if (typeof rel !== "string" || rel === "" || rel === "/" || path.isAbsolute(rel)) return null;
+// path like "src/foo.ts". The root marker "/" is allowed only for directory
+// listing, while other absolute paths are always rejected.
+function resolveSafe(workdir: string, rel: string, allowRoot = false): string | null {
+  if (typeof rel !== "string" || rel === "") return null;
+  if (rel === "/") {
+    if (!allowRoot) return null;
+    rel = ".";
+  }
+  if (path.isAbsolute(rel)) return null;
   const abs = path.resolve(workdir, rel);
   const rel2 = path.relative(workdir, abs);
-  if (rel2 === "" || rel2 === ".") return null; // would touch the workdir itself
+  if ((rel2 === "" || rel2 === ".") && !allowRoot) return null;
   if (rel2.startsWith("..") || path.isAbsolute(rel2)) return null;
+
+  // Lexical checks do not stop a project symlink from pointing outside the
+  // workdir. Resolve the nearest existing ancestor for create/rename targets,
+  // then verify the final target when it already exists.
+  let probe = abs;
+  while (!fsSync.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return null;
+    probe = parent;
+  }
+  try {
+    const realRoot = fsSync.realpathSync.native(workdir);
+    const realProbe = fsSync.realpathSync.native(probe);
+    const inside = (candidate: string) => candidate === realRoot || candidate.startsWith(`${realRoot}${path.sep}`);
+    if (!inside(realProbe)) return null;
+    if (fsSync.existsSync(abs) && !inside(fsSync.realpathSync.native(abs))) return null;
+  } catch {
+    return null;
+  }
   return abs;
 }
 
@@ -81,8 +109,8 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
     const project = app.projects.findById(req.params.projectId);
     if (!project) return reply.code(404).send({ error: "project not found" });
     const rel = req.query.path ?? "/";
-    const abs = path.join(project.workdir, rel);
-    if (!abs.startsWith(project.workdir)) return reply.code(400).send({ error: "bad path" });
+    const abs = resolveSafe(project.workdir, rel, true);
+    if (!abs) return reply.code(400).send({ error: "bad path" });
     const tree = await buildTree(project.workdir, rel, 0);
     return tree;
   });
@@ -91,8 +119,8 @@ export const filesRoutes: FastifyPluginAsync = async (app) => {
     const project = app.projects.findById(req.params.projectId);
     if (!project) return reply.code(404).send({ error: "project not found" });
     const rel = req.query.path;
-    const abs = path.join(project.workdir, rel);
-    if (!abs.startsWith(project.workdir)) return reply.code(400).send({ error: "bad path" });
+    const abs = resolveSafe(project.workdir, rel);
+    if (!abs) return reply.code(400).send({ error: "bad path" });
     try {
       const stat = await fs.stat(abs);
       if (stat.size > 1_000_000) return reply.code(413).send({ error: "file too large" });

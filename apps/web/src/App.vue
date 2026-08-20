@@ -9,6 +9,7 @@ import ChatPanel from "./components/ChatPanel.vue";
 const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
+import NewProjectDialog from "./components/NewProjectDialog.vue";
 const SkillStoreView = defineAsyncComponent(() => import("./components/SkillStoreView.vue"));
 const KnowledgeBaseView = defineAsyncComponent(() => import("./components/KnowledgeBaseView.vue"));
 const TrashView = defineAsyncComponent(() => import("./components/TrashView.vue"));
@@ -37,6 +38,7 @@ const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
+const showOnboardingProject = ref(false);
 
 
 const currentSession = computed(() =>
@@ -75,6 +77,12 @@ async function createSession() {
   if (!selectedProjectId.value) return;
   const s = await sessionStore.create(selectedProjectId.value);
   selectedSessionId.value = s.id;
+}
+
+async function createOnboardingProject(name: string, workdir: string) {
+  const project = await projectStore.create(name, workdir);
+  activeNav.value = "chat";
+  selectedProjectId.value = project.id;
 }
 
 async function renameSession(id: string, title: string) {
@@ -321,11 +329,29 @@ function closePreview() {
           <div v-else class="welcome">
             <div class="welcome-inner">
               <div class="welcome-symbol">π</div>
-              <h2 class="welcome-title">{{ t('welcome.title') }}</h2>
-              <p class="welcome-sub">{{ t('welcome.sub') }}</p>
-              <div class="welcome-hint">
-                <kbd>&#8984;</kbd> + <kbd>N</kbd> {{ t('welcome.hint') }}
-              </div>
+              <template v-if="!projectStore.projects.length">
+                <h2 class="welcome-title">{{ t('welcome.emptyTitle') }}</h2>
+                <p class="welcome-sub">{{ t('welcome.emptySub') }}</p>
+                <div class="welcome-steps">
+                  <div><strong>1</strong><span>{{ t('welcome.stepProject') }}</span></div>
+                  <div><strong>2</strong><span>{{ t('welcome.stepSession') }}</span></div>
+                  <div><strong>3</strong><span>{{ t('welcome.stepPrompt') }}</span></div>
+                </div>
+                <button class="welcome-primary" @click="showOnboardingProject = true">{{ t('welcome.createProject') }}</button>
+              </template>
+              <template v-else>
+                <h2 class="welcome-title">{{ t('welcome.title') }}</h2>
+                <p class="welcome-sub">{{ t('welcome.sub') }}</p>
+                <button v-if="selectedProjectId" class="welcome-primary" @click="createSession">{{ t('welcome.createSession') }}</button>
+                <div class="welcome-hint">
+                  <kbd>&#8984;</kbd> + <kbd>N</kbd> {{ t('welcome.hint') }}
+                </div>
+              </template>
+              <NewProjectDialog
+                :show="showOnboardingProject"
+                @close="showOnboardingProject = false"
+                @create="createOnboardingProject"
+              />
             </div>
           </div>
         </main>
@@ -641,5 +667,42 @@ function closePreview() {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.welcome-primary {
+  margin-top: 22px;
+  padding: 9px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg-void);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.welcome-steps {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  text-align: left;
+}
+
+.welcome-steps div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.welcome-steps strong {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  color: var(--accent);
+  font-size: 11px;
 }
 </style>
