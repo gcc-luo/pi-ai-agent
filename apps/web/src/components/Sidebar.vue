@@ -18,6 +18,7 @@ const agent = useAgentStore();
 const { t } = useI18n();
 
 const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
+const isRefreshingFiles = ref(false);
 
 const showProjectDropdown = ref(false);
 const showProjectManager = ref(false);
@@ -40,6 +41,16 @@ const emit = defineEmits<{
 
 const renameSessionTarget = ref<SessionDto | null>(null);
 const deleteSessionTarget = ref<SessionDto | null>(null);
+
+async function refreshFiles() {
+  if (isRefreshingFiles.value) return;
+  isRefreshingFiles.value = true;
+  try {
+    await fileTreeRef.value?.refresh();
+  } finally {
+    isRefreshingFiles.value = false;
+  }
+}
 
 // Search
 const sessionQuery = ref("");
@@ -335,10 +346,19 @@ function startDeleteSession(s: SessionDto) {
           <span class="section-label">{{ t('sidebar.files') }}</span>
         </button>
         <div class="section-actions">
-          <button class="section-action" @click="fileTreeRef?.refresh()" :title="t('file.refresh')">
-            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-              <path d="M11.5 7A4.5 4.5 0 1 1 10 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-              <path d="M10 1v3h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <button
+            class="section-action section-action-refresh"
+            :class="{ refreshing: isRefreshingFiles }"
+            :disabled="isRefreshingFiles"
+            :aria-label="t('file.refresh')"
+            :title="t('file.refresh')"
+            @click="refreshFiles"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M13.35 6.2A5.35 5.35 0 0 0 4.05 4.1L2.8 5.35" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2.8 2.85v2.5h2.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2.65 9.8a5.35 5.35 0 0 0 9.3 2.1l1.25-1.25" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M13.2 13.15v-2.5h-2.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
           <button class="section-action" @click="fileTreeRef?.startCreate()" :title="t('file.new')">
@@ -595,6 +615,41 @@ function startDeleteSession(s: SessionDto) {
 .section-action:hover {
   background: var(--background-hover);
   color: var(--primary-color);
+}
+
+.section-action-refresh {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+.section-action-refresh:hover {
+  border-color: transparent;
+  background: var(--background-hover);
+  color: var(--primary-color);
+  box-shadow: none;
+}
+.section-action-refresh:active:not(:disabled) {
+  transform: scale(0.94);
+  box-shadow: none;
+}
+.section-action-refresh:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.section-action-refresh:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+.section-action-refresh.refreshing svg {
+  animation: sidebar-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes sidebar-refresh-spin {
+  to { transform: rotate(360deg); }
 }
 
 .section-actions {

@@ -6,6 +6,7 @@ import { useI18n } from "../i18n/index.js";
 import { useAgentStore } from "../stores/agent.js";
 import type { TreeOption } from "naive-ui";
 import type { FileNodeDto } from "@pi-web-ui/shared";
+import FileTypeIcon from "./FileTypeIcon.vue";
 
 const props = defineProps<{ projectId: string }>();
 const emit = defineEmits<{ (e: "select", path: string): void }>();
@@ -22,20 +23,6 @@ const dirIcon = h("svg", { width: 14, height: 14, viewBox: "0 0 14 14", fill: "n
     d: "M1.5 3a1 1 0 011-1h3.586a1 1 0 01.707.293l1.414 1.414a1 1 0 00.707.293h3.586a1 1 0 011 1V11a1 1 0 01-1 1h-9a1 1 0 01-1-1V3z",
     stroke: "currentColor",
     "stroke-width": "1.2",
-  }),
-]);
-
-const fileIcon = h("svg", { width: 14, height: 14, viewBox: "0 0 14 14", fill: "none" }, [
-  h("path", {
-    d: "M4 1.5h4.586a1 1 0 01.707.293l2.414 2.414a1 1 0 01.293.707V12a1 1 0 01-1 1H4a1 1 0 01-1-1V2.5a1 1 0 011-1z",
-    stroke: "currentColor",
-    "stroke-width": "1.2",
-  }),
-  h("path", {
-    d: "M8.5 1.5v3h3",
-    stroke: "currentColor",
-    "stroke-width": "1.2",
-    "stroke-linejoin": "round",
   }),
 ]);
 
@@ -65,7 +52,9 @@ function toTree(nodes: FileNodeDto[]): TreeOption[] {
     isLeaf: n.type === "file",
     prefix: () =>
       h("span", { class: n.type === "directory" ? "tree-icon dir" : "tree-icon file" }, [
-        n.type === "directory" ? dirIcon : fileIcon,
+        n.type === "directory"
+          ? dirIcon
+          : h(FileTypeIcon, { filename: n.name, size: 14 }),
       ]),
     suffix: () =>
       h("span", {
