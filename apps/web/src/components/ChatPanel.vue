@@ -24,6 +24,7 @@ import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
+import { formatTokenCount } from "../utils/format-token-count.js";
 import {
   annotateChatRuns,
   formatProcessingDuration,
@@ -341,13 +342,10 @@ watch(
 );
 
 const tokenLabel = computed(() => {
-  const fmt = (n: number) => {
-    const rounded = Math.round(n);
-    if (rounded <= 0) return "0";
-    if (rounded >= 1000) return `${(rounded / 1000).toFixed(1)}K`;
-    return String(rounded);
+  return {
+    input: formatTokenCount(displayedInput.value),
+    output: formatTokenCount(displayedOutput.value),
   };
-  return { input: fmt(displayedInput.value), output: fmt(displayedOutput.value) };
 });
 
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
