@@ -128,6 +128,30 @@ describe("buildAgentActivity", () => {
     expect(activity.items[0]).toMatchObject({ id: "call-failed", status: "failed" });
   });
 
+  it("keeps the overall run complete when a tool fails before a final response", () => {
+    const messages = [
+      activityMessage("a1", [{
+        kind: "tool_call",
+        toolCallId: "call-optional-failure",
+        name: "Read",
+        args: { file_path: "missing.md" },
+        status: "complete",
+        result: { isError: true, content: "file not found" },
+      }]),
+      {
+        ...assistant("a2", 12_000),
+        parts: [{ kind: "text" as const, text: "已根据可用信息完成分析。" }],
+      },
+    ];
+
+    const activity = buildAgentActivity("run:u1", messages, false, null);
+
+    expect(activity).toMatchObject({
+      status: "complete",
+      failedCount: 1,
+    });
+  });
+
   it("uses stable fallback labels for unknown tools", () => {
     const activity = buildAgentActivity("run:u1", [activityMessage("a1", [{
       kind: "tool_call",

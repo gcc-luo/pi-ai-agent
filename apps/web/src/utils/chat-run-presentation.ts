@@ -331,6 +331,7 @@ export function buildAgentActivity(
   }
   const failedCount = tools.filter((item) => item.status === "failed").length;
   const completedCount = tools.filter((item) => item.status !== "running").length;
+  const hasFinalResponse = responseIndex !== null;
   const currentTool = [...tools].reverse().find((item) => item.status === "running")
     ?? tools.at(-1);
   const storedDuration = storedDurationMs(messages.at(-1) ?? {
@@ -349,7 +350,7 @@ export function buildAgentActivity(
         ? "running"
         : outcome === "interrupted"
           ? "interrupted"
-          : outcome === "failed" || failedCount > 0
+          : outcome === "failed" || (failedCount > 0 && !hasFinalResponse)
             ? "failed"
             : "complete",
     durationMs: isActive ? (activeElapsedMs ?? 0) : storedDuration,
