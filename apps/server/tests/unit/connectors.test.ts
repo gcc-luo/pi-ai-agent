@@ -65,6 +65,19 @@ describe("connector system", () => {
     expect(service.searchTools("read", "workspace-b")).toHaveLength(0);
     expect(defaultRisk("read_data")).toBe("low");
     expect(defaultPolicy(defaultRisk("write_data"))).toBe("ask");
+    expect(defaultRisk("doc.insert_attachment")).toBe("medium");
+    expect(defaultRisk("mystery_action")).toBe("unknown");
+    expect(defaultPolicy(defaultRisk("mystery_action"))).toBe("ask");
+  });
+
+  it("refreshes inferred risk when a discovered tool is seen again", () => {
+    const connector = create();
+    repository.upsertTools(connector.id, [{ name: "doc.insert_attachment" }]);
+    db.prepare("UPDATE connector_tools SET risk_level = 'unknown' WHERE connector_id = ? AND tool_name = ?").run(connector.id, "doc.insert_attachment");
+
+    repository.upsertTools(connector.id, [{ name: "doc.insert_attachment" }]);
+
+    expect(repository.findTool(connector.id, "doc.insert_attachment")?.riskLevel).toBe("medium");
   });
 
   it("matches connector tools using natural-language query terms", async () => {

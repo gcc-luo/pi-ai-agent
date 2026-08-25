@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { NButton, NEmpty, NInput, NModal, NSelect, NSpin, NSwitch, NTag, createDiscreteApi } from "naive-ui";
-import type { BuiltinConnectorDto, ConnectorDto, ConnectorToolPolicy, CreateConnectorInput, McpConnectorConfig } from "@pi-web-ui/shared";
+import type { BuiltinConnectorDto, ConnectorDto, ConnectorRiskLevel, ConnectorToolPolicy, CreateConnectorInput, McpConnectorConfig } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
 import { useConnectorStore } from "../stores/connector.js";
 
@@ -154,6 +154,12 @@ function statusText(item: ConnectorDto) {
   if (!item.enabled) return "已连接，未启用";
   return ({ connected: "已连接", connecting: "连接中", auth_required: "需要重新授权", error: "连接异常", disconnected: item.lastConnectedAt ? "已连接，当前空闲" : "等待测试", not_configured: "未配置", degraded: "连接不稳定", disabled: "未启用" } as Record<string, string>)[item.status] ?? item.status;
 }
+
+function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "error" {
+  if (riskLevel === "high") return "error";
+  if (riskLevel === "medium" || riskLevel === "unknown") return "warning";
+  return "success";
+}
 </script>
 
 <template>
@@ -235,7 +241,7 @@ function statusText(item: ConnectorDto) {
           <div v-for="tool in store.tools[detail.id]" :key="tool.name" class="tool-row">
             <NSwitch size="small" :value="tool.enabled" @update:value="updateTool(detail!, tool.name, { enabled: $event })" />
             <div class="tool-main"><strong>{{ tool.title || tool.name }}</strong><small>{{ tool.description || tool.name }}</small></div>
-            <NTag size="small" :type="tool.riskLevel === 'high' ? 'error' : tool.riskLevel === 'medium' ? 'warning' : 'success'">{{ tool.riskLevel }}</NTag>
+            <NTag size="small" :type="riskTagType(tool.riskLevel)" :title="tool.riskLevel === 'unknown' ? '系统无法判断该能力的风险等级，请谨慎允许' : undefined">{{ tool.riskLevel }}</NTag>
             <NSelect size="small" class="policy" :value="tool.policy" :options="[{ label: '允许', value: 'allow' }, { label: '询问', value: 'ask' }, { label: '禁止', value: 'deny' }]" @update:value="updateTool(detail!, tool.name, { policy: $event })" />
           </div>
         </section>

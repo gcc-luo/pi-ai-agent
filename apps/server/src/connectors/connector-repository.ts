@@ -13,10 +13,15 @@ const parse = (value: string | null | undefined, fallback: unknown = null) => {
 };
 
 export function defaultRisk(name: string): ConnectorToolDto["riskLevel"] {
-  const lower = name.toLowerCase();
-  if (/delete|remove|drop|execute|publish|transfer|payment|destroy|revoke/.test(lower)) return "high";
-  if (/create|update|write|upload|send|edit|move|rename/.test(lower)) return "medium";
-  if (/get|list|search|read|query|fetch|find|describe/.test(lower)) return "low";
+  const tokens = name.toLowerCase()
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  const has = (...keywords: string[]) => keywords.some((keyword) => tokens.includes(keyword));
+
+  if (has("delete", "remove", "drop", "execute", "publish", "transfer", "payment", "destroy", "revoke")) return "high";
+  if (has("create", "update", "write", "upload", "send", "edit", "move", "rename", "insert", "append", "add", "set", "replace", "patch", "modify")) return "medium";
+  if (has("get", "list", "search", "read", "query", "fetch", "find", "describe")) return "low";
   return "unknown";
 }
 
@@ -95,7 +100,8 @@ export class ConnectorRepository {
       (id,connector_id,tool_name,title,description,input_schema_json,output_schema_json,schema_hash,enabled,direct_tool,risk_level,discovered_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,1,0,?,?,?) ON CONFLICT(connector_id,tool_name) DO UPDATE SET
       title=excluded.title,description=excluded.description,input_schema_json=excluded.input_schema_json,
-      output_schema_json=excluded.output_schema_json,schema_hash=excluded.schema_hash,updated_at=excluded.updated_at`);
+      output_schema_json=excluded.output_schema_json,schema_hash=excluded.schema_hash,
+      risk_level=excluded.risk_level,updated_at=excluded.updated_at`);
     const policy = this.db.prepare(`INSERT OR IGNORE INTO connector_tool_policies
       (id,connector_id,tool_name,scope_type,scope_id,policy,created_at,updated_at) VALUES (?,?,?,'connector','',?,?,?)`);
     const tx = this.db.transaction(() => {
