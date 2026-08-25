@@ -523,6 +523,41 @@ const MIGRATIONS = [
         ON connector_instances(builtin_key) WHERE builtin_key IS NOT NULL;
     `,
   },
+  {
+    // Some databases recorded 020_kb_reliability_multimodal before its
+    // segment_uid column was included. Keep the repair separate so a
+    // duplicate-column safe migration cannot skip index/data backfilling.
+    name: "023_kb_chunk_segment_uid",
+    sql: `
+      ALTER TABLE kb_chunks ADD COLUMN segment_uid TEXT;
+    `,
+    safe: true,
+  },
+  {
+    name: "024_kb_chunk_segment_uid_index",
+    sql: `
+      UPDATE kb_chunks
+      SET segment_uid = file_id || ':' || generation || ':' || seq
+      WHERE segment_uid IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_chunks_segment_uid
+        ON kb_chunks(segment_uid);
+    `,
+  },
+  {
+    name: "025_kb_file_active_revision",
+    sql: `
+      ALTER TABLE kb_files ADD COLUMN active_revision_id TEXT;
+    `,
+    safe: true,
+  },
+  {
+    name: "026_kb_file_active_revision_backfill",
+    sql: `
+      UPDATE kb_files
+      SET active_revision_id = 'legacy:' || id || ':' || parse_generation
+      WHERE active_revision_id IS NULL AND parse_generation > 0;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

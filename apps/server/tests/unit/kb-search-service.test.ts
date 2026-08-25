@@ -70,6 +70,18 @@ describe("KbSearchService", () => {
     expect(result.hits.map((hit) => hit.fileName).sort()).toEqual(["all-a.txt", "selected-b.txt"]);
   });
 
+  it("does not duplicate an FTS hit in the short-query fallback", async () => {
+    const kb = kbs.create({ name: "短查询去重" });
+    const fileId = addFile(kb.id, "诗歌.txt", "暮色轻抚山岗，晚风携着花香。");
+    const chunk = chunks.listByFile(fileId, 1)[0]!;
+
+    const result = await search.search({ query: "暮色", scopes: [{ kbId: kb.id }], limit: 5 });
+
+    expect(result.hits).toHaveLength(1);
+    expect(result.hits[0]?.chunkId).toBe(chunk.id);
+    expect(result.hits[0]?.score).toBeGreaterThan(0);
+  });
+
   it("never compares vectors from another model space", async () => {
     const kb = kbs.create({ name: "向量隔离" });
     const fileId = addFile(kb.id, "only-wrong-space.txt", "与查询没有关键词重合");

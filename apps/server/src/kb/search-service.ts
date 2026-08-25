@@ -55,10 +55,18 @@ export class KbSearchService {
     // ── Step 1b: instr fallback for short queries (≤2 CJK chars) ──
     if (ftsCandidates.length < limit && isShortCjkQuery(query)) {
       const t1b = performance.now();
-      const instrHits = this.instrFallback(query, scopes, limit - ftsCandidates.length);
-      if (instrHits.length > 0) {
-        console.log(`[KB Search] Step 1b/instr fallback: +${instrHits.length} hits (${Math.round(performance.now() - t1b)}ms)`);
-        ftsCandidates.push(...instrHits);
+      const instrHits = this.instrFallback(query, scopes, limit);
+      const existingChunkIds = new Set(ftsCandidates.map((candidate) => candidate.hit.chunkId));
+      let added = 0;
+      for (const candidate of instrHits) {
+        if (existingChunkIds.has(candidate.hit.chunkId)) continue;
+        ftsCandidates.push(candidate);
+        existingChunkIds.add(candidate.hit.chunkId);
+        added += 1;
+        if (ftsCandidates.length >= limit) break;
+      }
+      if (added > 0) {
+        console.log(`[KB Search] Step 1b/instr fallback: +${added} hits (${Math.round(performance.now() - t1b)}ms)`);
       }
     }
 
