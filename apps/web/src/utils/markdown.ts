@@ -29,10 +29,22 @@ function wrapCodeBlocks(html: string): string {
   );
 }
 
+// Keep the table element's native layout model so the browser calculates one
+// shared column grid for the header and body. Horizontal scrolling belongs on
+// a wrapper; setting display:block on <table> splits its row groups into
+// independent anonymous tables and makes their columns drift apart.
+function wrapTables(html: string): string {
+  return html.replace(
+    /<table([^>]*)>([\s\S]*?)<\/table>/g,
+    (_match, attributes: string, body: string) =>
+      `<div class="markdown-table-wrap" tabindex="0"><table${attributes}>${body}</table></div>`,
+  );
+}
+
 export function renderMarkdown(text: string): string {
   if (!text) return "";
   const raw = marked.parse(text) as string;
-  return DOMPurify.sanitize(wrapCodeBlocks(raw), {
+  return DOMPurify.sanitize(wrapTables(wrapCodeBlocks(raw)), {
     ADD_ATTR: ["target", "rel"],
   });
 }

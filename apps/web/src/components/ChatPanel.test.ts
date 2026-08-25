@@ -34,4 +34,13 @@ describe("ChatPanel assistant presentation", () => {
     expect(source).not.toContain("messages.value.map((m) => m.parts.length)");
     expect(source).toContain("liveTextSignature");
   });
+
+  it("uses one native table grid for markdown headers and body rows", async () => {
+    const source = await readFile(componentPath, "utf8");
+
+    expect(source).toContain(".msg-content :deep(.markdown-table-wrap)");
+    expect(source).toContain("display: table-header-group;");
+    expect(source).toContain("display: table-row-group;");
+    expect(source).not.toContain(".msg-content :deep(thead),\n.msg-content :deep(tbody),");
+  });
 });

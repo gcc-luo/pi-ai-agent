@@ -2063,16 +2063,27 @@ const pendingTipLabel = computed(() => {
   color: var(--accent);
 }
 
+.msg-content :deep(.markdown-table-wrap) {
+  max-width: 100%;
+  margin: 0.4em 0 0.85em;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+}
+
 .msg-content :deep(table) {
   border-collapse: collapse;
-  margin: 0.4em 0 0.85em;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
   font-size: 12.5px;
-  display: block;
-  overflow-x: auto;
-  max-width: 100%;
+  display: table;
 }
-.msg-content :deep(thead),
-.msg-content :deep(tbody),
+.msg-content :deep(thead) {
+  display: table-header-group;
+}
+.msg-content :deep(tbody) {
+  display: table-row-group;
+}
 .msg-content :deep(tr) {
   display: table-row;
 }

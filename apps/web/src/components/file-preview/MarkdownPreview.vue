@@ -69,7 +69,11 @@ const html = computed(() => renderMarkdown(props.content));
   border-left: 2px solid var(--accent);
   color: var(--text-secondary);
 }
-.md-preview :deep(table) { border-collapse: collapse; margin: 0.4em 0 0.85em; font-size: 13px; }
+.md-preview :deep(.markdown-table-wrap) { max-width: 100%; margin: 0.4em 0 0.85em; overflow-x: auto; border-radius: var(--radius-sm); }
+.md-preview :deep(table) { display: table; width: max-content; min-width: 100%; border-collapse: collapse; margin: 0; font-size: 13px; }
+.md-preview :deep(thead) { display: table-header-group; }
+.md-preview :deep(tbody) { display: table-row-group; }
+.md-preview :deep(tr) { display: table-row; }
 .md-preview :deep(th),
 .md-preview :deep(td) { padding: 6px 10px; border: 1px solid var(--border-default); }
 .md-preview :deep(th) { background: var(--bg-elevated); font-weight: 600; }
