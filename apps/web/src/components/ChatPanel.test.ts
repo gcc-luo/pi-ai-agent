@@ -24,6 +24,16 @@ describe("ChatPanel assistant presentation", () => {
     expect(toggleSource).not.toContain("scrollToBottom");
   });
 
+  it("keeps only the scroll-to-bottom control", async () => {
+    const source = await readFile(componentPath, "utf8");
+
+    expect(source).toContain(".scroll-to-bottom-btn");
+    expect(source).toContain("handleClickScrollToBottom");
+    expect(source).not.toContain("scroll-to-top-btn");
+    expect(source).not.toContain("showScrollTopButton");
+    expect(source).not.toContain("scrollToTop");
+  });
+
   it("does not follow tool-part updates and delegates process rendering to AgentActivity", async () => {
     const source = await readFile(componentPath, "utf8");
 

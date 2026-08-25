@@ -237,7 +237,6 @@ const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
 const expandedRunIds = ref<Set<string>>(new Set());
 const durationClock = ref(Date.now());
 const showScrollButton = ref(false);
-const showScrollTopButton = ref(false);
 const followLiveOutput = ref(true);
 const newContentBelow = ref(false);
 let durationTimer: number | null = null;
@@ -483,12 +482,6 @@ function scrollToBottom() {
   }
 }
 
-function scrollToTop() {
-  if (messagesEl.value) {
-    messagesEl.value.scrollTo({ top: 0, behavior: "smooth" });
-  }
-}
-
 // ─── Scroll-to-bottom button ───────────────────────────────────────────
 // ─── Conversation outline (user questions) ─────────────────────────────
 const showOutline = ref(false);
@@ -621,7 +614,6 @@ function onMessagesScroll() {
   // Show when user has scrolled up more than 200px from the bottom
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
   showScrollButton.value = distanceFromBottom > 200;
-  showScrollTopButton.value = el.scrollTop > 200;
   followLiveOutput.value = distanceFromBottom < 64;
   if (followLiveOutput.value) newContentBelow.value = false;
 }
@@ -1194,20 +1186,6 @@ const pendingTipLabel = computed(() => {
 
       <Transition name="scroll-btn-fade">
         <button
-          v-if="showScrollTopButton"
-          class="scroll-to-top-btn"
-          :title="t('chat.scrollToTop')"
-          :aria-label="t('chat.scrollToTop')"
-          @click="scrollToTop"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-      </Transition>
-
-      <Transition name="scroll-btn-fade">
-        <button
           v-if="showScrollButton"
           class="scroll-to-bottom-btn"
           :class="{ 'has-new-content': newContentBelow }"
@@ -1490,31 +1468,6 @@ const pendingTipLabel = computed(() => {
 }
 
 .scroll-to-bottom-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-lg);
-}
-
-.scroll-to-top-btn {
-  position: absolute;
-  right: 24px;
-  top: 16px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: 50%;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  transition: all var(--transition-fast);
-  z-index: 10;
-}
-
-.scroll-to-top-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
   box-shadow: var(--shadow-lg);
@@ -2736,7 +2689,7 @@ const pendingTipLabel = computed(() => {
   z-index: 9;
   display: flex;
   flex-direction: column;
-  width: min(360px, 88vw);
+  width: min(320px, 88vw);
   max-width: none;
   background: rgba(var(--bg-deep-rgb), 0.92);
   backdrop-filter: blur(12px);
