@@ -58,6 +58,12 @@ import { PluginManager } from "./plugins/plugin-manager.js";
 import { pluginsRoutes } from "./routes/plugins.js";
 import { PluginPermissionService } from "./plugins/plugin-permission-service.js";
 import { backupsRoutes } from "./routes/backups.js";
+import path from "node:path";
+import { ConnectorRepository } from "./connectors/connector-repository.js";
+import { CredentialVault } from "./connectors/credential-vault.js";
+import { McpRuntimeManager } from "./connectors/mcp-runtime.js";
+import { ConnectorService } from "./connectors/connector-service.js";
+import { connectorsRoutes } from "./routes/connectors.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -97,6 +103,8 @@ export async function buildConfiguredApp(config: Config) {
   const channels = new ChannelRepository(db);
   const channelConversations = new ChannelConversationRepository(db);
   const plugins = new PluginRepository(db);
+  const connectorRepository = new ConnectorRepository(db);
+  const credentialVault = new CredentialVault(path.join(path.dirname(config.dbPath), "credentials"));
 
   // Seed preset experts (idempotent — adds only presets not yet present).
   experts.seedPresets([
@@ -149,6 +157,9 @@ export async function buildConfiguredApp(config: Config) {
   (app as any).pluginManager = pluginManager;
   const pluginPermissions = new PluginPermissionService();
   (app as any).pluginPermissions = pluginPermissions;
+  const connectorRuntime = new McpRuntimeManager(credentialVault, app.log);
+  const connectorService = new ConnectorService(connectorRepository, credentialVault, connectorRuntime);
+  (app as any).connectorService = connectorService;
   let browserExtensionPath = fileURLToPath(
     new URL("./agent/extensions/browser-tools.js", import.meta.url),
   );
@@ -161,6 +172,10 @@ export async function buildConfiguredApp(config: Config) {
   if (!fs.existsSync(computerExtensionPath)) {
     computerExtensionPath = computerExtensionPath.replace(/\.js$/, ".ts");
   }
+  let connectorExtensionPath = fileURLToPath(
+    new URL("./agent/extensions/connector-tools.js", import.meta.url),
+  );
+  if (!fs.existsSync(connectorExtensionPath)) connectorExtensionPath = connectorExtensionPath.replace(/\.js$/, ".ts");
   const processManager = new ProcessManager({
     command: config.piCommand,
     args: config.piArgs,
@@ -176,6 +191,8 @@ export async function buildConfiguredApp(config: Config) {
       "computer-use": computerExtensionPath,
     },
     pluginEndpoint: `http://127.0.0.1:${config.port}/api/internal/plugins`,
+    connectorExtensionPath,
+    connectorEndpoint: `http://127.0.0.1:${config.port}/api`,
     isPluginEnabled: (pluginId) => {
       const plugin = pluginManager.find(pluginId);
       return plugin?.enabled === true && plugin.status !== "unavailable";
@@ -222,6 +239,7 @@ export async function buildConfiguredApp(config: Config) {
     await processManager.shutdown();
     pluginPermissions.shutdown();
     await pluginManager.shutdown();
+    await connectorRuntime.shutdown();
     try {
       const { getRegistry } = await import("./channels/registry.js");
       await getRegistry().stopAll();
@@ -248,6 +266,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(expertsRoutes, { prefix: "/api/experts" });
   await app.register(channelsRoutes, { prefix: "/api/channels" });
   await app.register(backupsRoutes, { prefix: "/api/backups" });
+  await app.register(connectorsRoutes, { prefix: "/api" });
 
   // Rebuild channel adapters from persisted configs so test/send works
   // immediately after restart without a re-save.

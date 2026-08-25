@@ -17,6 +17,7 @@ const ExpertView = defineAsyncComponent(() => import("./components/ExpertView.vu
 const ScheduledTasksView = defineAsyncComponent(() => import("./components/ScheduledTasksView.vue"));
 const ChannelView = defineAsyncComponent(() => import("./components/ChannelView.vue"));
 const PluginManagerView = defineAsyncComponent(() => import("./components/PluginManagerView.vue"));
+const ConnectorView = defineAsyncComponent(() => import("./components/ConnectorView.vue"));
 import { useProjectStore } from "./stores/project.js";
 import { useSessionStore } from "./stores/session.js";
 import { useConnectionStore } from "./stores/connection.js";
@@ -37,7 +38,7 @@ const { t, currentLocale } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
-const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
+const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 const showOnboardingProject = ref(false);
 
 
@@ -302,6 +303,7 @@ function closePreview() {
                     :session-id="selectedSessionId"
                     :project-id="selectedProjectId!"
                     @select-file="filePath = $event"
+                    @manage-connectors="activeNav = 'connectors'"
                   />
                 </div>
               </div>
@@ -360,6 +362,7 @@ function closePreview() {
       <ModelPanel v-else-if="activeNav === 'model'" />
       <SkillStoreView v-else-if="activeNav === 'skill-store'" />
       <PluginManagerView v-else-if="activeNav === 'plugins'" />
+      <ConnectorView v-else-if="activeNav === 'connectors'" :project-id="selectedProjectId" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
       <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
       <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToSession" />

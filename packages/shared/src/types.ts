@@ -188,6 +188,118 @@ export interface PluginAuditDto {
   createdAt: number;
 }
 
+// ─── Connectors ───
+
+export type ConnectorTransport = "stdio" | "streamable_http" | "sse";
+export type ConnectorScopeType = "user" | "workspace";
+export type ConnectorLifecycle = "lazy" | "eager" | "keep_alive";
+export type ConnectorStatus =
+  | "disabled" | "not_configured" | "connecting" | "connected"
+  | "degraded" | "disconnected" | "auth_required" | "error";
+export type ConnectorToolPolicy = "allow" | "ask" | "deny";
+export type ConnectorRiskLevel = "low" | "medium" | "high" | "unknown";
+
+export type ConnectorConfigValueRef =
+  | { source: "literal"; value: string }
+  | { source: "credential"; credentialId: string; format?: string }
+  | { source: "env"; name: string };
+
+export interface McpConnectorConfig {
+  transport: ConnectorTransport;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  url?: string;
+  env?: Record<string, ConnectorConfigValueRef>;
+  headers?: Record<string, ConnectorConfigValueRef>;
+  timeoutMs?: number;
+  idleTimeoutMs?: number;
+}
+
+export interface ConnectorDto {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string;
+  protocol: "mcp";
+  builtinKey: string | null;
+  scopeType: ConnectorScopeType;
+  scopeId: string | null;
+  enabled: boolean;
+  lifecycle: ConnectorLifecycle;
+  config: McpConnectorConfig;
+  status: ConnectorStatus;
+  toolCount: number;
+  lastConnectedAt: number | null;
+  lastErrorCode: string | null;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BuiltinConnectorDto {
+  key: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  authUrl: string;
+  accountNote: string;
+  capabilities: string[];
+  connected: boolean;
+  instanceId: string | null;
+}
+
+export interface ConnectorToolDto {
+  connectorId: string;
+  name: string;
+  title: string | null;
+  description: string | null;
+  inputSchema: unknown;
+  outputSchema: unknown;
+  enabled: boolean;
+  policy: ConnectorToolPolicy;
+  riskLevel: ConnectorRiskLevel;
+  directTool: boolean;
+  updatedAt: number;
+}
+
+export interface ConnectorAuditDto {
+  id: string;
+  sessionId: string | null;
+  workspaceId: string | null;
+  connectorId: string;
+  toolName: string;
+  source: string | null;
+  policy: ConnectorToolPolicy | null;
+  approval: string | null;
+  status: string;
+  durationMs: number | null;
+  errorCode: string | null;
+  argumentKeys: string[];
+  createdAt: number;
+}
+
+export interface ConnectorTestResult {
+  ok: boolean;
+  toolCount: number;
+  tools: ConnectorToolDto[];
+  errorCode?: string;
+  error?: string;
+  technicalDetail?: string;
+}
+
+export interface CreateConnectorInput {
+  name: string;
+  description?: string;
+  icon?: string;
+  scopeType: ConnectorScopeType;
+  scopeId?: string | null;
+  lifecycle?: ConnectorLifecycle;
+  config: McpConnectorConfig;
+  credentials?: Record<string, string>;
+}
+
 export interface TrashItemDto {
   kind: "project" | "session";
   id: string;

@@ -9,11 +9,11 @@ import { useUpdateStore } from "../stores/update.js";
 import { isTauri } from "../utils/platform.js";
 
 defineProps<{
-  activeNav: "chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash";
+  activeNav: "chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash";
 }>();
 
 defineEmits<{
-  (e: "navigate", nav: "chat" | "model" | "skill-store" | "plugins" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash"): void;
+  (e: "navigate", nav: "chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash"): void;
 }>();
 
 const connection = useConnectionStore();
@@ -97,6 +97,11 @@ watch(() => updateStore.status, (newStatus) => {
           <path d="M9 14.2V16M4 6h10" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
         </svg>
         <span class="nav-label">{{ t('nav.plugins') }}</span>
+      </button>
+
+      <button class="nav-item" :class="{ active: activeNav === 'connectors' }" @click="$emit('navigate', 'connectors')">
+        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M6 3v3M12 3v3M5 6h8v3a4 4 0 01-4 4H8a3 3 0 01-3-3V6zM9 13v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="nav-label">{{ t('nav.connectors') }}</span>
       </button>
 
       <button

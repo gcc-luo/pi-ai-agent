@@ -19,6 +19,7 @@
     "@fastify/cors": "11.3.0",
     "@fastify/multipart": "10.1.0",
     "@fastify/websocket": "11.3.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@nut-tree-fork/nut-js": "4.2.6",
     "@pi-web-ui/shared": "workspace:*",
     "@wechatbot/wechatbot": "2.2.0",

@@ -436,6 +436,93 @@ const MIGRATIONS = [
          OR kb.embedding_model_id IS NOT NULL;
     `,
   },
+  {
+    name: "021_connectors",
+    sql: `
+      CREATE TABLE connector_instances (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        icon TEXT NOT NULL DEFAULT '🔌',
+        protocol TEXT NOT NULL DEFAULT 'mcp',
+        scope_type TEXT NOT NULL,
+        scope_id TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        lifecycle TEXT NOT NULL DEFAULT 'lazy',
+        config_json TEXT NOT NULL,
+        config_version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_connected_at INTEGER,
+        last_error_code TEXT,
+        last_error TEXT
+      );
+      CREATE INDEX idx_connector_scope ON connector_instances(scope_type, scope_id);
+
+      CREATE TABLE connector_credential_bindings (
+        id TEXT PRIMARY KEY,
+        connector_id TEXT NOT NULL REFERENCES connector_instances(id) ON DELETE CASCADE,
+        field_path TEXT NOT NULL,
+        credential_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        UNIQUE(connector_id, field_path)
+      );
+
+      CREATE TABLE connector_tools (
+        id TEXT PRIMARY KEY,
+        connector_id TEXT NOT NULL REFERENCES connector_instances(id) ON DELETE CASCADE,
+        tool_name TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
+        input_schema_json TEXT,
+        output_schema_json TEXT,
+        schema_hash TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        direct_tool INTEGER NOT NULL DEFAULT 0,
+        risk_level TEXT NOT NULL DEFAULT 'unknown',
+        discovered_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(connector_id, tool_name)
+      );
+
+      CREATE TABLE connector_tool_policies (
+        id TEXT PRIMARY KEY,
+        connector_id TEXT NOT NULL REFERENCES connector_instances(id) ON DELETE CASCADE,
+        tool_name TEXT NOT NULL,
+        scope_type TEXT NOT NULL DEFAULT 'connector',
+        scope_id TEXT,
+        policy TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(connector_id, tool_name, scope_type, scope_id)
+      );
+
+      CREATE TABLE connector_audits (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        workspace_id TEXT,
+        connector_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        source TEXT,
+        policy TEXT,
+        approval TEXT,
+        status TEXT NOT NULL,
+        duration_ms INTEGER,
+        error_code TEXT,
+        argument_keys_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_connector_audit_created ON connector_audits(created_at DESC);
+    `,
+  },
+  {
+    name: "022_builtin_connectors",
+    sql: `
+      ALTER TABLE connector_instances ADD COLUMN builtin_key TEXT;
+      CREATE UNIQUE INDEX idx_connector_builtin_key
+        ON connector_instances(builtin_key) WHERE builtin_key IS NOT NULL;
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

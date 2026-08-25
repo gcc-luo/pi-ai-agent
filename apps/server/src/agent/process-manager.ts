@@ -26,6 +26,8 @@ export interface ProcessManagerOptions {
   browserEndpoint?: string;
   pluginExtensions?: Record<string, string>;
   pluginEndpoint?: string;
+  connectorExtensionPath?: string;
+  connectorEndpoint?: string;
   isPluginEnabled?: (pluginId: string) => boolean;
   validateWorkdir?: boolean;
   logger: FastifyBaseLogger;
@@ -152,6 +154,9 @@ export class ProcessManager extends EventEmitter {
   private browserEndpoint?: string;
   private pluginExtensions: Record<string, string>;
   private pluginEndpoint?: string;
+  private connectorExtensionPath?: string;
+  private connectorEndpoint?: string;
+  private connectorTokens = new Map<string, string>();
   private pluginTokens = new Map<string, Map<string, string>>();
   private isPluginEnabled: (pluginId: string) => boolean;
   private validateWorkdir: boolean;
@@ -196,6 +201,8 @@ export class ProcessManager extends EventEmitter {
       ...(opts.pluginExtensions ?? {}),
     };
     this.pluginEndpoint = opts.pluginEndpoint ?? opts.browserEndpoint;
+    this.connectorExtensionPath = opts.connectorExtensionPath;
+    this.connectorEndpoint = opts.connectorEndpoint ?? opts.pluginEndpoint ?? opts.browserEndpoint;
     this.isPluginEnabled = opts.isPluginEnabled ?? (() => true);
     this.validateWorkdir = opts.validateWorkdir ?? true;
   }
@@ -247,11 +254,19 @@ export class ProcessManager extends EventEmitter {
       const extensionPath = this.pluginExtensions[pluginId];
       if (extensionPath) extraArgs.push("--extension", extensionPath);
     }
+    if (this.connectorExtensionPath) extraArgs.push("--extension", this.connectorExtensionPath);
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);
     const piSession = preparePiSession(this.sessionRootDir, input.sessionId);
 
     const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
+    if (this.connectorExtensionPath && this.connectorEndpoint) {
+      const connectorToken = crypto.randomBytes(32).toString("hex");
+      this.connectorTokens.set(input.sessionId, connectorToken);
+      env.PI_WEB_UI_CONNECTOR_ENDPOINT = this.connectorEndpoint;
+      env.PI_WEB_UI_CONNECTOR_TOKEN = connectorToken;
+      env.PI_WEB_UI_SESSION_ID = input.sessionId;
+    }
     if (this.npmRegistry) env.npm_config_registry = this.npmRegistry;
     if (cfg?.apiKey) {
       env.PI_WEB_UI_MODEL_API_KEY = cfg.apiKey;
@@ -358,6 +373,7 @@ export class ProcessManager extends EventEmitter {
       if (issuedPluginTokens && this.pluginTokens.get(input.sessionId) === issuedPluginTokens) {
         this.pluginTokens.delete(input.sessionId);
       }
+      this.connectorTokens.delete(input.sessionId);
       (proc as unknown as EventEmitter).emit("exit", code);
     };
     child.on("exit", reportExit);
@@ -413,8 +429,16 @@ export class ProcessManager extends EventEmitter {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
   }
 
+  validateConnectorToken(sessionId: string, token: string | undefined): boolean {
+    if (!token) return false;
+    const expected = this.connectorTokens.get(sessionId);
+    if (!expected || expected.length !== token.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+  }
+
   revokePluginToken(sessionId: string): void {
     this.pluginTokens.delete(sessionId);
+    this.connectorTokens.delete(sessionId);
   }
 
   revokePluginTokens(sessionIds: Iterable<string>): void {
@@ -425,5 +449,6 @@ export class ProcessManager extends EventEmitter {
     for (const p of this.procs.values()) p.kill();
     this.procs.clear();
     this.pluginTokens.clear();
+    this.connectorTokens.clear();
   }
 }

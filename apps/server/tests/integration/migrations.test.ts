@@ -19,6 +19,9 @@ describe("migrations", () => {
     expect(names).toContain("kb_asset_revisions");
     expect(names).toContain("kb_segment_vectors");
     expect(names).toContain("kb_parse_jobs");
+    expect(names).toContain("connector_instances");
+    expect(names).toContain("connector_tools");
+    expect(names).toContain("connector_audits");
   });
 
   it("is idempotent", () => {
@@ -43,5 +46,12 @@ describe("migrations", () => {
     expect(chunkColumns.map((column) => column.name)).toEqual(expect.arrayContaining([
       "segment_uid", "modality", "time_start_ms", "time_end_ms", "bbox_json",
     ]));
+  });
+
+  it("adds built-in connector identity without storing credentials", () => {
+    runMigrations(db);
+    const columns = db.prepare("PRAGMA table_info(connector_instances)").all() as { name: string }[];
+    expect(columns.map((column) => column.name)).toContain("builtin_key");
+    expect(columns.map((column) => column.name)).not.toContain("token");
   });
 });

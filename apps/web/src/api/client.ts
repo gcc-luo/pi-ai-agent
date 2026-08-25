@@ -6,6 +6,9 @@
   ArtifactItem, ArtifactValidation,
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
   PluginDto,
+  ConnectorDto, ConnectorToolDto, ConnectorAuditDto, ConnectorTestResult,
+  ConnectorToolPolicy, CreateConnectorInput,
+  BuiltinConnectorDto,
 } from "@pi-web-ui/shared";
 import { apiUrl, authHeaders } from "./endpoints.js";
 
@@ -48,9 +51,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error(`${method} ${path} failed: ${res.status}`);
         if (res.status === 204) return undefined as T;
-        return (await res.json()) as T;
+        const text = await res.text();
+        let data: unknown;
+        try { data = text ? JSON.parse(text) : undefined; } catch { data = text; }
+        if (!res.ok) {
+          const detail = data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : `${method} ${path} failed: ${res.status}`;
+          throw new Error(detail);
+        }
+        return data as T;
       } finally {
         clearTimeout(timer);
       }
@@ -91,6 +102,19 @@ export const api = {
   listPlugins: () => request<PluginDto[]>("GET", "/plugins"),
   updatePlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }) =>
     request<PluginDto>("PUT", `/plugins/${encodeURIComponent(id)}`, patch),
+
+  listConnectors: (workspaceId?: string) => request<ConnectorDto[]>("GET", `/connectors${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`),
+  listConnectorCatalog: () => request<BuiltinConnectorDto[]>("GET", "/connector-catalog"),
+  connectBuiltinConnector: (key: string, token: string) => request<ConnectorDto>("POST", `/connector-catalog/${encodeURIComponent(key)}/connect`, { token }),
+  getConnector: (id: string) => request<ConnectorDto>("GET", `/connectors/${encodeURIComponent(id)}`),
+  createConnector: (input: CreateConnectorInput) => request<ConnectorDto>("POST", "/connectors", input),
+  updateConnector: (id: string, patch: Partial<CreateConnectorInput> & { enabled?: boolean }) => request<ConnectorDto>("PUT", `/connectors/${encodeURIComponent(id)}`, patch),
+  deleteConnector: (id: string) => request<void>("DELETE", `/connectors/${encodeURIComponent(id)}`),
+  testConnector: (id: string) => request<ConnectorTestResult>("POST", `/connectors/${encodeURIComponent(id)}/test`),
+  reconnectConnector: (id: string) => request<{ ok: boolean }>("POST", `/connectors/${encodeURIComponent(id)}/reconnect`),
+  listConnectorTools: (id: string) => request<ConnectorToolDto[]>("GET", `/connectors/${encodeURIComponent(id)}/tools`),
+  updateConnectorTool: (id: string, name: string, patch: { enabled?: boolean; policy?: ConnectorToolPolicy }) => request<ConnectorToolDto>("PATCH", `/connectors/${encodeURIComponent(id)}/tools/${encodeURIComponent(name)}`, patch),
+  listConnectorAudits: (id: string) => request<ConnectorAuditDto[]>("GET", `/connectors/${encodeURIComponent(id)}/audits`),
   getSessionPlugins: (sessionId: string) =>
     request<{ selectedPluginIds: string[]; availablePlugins: PluginDto[] }>(
       "GET",

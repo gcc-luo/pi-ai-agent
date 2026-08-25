@@ -27,6 +27,7 @@ import type { ComputerSessionManager } from "../computer/computer-session-manage
 import type { PluginRepository } from "../db/repositories/plugin.js";
 import type { PluginManager } from "../plugins/plugin-manager.js";
 import type { PluginPermissionService } from "../plugins/plugin-permission-service.js";
+import type { ConnectorService } from "../connectors/connector-service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -59,5 +60,6 @@ declare module "fastify" {
     plugins: PluginRepository;
     pluginManager: PluginManager;
     pluginPermissions: PluginPermissionService;
+    connectorService: ConnectorService;
   }
 }

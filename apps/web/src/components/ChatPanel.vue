@@ -6,6 +6,7 @@ import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import SkillSelect from "./SkillSelect.vue";
 import PluginSelect from "./PluginSelect.vue";
+import ConnectorSelect from "./ConnectorSelect.vue";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
@@ -35,7 +36,7 @@ import ConfirmDialog from "./ConfirmDialog.vue";
 import AgentActivity from "./AgentActivity.vue";
 
 const props = defineProps<{ sessionId: string; projectId: string }>();
-const emit = defineEmits<{ (e: "select-file", path: string): void }>();
+const emit = defineEmits<{ (e: "select-file", path: string): void; (e: "manage-connectors"): void }>();
 const agent = useAgentStore();
 const { t } = useI18n();
 const skillStore = useSkillStore();
@@ -1296,6 +1297,7 @@ const pendingTipLabel = computed(() => {
         <ChatExpertPicker :session-id="sessionId" />
         <ChatKbPicker :session-id="sessionId" />
         <PluginSelect :session-id="sessionId" :disabled="isBusy" />
+        <ConnectorSelect :project-id="projectId" :disabled="isBusy" @manage="emit('manage-connectors')" />
         <span
           v-if="compaction"
           class="compaction-status"
