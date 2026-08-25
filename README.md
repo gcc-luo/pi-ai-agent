@@ -2,7 +2,7 @@
 
 PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/pi) 的开源 AI 编程助手。它提供桌面端图形界面，用于管理项目、会话、模型、文件和开发任务，也支持在浏览器中运行 Web 界面。
 
-[![Version](https://img.shields.io/badge/version-1.3.14-green.svg)](https://github.com/gcc-luo/pi-web-ui/releases)
+[![Version](https://img.shields.io/badge/version-1.3.17-green.svg)](https://github.com/gcc-luo/pi-web-ui/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 
 ## 功能概览
@@ -12,6 +12,7 @@ PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/
 - **项目与会话**：管理多个项目和会话，支持文件树、会话历史、子会话和回收站。
 - **知识库**：导入文档，使用全文检索和向量检索为会话提供上下文。
 - **技能与专家**：管理本地技能、技能市场、自定义专家和预设专家。
+- **连接器**：支持通过 MCP 连接外部服务，可为工具设置允许、询问或禁止策略，并展示低、中、高及未知风险等级。
 - **开发工具**：编码模式、内嵌终端、Artifact 展示和定时任务。
 - **消息渠道**：可选集成微信、钉钉等消息渠道。
 - **桌面应用**：基于 Tauri 2 构建 Windows、macOS 和 Linux 安装包。
