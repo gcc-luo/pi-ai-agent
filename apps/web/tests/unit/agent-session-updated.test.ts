@@ -28,6 +28,40 @@ describe("agent store session_updated event", () => {
     expect(agent.loadConfig).toHaveBeenCalledTimes(1);
   });
 
+  it("requests compaction without adding a user message and guards concurrent work", () => {
+    const agent = useAgentStore();
+    const send = vi.spyOn(wsClient, "send").mockReturnValue(true);
+    expect(agent.compact("s1")).toBe(true);
+    expect(send).toHaveBeenCalledWith({ type: "compact", sessionId: "s1" });
+    expect(agent.messagesFor("s1")).toEqual([]);
+    expect(agent.isSessionBusy("s1")).toBe(true);
+    expect(agent.compact("s1")).toBe(false);
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    send.mockReturnValue(false);
+    expect(agent.compact("s1")).toBe(false);
+    expect(agent.isSessionBusy("s1")).toBe(false);
+  });
+
+  it("restores a completion and its usage when replay no longer includes message_start", () => {
+    const agent = useAgentStore();
+    const end = { type: "message_end" as const, sessionId: "s1", messageId: "assistant-42", timestamp: 42, content: "done", metadata: { usage: { input: 100, output: 10 } } };
+    agent.handle(end);
+    agent.handle(end);
+    expect(agent.messagesFor("s1")).toHaveLength(1);
+    expect(agent.messagesFor("s1")[0]).toMatchObject({ createdAt: 42, status: "complete", metadata: end.metadata });
+  });
+
+  it("does not turn a compaction failure into a failed user prompt", () => {
+    const agent = useAgentStore();
+    vi.spyOn(wsClient, "send").mockReturnValue(true);
+    agent.appendUser("s1", "previous request");
+    agent.compact("s1");
+    agent.handle({ type: "error", sessionId: "s1", code: "project_workdir_missing", message: "missing" });
+    expect(agent.messagesFor("s1")[0]?.status).toBe("complete");
+    expect(agent.isSessionBusy("s1")).toBe(false);
+    expect(agent.compactionFor("s1")?.phase).toBe("failed");
+  });
+
   it("replaces the matching session in the list and keeps current in sync", async () => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
       status, headers: { "Content-Type": "application/json" },

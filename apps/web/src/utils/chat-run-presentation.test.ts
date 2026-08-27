@@ -25,6 +25,18 @@ const activityMessage = (id: string, parts: MessagePart[], durationMs?: number) 
 });
 
 describe("buildAgentActivity", () => {
+  it("aggregates all calls in each run including cache and retains plain-answer usage headers", () => {
+    const result = annotateChatRuns([
+      user("u1"),
+      { ...assistant("a1"), createdAt: 1, metadata: { usage: { input: 1000, cacheRead: 2000, output: 100 } } },
+      { ...assistant("a2"), createdAt: 2, metadata: { usage: { input: 4000, output: 200 } } },
+      user("u2"),
+      { ...assistant("a3"), createdAt: 3, metadata: { usage: { input: 8000, output: 500 } } },
+    ], { isBusy: false, activeElapsedMs: null, expandedRunIds: new Set() });
+    expect(result[1]!.activity?.usage).toMatchObject({ prompt: 7000, output: 300, modelCalls: 2 });
+    expect(result[4]!.activity?.usage).toMatchObject({ prompt: 8000, output: 500, modelCalls: 1 });
+    expect(result[4]!.showActivity).toBe(true);
+  });
   it("keeps intermediate assistant commentary in order and leaves the final answer outside", () => {
     const messages = [
       {

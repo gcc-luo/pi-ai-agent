@@ -39,6 +39,18 @@ export class RpcBridge extends EventEmitter {
     const sid = this.sessionId;
 
     if (input?.type === "response") {
+      // Manual compact RPC does not emit agent_settled. Its response is the
+      // terminal boundary, including errors before compaction_start.
+      if (input.command === "compact") {
+        const events: ServerEvent[] = [];
+        if (input.success === false) {
+          const error = input.error ?? "pi compaction failed";
+          events.push({ type: "context_compaction", sessionId: sid, phase: "failed", reason: "manual", error });
+          events.push({ type: "error", sessionId: sid, code: "pi_compact_failed", message: error });
+        }
+        events.push({ type: "agent_status", sessionId: sid, status: "idle" });
+        return events;
+      }
       if (input.success === false) {
         return [{
           type: "error",
@@ -281,6 +293,11 @@ export class RpcBridge extends EventEmitter {
       console.log(`[RpcBridge] write completed`);
     } catch (err: any) {
       console.error(`[RpcBridge] write failed: ${err.message}`);
+      if ((piCommand as any).type === "compact") {
+        this.emitEvent({ type: "context_compaction", sessionId: this.sessionId, phase: "failed", reason: "manual", error: err?.message ?? "failed to compact" });
+        this.emitEvent({ type: "agent_status", sessionId: this.sessionId, status: "idle" });
+        return;
+      }
       this.emitEvent({
         type: "error",
         sessionId: this.sessionId,

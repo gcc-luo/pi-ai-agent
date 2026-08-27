@@ -19,7 +19,19 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --transition-fast: 120ms var(--ease-out);
   --transition-normal: 200ms var(--ease-out);
+
+  --token-input-color: #2563eb;
+  --token-output-color: #b45309;
 }
+
+[data-theme="dark"],
+[data-theme="gray"] {
+  --token-input-color: #60a5fa;
+  --token-output-color: #fbbf24;
+}
+
+.token-arrow-in { color: var(--token-input-color); }
+.token-arrow-out { color: var(--token-output-color); }
 
 /* ─── Color Palette ─── */
 

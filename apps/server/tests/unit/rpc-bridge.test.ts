@@ -314,6 +314,19 @@ describe("RpcBridge", () => {
     ]);
   });
 
+  it("settles manual compaction on both success and rejected RPC responses", () => {
+    for (const success of [true, false]) {
+      const proc = makeProc();
+      const bridge = new RpcBridge(proc, "s1");
+      const onEvent = vi.fn();
+      bridge.onEvent(onEvent);
+      proc.stdout.write(JSON.stringify({ type: "response", command: "compact", success, error: success ? undefined : "nothing to compact" }) + "\n");
+      const events = onEvent.mock.calls.map(([event]) => event);
+      expect(events.at(-1)).toEqual({ type: "agent_status", sessionId: "s1", status: "idle" });
+      if (!success) expect(events).toContainEqual(expect.objectContaining({ type: "context_compaction", phase: "failed", reason: "manual" }));
+    }
+  });
+
   it("keeps the run working through overflow compaction until agent_settled", () => {
     const proc = makeProc();
     const bridge = new RpcBridge(proc, "s1");

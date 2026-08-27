@@ -10,23 +10,6 @@ import { SessionEventBuffer } from "../agent/session-event-buffer.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
-// Global instruction appended to every user message so the agent knows to
-// declare delivered files via the <artifacts> protocol. Only injected on the
-// wire — the persisted user message remains the text the user actually wrote.
-const ARTIFACT_INSTRUCTION = `<global-instruction>
-当你创建或生成文件时，必须在回复末尾使用 <artifacts> 标签声明交付物。
-格式：
-<artifacts>
-[{"path": "相对路径", "name": "文件名", "mimeType": "MIME类型"}]
-</artifacts>
-
-规则：
-1. path 为相对于项目根目录的路径
-2. 仅声明实际已写入磁盘的文件
-3. 多个文件放在同一个 JSON 数组中
-4. 不要声明中间产物或临时文件
-</global-instruction>`;
-
 export function deriveDefaultTitle(content: string): string | null {
   const normalized = content.trim().replace(/\s+/g, " ");
   if (!normalized) return null;
@@ -167,7 +150,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
 
       const project = app.projects.findById(session.projectId);
       if (!project) { send({ type: "error", sessionId: event.sessionId, code: "no_project", message: "project gone" }); return; }
-      if (event.type === "send" || event.type === "steer" || event.type === "switchModel") {
+      if (event.type === "send" || event.type === "steer" || event.type === "switchModel" || event.type === "compact") {
         let workdirAvailable = false;
         try {
           workdirAvailable = fs.statSync(project.workdir).isDirectory();
@@ -291,9 +274,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       if (!state) {
         state = await startAgentState();
       } else if (
-        requestedModel
-        && (state.provider !== requestedModel.provider || state.model !== requestedModel.id)
+        (requestedModel && (state.provider !== requestedModel.provider || state.model !== requestedModel.id))
+        || (event.type === "send" && state.runStatus !== "working"
+          && (state.process.connectorsEnabled ?? false) !== app.processManager.connectorsEnabledForProject(project.id))
       ) {
+        const resumeModel = requestedModel ?? (state.model ? app.models.findById(state.model) : null);
         await app.processManager.stopAndWait(session.id);
         const previousProcess = app.processManager.get(session.id);
         if (
@@ -309,12 +294,22 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           });
           return;
         }
-        state = await startAgentState(requestedModel);
+        state = await startAgentState(resumeModel ?? undefined);
       } else {
         state.send = send;
       }
 
       app.sessionStates.touch(event.sessionId);
+      if (event.type === "compact") {
+        if (state.runStatus === "working") {
+          send({ type: "error", sessionId: session.id, code: "compaction_busy", message: "请等待当前任务完成后再压缩上下文。" });
+          return;
+        }
+        state.runStatus = "working";
+        state.send({ type: "agent_status", sessionId: session.id, status: "working" });
+        state.bridge.send({ type: "compact" });
+        return;
+      }
       if (event.type === "send" || event.type === "steer") {
         // A normal prompt cannot be accepted while Pi is running. The web UI
         // normally prevents this, but the server must also enforce it because
@@ -438,11 +433,6 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             content = `<system-instruction>\n${expert.systemPrompt}\n</system-instruction>\n\n${content}`;
             console.log(`[WS Agent] expert system prompt injected: sessionId=${session.id} expertId=${expert.id} promptLen=${expert.systemPrompt.length}`);
           }
-        }
-
-        // Inject global artifact delivery instruction on every send
-        if (event.type === "send" && content) {
-          content = `${content}\n\n${ARTIFACT_INSTRUCTION}`;
         }
 
         if (event.type === "send") {

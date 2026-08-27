@@ -128,6 +128,30 @@ describe("ws agent", () => {
     ws.close();
   });
 
+  it("sends clean user text and compacts idle context without persisting a user turn", async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/agent`);
+    const received: any[] = [];
+    ws.on("message", (data) => received.push(JSON.parse(data.toString())));
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+    ws.send(JSON.stringify({ type: "send", sessionId, content: "hello" }));
+    await waitFor(() => !!app.sessionStates.get(sessionId));
+    const proc = app.processManager.get(sessionId)!;
+    const initial = proc.stdin as PassThrough;
+    const commands = initial.read().toString().trim().split("\n").map((line: string) => JSON.parse(line));
+    expect(commands.find((c: any) => c.type === "prompt").message).toBe("hello");
+    ws.send(JSON.stringify({ type: "compact", sessionId }));
+    await waitFor(() => received.some((e) => e.code === "compaction_busy"));
+    proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
+    await waitFor(() => app.sessionStates.get(sessionId)?.runStatus === "idle");
+    ws.send(JSON.stringify({ type: "compact", sessionId }));
+    await waitFor(() => initial.readableLength > 0);
+    expect(initial.read().toString()).toBe(JSON.stringify({ type: "compact" }) + "\n");
+    proc.stdout.emit("data", JSON.stringify({ type: "response", command: "compact", success: true }) + "\n");
+    await waitFor(() => app.sessionStates.get(sessionId)?.runStatus === "idle");
+    expect(app.messages.listBySession(sessionId).map((m) => m.content)).toEqual(["hello"]);
+    ws.close();
+  });
+
   it("starts and restarts the session with the model selected by the client", async () => {
     app.models.create({
       id: "model-a",

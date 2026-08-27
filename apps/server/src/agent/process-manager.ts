@@ -28,6 +28,8 @@ export interface ProcessManagerOptions {
   pluginEndpoint?: string;
   connectorExtensionPath?: string;
   connectorEndpoint?: string;
+  contextExtensionPath?: string;
+  hasConnectors?: (projectId: string) => boolean;
   isPluginEnabled?: (pluginId: string) => boolean;
   validateWorkdir?: boolean;
   logger: FastifyBaseLogger;
@@ -156,6 +158,8 @@ export class ProcessManager extends EventEmitter {
   private pluginEndpoint?: string;
   private connectorExtensionPath?: string;
   private connectorEndpoint?: string;
+  private contextExtensionPath?: string;
+  private hasConnectors: (projectId: string) => boolean;
   private connectorTokens = new Map<string, string>();
   private pluginTokens = new Map<string, Map<string, string>>();
   private isPluginEnabled: (pluginId: string) => boolean;
@@ -203,6 +207,8 @@ export class ProcessManager extends EventEmitter {
     this.pluginEndpoint = opts.pluginEndpoint ?? opts.browserEndpoint;
     this.connectorExtensionPath = opts.connectorExtensionPath;
     this.connectorEndpoint = opts.connectorEndpoint ?? opts.pluginEndpoint ?? opts.browserEndpoint;
+    this.contextExtensionPath = opts.contextExtensionPath;
+    this.hasConnectors = opts.hasConnectors ?? (() => true);
     this.isPluginEnabled = opts.isPluginEnabled ?? (() => true);
     this.validateWorkdir = opts.validateWorkdir ?? true;
   }
@@ -229,12 +235,14 @@ export class ProcessManager extends EventEmitter {
     const activePluginIds = [...new Set(
       input.activePluginIds ?? (input.browserEnabled ? ["browser-use"] : []),
     )].filter((pluginId) => this.isPluginEnabled(pluginId)).sort();
+    const connectorsEnabled = this.connectorsEnabledForProject(input.projectId);
     const existing = this.procs.get(input.sessionId);
     if (existing && existing.status !== "crashed" && existing.status !== "suspended") {
       const existingPlugins = [...(existing.activePluginIds ?? (
         existing.browserEnabled ? ["browser-use"] : []
       ))].sort();
-      if (JSON.stringify(existingPlugins) === JSON.stringify(activePluginIds)) {
+      if (JSON.stringify(existingPlugins) === JSON.stringify(activePluginIds)
+        && existing.connectorsEnabled === connectorsEnabled) {
         return existing;
       }
       const stopped = await this.stopAndWait(input.sessionId);
@@ -247,6 +255,7 @@ export class ProcessManager extends EventEmitter {
     const model = cfg?.model ?? this.model;
 
     const extraArgs: string[] = [];
+    if (this.contextExtensionPath) extraArgs.push("--extension", this.contextExtensionPath);
     if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
       extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl, modelType: cfg.modelType }));
     }
@@ -254,18 +263,22 @@ export class ProcessManager extends EventEmitter {
       const extensionPath = this.pluginExtensions[pluginId];
       if (extensionPath) extraArgs.push("--extension", extensionPath);
     }
-    if (this.connectorExtensionPath) extraArgs.push("--extension", this.connectorExtensionPath);
+    if (connectorsEnabled) extraArgs.push("--extension", this.connectorExtensionPath!);
     if (provider) extraArgs.push("--provider", provider);
     if (model) extraArgs.push("--model", model);
     const piSession = preparePiSession(this.sessionRootDir, input.sessionId);
 
     const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
-    if (this.connectorExtensionPath && this.connectorEndpoint) {
+    if (connectorsEnabled && this.connectorEndpoint) {
       const connectorToken = crypto.randomBytes(32).toString("hex");
       this.connectorTokens.set(input.sessionId, connectorToken);
       env.PI_WEB_UI_CONNECTOR_ENDPOINT = this.connectorEndpoint;
       env.PI_WEB_UI_CONNECTOR_TOKEN = connectorToken;
       env.PI_WEB_UI_SESSION_ID = input.sessionId;
+    } else {
+      this.connectorTokens.delete(input.sessionId);
+      delete env.PI_WEB_UI_CONNECTOR_ENDPOINT;
+      delete env.PI_WEB_UI_CONNECTOR_TOKEN;
     }
     if (this.npmRegistry) env.npm_config_registry = this.npmRegistry;
     if (cfg?.apiKey) {
@@ -341,6 +354,7 @@ export class ProcessManager extends EventEmitter {
       lastActivityAt: Date.now(),
       status: "starting" as const,
       activePluginIds,
+      connectorsEnabled,
       browserEnabled: activePluginIds.includes("browser-use"),
       writeCommand(cmd: object) {
         child.stdin!.write(JSON.stringify(cmd) + "\n");
@@ -394,6 +408,10 @@ export class ProcessManager extends EventEmitter {
 
   get(sessionId: string): AgentProcess | undefined {
     return this.procs.get(sessionId);
+  }
+
+  connectorsEnabledForProject(projectId: string): boolean {
+    return Boolean(this.connectorExtensionPath && this.hasConnectors(projectId));
   }
 
   stop(sessionId: string): void {

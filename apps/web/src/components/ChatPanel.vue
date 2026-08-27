@@ -25,7 +25,8 @@ import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
-import { formatTokenCount } from "../utils/format-token-count.js";
+import { summarizeTokenUsage } from "../utils/token-usage.js";
+import TokenUsage from "./TokenUsage.vue";
 import {
   annotateChatRuns,
   formatProcessingDuration,
@@ -299,55 +300,6 @@ const compactionLabel = computed(() => {
   return t("chat.compactionCompleted");
 });
 
-/** Cumulative session tokens with animated number transitions. */
-const displayedInput = ref(0);
-const displayedOutput = ref(0);
-let animFrameInput: number | null = null;
-let animFrameOutput: number | null = null;
-
-function animateNumber(from: number, to: number, duration: number, onUpdate: (v: number) => void, onDone: () => void): number {
-  const start = performance.now();
-  const diff = to - from;
-  function tick(now: number) {
-    const elapsed = now - start;
-    const progress = Math.min(elapsed / duration, 1);
-    // easeOutCubic for smooth deceleration
-    const eased = 1 - Math.pow(1 - progress, 3);
-    onUpdate(from + diff * eased);
-    if (progress < 1) {
-      return requestAnimationFrame(tick);
-    } else {
-      onDone();
-      return null;
-    }
-  }
-  return requestAnimationFrame(tick);
-}
-
-watch(
-  () => agent.tokensFor(props.sessionId),
-  ({ input, output }) => {
-    if (animFrameInput !== null) cancelAnimationFrame(animFrameInput);
-    if (animFrameOutput !== null) cancelAnimationFrame(animFrameOutput);
-    const fromInput = displayedInput.value;
-    const fromOutput = displayedOutput.value;
-    if (input !== fromInput) {
-      animFrameInput = animateNumber(fromInput, input, 600, (v) => { displayedInput.value = v; }, () => { animFrameInput = null; });
-    }
-    if (output !== fromOutput) {
-      animFrameOutput = animateNumber(fromOutput, output, 600, (v) => { displayedOutput.value = v; }, () => { animFrameOutput = null; });
-    }
-  },
-  { immediate: true, deep: true }
-);
-
-const tokenLabel = computed(() => {
-  return {
-    input: formatTokenCount(displayedInput.value),
-    output: formatTokenCount(displayedOutput.value),
-  };
-});
-
 const knownSkillNames = computed(() => new Set(skillStore.skills.map((s) => s.name)));
 
 /**
@@ -400,11 +352,13 @@ function splitSkillsFromText(text: string): { text: string; skills: string[]; ti
 const persistedMessages = ref<{ id: string; role: string; content: string | null; metadata: Record<string, unknown> | null; createdAt: number }[]>([]);
 
 async function loadMessages() {
-  persistedMessages.value = await api.listMessages(props.sessionId);
+  const sessionId = props.sessionId;
+  const history = await api.listMessages(sessionId);
+  // A slow response for the previous session must not overwrite the new one.
+  if (props.sessionId !== sessionId) return;
+  persistedMessages.value = history;
   // Restore kb_search metadata from persisted messages
   const restored: Record<string, KbCallState> = {};
-  let historicalInput = 0;
-  let historicalOutput = 0;
   for (const m of persistedMessages.value) {
     if (m.role === "user") {
       const meta = getKbSearchMeta(m.metadata);
@@ -417,18 +371,8 @@ async function loadMessages() {
         };
       }
     }
-    // Accumulate token usage from assistant message metadata
-    if (m.role === "assistant" && m.metadata) {
-      const usage = m.metadata.usage as { input?: number; output?: number } | undefined;
-      if (usage) {
-        historicalInput += usage.input ?? 0;
-        historicalOutput += usage.output ?? 0;
-      }
-    }
   }
   kbSearchByMessage.value = { ...kbSearchByMessage.value, ...restored };
-  // Reset and restore historical token totals for this session
-  agent.sessionTokens[props.sessionId] = { input: historicalInput, output: historicalOutput };
   await nextTick();
   scrollToBottom();
 }
@@ -444,6 +388,7 @@ watch(() => props.sessionId, async (sessionId, previousSessionId) => {
   agent.unsubscribe(previousSessionId);
   agent.subscribe(sessionId);
   kbSearchByMessage.value = {};
+  persistedMessages.value = [];
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
 });
@@ -730,7 +675,16 @@ function handleKeySend(e: KeyboardEvent) {
 // Artifact validation cache (path → validation result)
 const artifactValidation = ref<Record<string, ArtifactValidation>>({});
 
-const allMessages = computed(() => {
+function isAvailableArtifact(item: ArtifactItem): boolean {
+  return artifactValidation.value[item.path]?.exists === true;
+}
+
+function isMissingArtifact(item: ArtifactItem): boolean {
+  const validation = artifactValidation.value[item.path];
+  return validation !== undefined && !validation.exists;
+}
+
+const mergedMessageSources = computed(() => {
   const persisted = persistedMessages.value.map((m) => ({
     id: m.id,
     role: m.role as "user" | "assistant",
@@ -753,7 +707,12 @@ const allMessages = computed(() => {
     failed: m.status === "error",
     error: m.error,
   }));
-  const all = mergeChatMessageSources(persisted, live);
+  return mergeChatMessageSources(persisted, live);
+});
+const tokenUsage = computed(() => summarizeTokenUsage(mergedMessageSources.value));
+
+const allMessages = computed(() => {
+  const all = mergedMessageSources.value;
   const latest = all.at(-1);
   const messageSources = isBusy.value && (!latest || latest.role === "user")
     ? [
@@ -1133,17 +1092,25 @@ const pendingTipLabel = computed(() => {
             <div v-else-if="p.kind === 'text' && !m.hideActivityText" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
           </template>
           <!-- Artifact cards (files delivered by the agent) -->
-          <div v-if="m.artifacts?.length && !m.hideNonTextContent" class="artifact-cards">
-            <ArtifactCard
-              v-for="a in m.artifacts"
-              :key="a.path"
-              :project-id="projectId"
-              :artifact="a"
-              :exists="artifactValidation[a.path]?.exists ?? true"
-              :size="artifactValidation[a.path]?.size ?? null"
-              @preview="(p) => emit('select-file', p)"
-            />
-          </div>
+          <template v-if="m.artifacts?.length && !m.hideNonTextContent">
+            <div v-if="m.artifacts.some(isAvailableArtifact)" class="artifact-cards">
+              <ArtifactCard
+                v-for="a in m.artifacts.filter(isAvailableArtifact)"
+                :key="a.path"
+                :project-id="projectId"
+                :artifact="a"
+                :exists="true"
+                :size="artifactValidation[a.path]?.size ?? null"
+                @preview="(p) => emit('select-file', p)"
+              />
+            </div>
+            <div v-if="m.artifacts.some(isMissingArtifact)" class="artifact-invalid-list" role="status">
+              <div v-for="a in m.artifacts.filter(isMissingArtifact)" :key="a.path" class="artifact-invalid">
+                <span class="artifact-invalid-name">{{ a.name }}</span>
+                <span>{{ t('artifact.invalidDeclaration') }}</span>
+              </div>
+            </div>
+          </template>
         </div>
         <!-- KB search call card (shown under user messages) -->
         <ChatKbCallCard v-if="m.role === 'user' && m.kbSearch" :state="m.kbSearch" />
@@ -1286,10 +1253,7 @@ const pendingTipLabel = computed(() => {
           <span v-else class="compaction-icon">↻</span>
           {{ compactionLabel }}
         </span>
-        <span class="token-usage" :title="t('chat.sessionDetails')">
-          <span class="token-in"><span class="token-arrow">↑</span>{{ tokenLabel.input }}</span>
-          <span class="token-out"><span class="token-arrow">↓</span>{{ tokenLabel.output }}</span>
-        </span>
+        <TokenUsage :key="sessionId" :usage="tokenUsage" :busy="isBusy" @compact="agent.compact(sessionId)" />
       </div>
       <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
@@ -1851,6 +1815,33 @@ const pendingTipLabel = computed(() => {
   max-width: 420px;
 }
 
+.artifact-invalid-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  max-width: 420px;
+}
+
+.artifact-invalid {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px dashed color-mix(in srgb, var(--danger-color) 45%, var(--border-default));
+  border-radius: var(--radius-md, 8px);
+  color: var(--danger-color);
+  font-size: 11px;
+}
+
+.artifact-invalid-name {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ─── Message Content ─── */
 
 .msg-content {
@@ -2135,10 +2126,16 @@ const pendingTipLabel = computed(() => {
 }
 
 .composer-toolbar {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 2px 0;
+}
+
+.composer-toolbar > * {
+  flex-shrink: 0;
 }
 
 
@@ -2226,32 +2223,6 @@ const pendingTipLabel = computed(() => {
   border-radius: 50%;
   animation: compaction-spin 0.8s linear infinite;
 }
-
-.token-usage {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  user-select: none;
-}
-.token-in, .token-out {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.token-arrow {
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-.token-arrow.up { color: #10b981; }
-.token-arrow.down { color: #6366f1; }
 
 .file-input-hidden {
   display: none;

@@ -108,9 +108,6 @@ export const useAgentStore = defineStore("agent", {
     // kb_search event for that session so the chat panel can render the
     // call card under the user message that triggered the search.
     kbSearches: {} as Record<string, { phase: string; query: string; hits?: any[]; durationMs?: number; error?: string; at: number }>,
-    // Cumulative token usage per session: { input, output } accumulated from
-    // live message_end events and historical metadata.
-    sessionTokens: {} as Record<string, { input: number; output: number }>,
     contextCompactions: {} as Record<string, {
       phase: "started" | "completed" | "failed";
       reason: "manual" | "threshold" | "overflow";
@@ -138,8 +135,6 @@ export const useAgentStore = defineStore("agent", {
       state.runStartedAt[sessionId] ?? null,
     runOutcomeFor: (state) => (sessionId: string): "interrupted" | "failed" | null =>
       state.runOutcomes[sessionId] ?? null,
-    tokensFor: (state) => (sessionId: string): { input: number; output: number } =>
-      state.sessionTokens[sessionId] ?? { input: 0, output: 0 },
     compactionFor: (state) => (sessionId: string) => state.contextCompactions[sessionId] ?? null,
   },
   actions: {
@@ -258,6 +253,13 @@ export const useAgentStore = defineStore("agent", {
         delete this.runStartedAt[sessionId];
       }
     },
+    compact(sessionId: string) {
+      if (this.isSessionBusy(sessionId)) return false;
+      if (!wsClient.send({ type: "compact", sessionId })) return false;
+      this.runStates[sessionId] = "working";
+      this.contextCompactions[sessionId] = { phase: "started", reason: "manual", at: Date.now() };
+      return true;
+    },
     respondToPermission(sessionId: string, requestId: string, approved: boolean) {
       const pending = this.pendingPermissions[sessionId];
       if (!pending || pending.requestId !== requestId) return false;
@@ -270,10 +272,6 @@ export const useAgentStore = defineStore("agent", {
     },
     unsubscribe(sessionId: string) {
       wsClient.unsubscribe(sessionId);
-    },
-    addSessionTokens(sessionId: string, input: number, output: number) {
-      const prev = this.sessionTokens[sessionId] ?? { input: 0, output: 0 };
-      this.sessionTokens[sessionId] = { input: prev.input + input, output: prev.output + output };
     },
     appendUser(sessionId: string, content: string, images?: ImageAttachment[]) {
       const parts: MessagePart[] = [];
@@ -315,6 +313,14 @@ export const useAgentStore = defineStore("agent", {
         return;
       }
       if (e.type === "error") {
+        if (e.sessionId && this.contextCompactions[e.sessionId]?.phase === "started"
+          && this.contextCompactions[e.sessionId]?.reason === "manual") {
+          this.contextCompactions[e.sessionId] = { phase: "failed", reason: "manual", error: e.message, at: Date.now() };
+          // A busy rejection refers to another client's active run.
+          if (e.code !== "compaction_busy") this.runStates[e.sessionId] = "idle";
+          this.errors = [...this.errors, { sessionId: e.sessionId, code: e.code, message: e.message }];
+          return;
+        }
         if (e.sessionId && e.code === "pi_model_error" && this.runStates[e.sessionId] === "working") {
           this.pendingModelErrors[e.sessionId] = { code: e.code, message: e.message };
           // Each failed retry has its own message_start. Remove that empty
@@ -475,7 +481,13 @@ export const useAgentStore = defineStore("agent", {
         );
       } else if (e.type === "message_end") {
         delete this.pendingModelErrors[sid];
-        this.streams[sid] = list.map((m) => {
+        // A bounded replay can start after message_start. Preserve the final
+        // usage/content even in that case, keyed by the same message identity.
+        const completedSources: StreamMessage[] = list.some((m) => m.id === e.messageId) ? list : [...list, {
+          id: e.messageId, role: "assistant", parts: [], status: "streaming",
+          createdAt: e.timestamp ?? Date.now(), metadata: null,
+        }];
+        this.streams[sid] = completedSources.map((m) => {
           if (m.id !== e.messageId) return m;
           let parts = m.parts;
           const finalText = e.content ?? "";
@@ -497,14 +509,6 @@ export const useAgentStore = defineStore("agent", {
           }
           return { ...m, parts, status: "complete" as const, metadata: e.metadata ?? null };
         });
-        // Accumulate token usage from the LLM response.
-        // The Pi agent normalises provider usage into { input, output, totalTokens, ... }
-        const usage = e.metadata?.usage as { input?: number; output?: number } | undefined;
-        if (usage) {
-          const input = usage.input ?? 0;
-          const output = usage.output ?? 0;
-          if (input > 0 || output > 0) this.addSessionTokens(sid, input, output);
-        }
       } else if (e.type === "tool_call") {
         this.streams[sid] = list.map((m) => {
           if (m.id !== e.messageId) return m;

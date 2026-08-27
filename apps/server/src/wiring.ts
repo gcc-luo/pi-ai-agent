@@ -176,6 +176,8 @@ export async function buildConfiguredApp(config: Config) {
     new URL("./agent/extensions/connector-tools.js", import.meta.url),
   );
   if (!fs.existsSync(connectorExtensionPath)) connectorExtensionPath = connectorExtensionPath.replace(/\.js$/, ".ts");
+  let contextExtensionPath = fileURLToPath(new URL("./agent/extensions/context-policy.js", import.meta.url));
+  if (!fs.existsSync(contextExtensionPath)) contextExtensionPath = contextExtensionPath.replace(/\.js$/, ".ts");
   const processManager = new ProcessManager({
     command: config.piCommand,
     args: config.piArgs,
@@ -193,6 +195,8 @@ export async function buildConfiguredApp(config: Config) {
     pluginEndpoint: `http://127.0.0.1:${config.port}/api/internal/plugins`,
     connectorExtensionPath,
     connectorEndpoint: `http://127.0.0.1:${config.port}/api`,
+    contextExtensionPath,
+    hasConnectors: (projectId) => connectorRepository.list(projectId).some((connector) => connector.enabled),
     isPluginEnabled: (pluginId) => {
       const plugin = pluginManager.find(pluginId);
       return plugin?.enabled === true && plugin.status !== "unavailable";

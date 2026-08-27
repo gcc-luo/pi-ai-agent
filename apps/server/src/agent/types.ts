@@ -13,6 +13,7 @@ export interface AgentProcess {
   status: "starting" | "active" | "idle" | "suspended" | "crashed";
   activePluginIds?: string[];
   browserEnabled?: boolean;
+  connectorsEnabled?: boolean;
   on(event: "event", listener: (e: ServerEvent) => void): void;
   on(event: "exit", listener: (code: number | null) => void): void;
   on(event: "stderr", listener: (line: string) => void): void;

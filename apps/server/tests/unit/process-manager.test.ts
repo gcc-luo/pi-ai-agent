@@ -111,6 +111,34 @@ describe("ProcessManager", () => {
     expect(manager.get("s1")).toBe(p);
   });
 
+  it("loads connector tools only for enabled workspaces and refreshes capability changes", async () => {
+    let enabled = false;
+    const scopedManager = new ProcessManager({
+      spawn: spawner as any, command: "pi", args: [], sessionRootDir,
+      connectorExtensionPath: "connector-tools.ts", connectorEndpoint: "http://localhost/api",
+      contextExtensionPath: "context-policy.ts",
+      hasConnectors: (projectId) => enabled && projectId === "p1",
+      validateWorkdir: false, logger: logger as any,
+    });
+    const input = { sessionId: "s1", projectId: "p1", workdir: "/tmp" };
+    const first = await scopedManager.start(input);
+    expect(spawner.mock.calls[0]![1]).not.toContain("connector-tools.ts");
+    expect(spawner.mock.calls[0]![1]).toContain("context-policy.ts");
+    expect(spawner.mock.calls[0]![2].env.PI_WEB_UI_CONNECTOR_TOKEN).toBeUndefined();
+    enabled = true;
+    const second = await scopedManager.start(input);
+    expect(second).not.toBe(first);
+    expect(spawner.mock.calls[1]![1]).toContain("connector-tools.ts");
+    const token = spawner.mock.calls[1]![2].env.PI_WEB_UI_CONNECTOR_TOKEN;
+    expect(scopedManager.validateConnectorToken("s1", token)).toBe(true);
+    expect(scopedManager.connectorsEnabledForProject("p2")).toBe(false);
+    enabled = false;
+    await scopedManager.start(input);
+    expect(spawner.mock.calls[2]![1]).not.toContain("connector-tools.ts");
+    expect(scopedManager.validateConnectorToken("s1", token)).toBe(false);
+    await scopedManager.shutdown();
+  });
+
   it("stops the process on stop", async () => {
     const proc = new FakeProcess();
     spawner.mockReturnValueOnce(proc);

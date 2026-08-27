@@ -1,4 +1,5 @@
 import type { ArtifactItem, MessagePart } from "@pi-web-ui/shared";
+import { summarizeTokenUsage, type UsageTotals } from "./token-usage.js";
 
 export interface ChatRunSource {
   id: string;
@@ -100,6 +101,7 @@ export interface AgentActivityItem {
 
 export interface AgentActivity {
   runId: string;
+  usage: UsageTotals;
   status: "running" | "waiting_permission" | "complete" | "failed" | "interrupted";
   durationMs: number | null;
   currentLabel: AgentActivityLabel;
@@ -342,6 +344,7 @@ export function buildAgentActivity(
 
   return {
     runId,
+    usage: summarizeTokenUsage(messages).session,
     status: waitingForPermission
       ? "waiting_permission"
       : answerStreaming
@@ -392,6 +395,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
   }
 
   const latestRunId = [...runIndexes.keys()].at(-1) ?? null;
+  const activitiesByRun = new Map<string, AgentActivity>();
 
   return messages.map((message, index) => {
     if (message.role !== "assistant") {
@@ -434,7 +438,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       && hasStandaloneContent(responseMessage);
     const runExpanded = options.expandedRunIds.has(runId);
     const runArtifacts = artifactsByRun.get(runId) ?? [];
-    const activity = buildAgentActivity(
+    const activity = activitiesByRun.get(runId) ?? buildAgentActivity(
       runId,
       runMessages,
       isActive,
@@ -443,6 +447,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       isActive && options.waitingForPermission === true,
       answerStreaming,
     );
+    activitiesByRun.set(runId, activity);
     const responseHasVisibleContent = responseIndex !== null
       && (hasStandaloneContent(messages[responseIndex]!) || runArtifacts.length > 0);
     const hasActivityTimeline = activity.items.length > 0;
@@ -476,7 +481,7 @@ export function annotateChatRuns<T extends ChatRunSource>(
       hideNonTextContent: false,
       hideActivityText,
       statusOnly,
-      showActivity: isFirst && (isActive || activity.items.length > 0),
+      showActivity: isFirst && (isActive || activity.items.length > 0 || activity.usage.modelCalls > 0),
       showMessageActions: isResponse,
       activity: isFirst ? activity : null,
     };

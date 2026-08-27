@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "../i18n/index.js";
+import TokenCounts from "./TokenCounts.vue";
 import {
   activityTargetForTool,
   formatProcessingDuration,
@@ -90,7 +91,7 @@ function itemTitle(item: AgentActivityItem): string {
   return activityLabel(item.label);
 }
 
-const completedCounts = computed(() => {
+const operationCounts = computed(() => {
   const counts = new Map<AgentActivityLabel, number>();
   for (const item of props.activity.items) {
     if (item.kind !== "tool") continue;
@@ -141,10 +142,17 @@ const completedCounts = computed(() => {
         <span class="activity-separator" aria-hidden="true">·</span>
         <span>{{ formatProcessingDuration(activity.durationMs ?? 0) }}</span>
       </template>
-      <template v-else v-for="countLabel in completedCounts" :key="countLabel">
+      <span v-if="activity.usage.modelCalls > 0" class="activity-usage">
+        <span class="activity-separator" aria-hidden="true">·</span>
+        <span>{{ t('chat.usageCurrent') }}</span>
+        <TokenCounts :input="activity.usage.prompt" :output="activity.usage.output" />
+        <span class="activity-separator" aria-hidden="true">·</span>
+        <span>{{ t('chat.usageCalls', { count: activity.usage.modelCalls }) }}</span>
+      </span>
+      <span v-for="countLabel in operationCounts" :key="countLabel" class="activity-count-group">
         <span class="activity-separator" aria-hidden="true">·</span>
         <span class="activity-count">{{ countLabel }}</span>
-      </template>
+      </span>
       <template v-if="activity.failedCount > 0">
         <span class="activity-separator" aria-hidden="true">·</span>
         <span class="activity-failures">{{ t('chat.activityFailureCount', { count: activity.failedCount }) }}</span>
@@ -241,6 +249,7 @@ const completedCounts = computed(() => {
   width: 100%;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 0;
@@ -284,6 +293,9 @@ const completedCounts = computed(() => {
 .activity-state,
 .activity-failures { flex: 0 0 auto; font-weight: 600; }
 .activity-separator { color: var(--text-faint, var(--text-muted)); }
+.activity-usage,
+.activity-count-group { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.activity-usage { flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .activity-current,
 .activity-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -382,7 +394,6 @@ const completedCounts = computed(() => {
 @keyframes activity-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
-  .activity-count:nth-of-type(n + 2),
   .activity-current-separator,
   .activity-current { display: none; }
 }

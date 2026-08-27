@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import AgentActivity from "../../src/components/AgentActivity.vue";
 import { useI18n } from "../../src/i18n/index.js";
 import type { AgentActivity as AgentActivityModel } from "../../src/utils/chat-run-presentation.js";
+import { summarizeTokenUsage } from "../../src/utils/token-usage.js";
 
 const activity: AgentActivityModel = {
   runId: "run:u1",
+  usage: summarizeTokenUsage([]).session,
   status: "running",
   durationMs: 74_000,
   currentLabel: "searchCode",
@@ -52,6 +54,17 @@ const activity: AgentActivityModel = {
 
 describe("AgentActivity", () => {
   beforeEach(() => useI18n().setLocale("zh"));
+
+  it.each(["running", "complete"] as const)("places usage and operation counts after elapsed time while %s", (status) => {
+    const wrapper = mount(AgentActivity, { props: {
+      activity: { ...activity, status, usage: { input: 2000, prompt: 12000, output: 300, cacheRead: 10000, cacheWrite: null, modelCalls: 2, toolCalls: 2 } },
+      expanded: false, canToggle: true,
+    } });
+    const header = wrapper.get(".activity-summary");
+    expect(header.text()).toMatch(/1m 14s.*本次.*↑12.0K.*↓300.*2 次调用.*搜索代码 1.*验证结果 1/);
+    expect(header.get(".token-in").attributes("title")).toContain("输入");
+    expect(header.get(".token-out").attributes("title")).toContain("输出");
+  });
 
   it("shows all activities without a no-op toggle when a live run has at most five", () => {
     const wrapper = mount(AgentActivity, { props: { activity, expanded: false, canToggle: true } });

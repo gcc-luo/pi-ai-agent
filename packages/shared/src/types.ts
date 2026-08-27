@@ -9,6 +9,7 @@ export interface ImageAttachment {
 export type ClientEvent =
   | { type: "send"; sessionId: string; content: string; model?: string; images?: ImageAttachment[] }
   | { type: "interrupt"; sessionId: string }
+  | { type: "compact"; sessionId: string }
   | { type: "permission_response"; sessionId: string; requestId: string; approved: boolean }
   | { type: "steer"; sessionId: string; content: string }
   | { type: "switchModel"; sessionId: string; model: string }

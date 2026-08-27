@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import ChatPanel from "../../src/components/ChatPanel.vue";
 import { useAgentStore } from "../../src/stores/agent.js";
@@ -11,6 +11,41 @@ describe("ChatPanel running input", () => {
     useI18n().setLocale("zh");
     vi.restoreAllMocks();
     vi.stubGlobal("fetch", vi.fn(async () => Response.json([])));
+  });
+
+  it("shows each run's usage at its header and cumulative usage above the composer without replay double counting", async () => {
+    const agent = useAgentStore();
+    agent.streams.s1 = [
+      { id: "old-user", role: "user", createdAt: 1000, status: "complete", parts: [{ kind: "text", text: "old request" }], metadata: null },
+      { id: "old-reply", role: "assistant", createdAt: 2000, status: "complete", parts: [{ kind: "text", text: "old answer" }], metadata: { durationMs: 30000, usage: { input: 10000, output: 1000 } } },
+    ];
+    agent.appendUser("s1", "hello");
+    agent.handle({ type: "message_start", sessionId: "s1", messageId: "m1", role: "assistant", timestamp: Date.now() + 1 });
+    const end = { type: "message_end" as const, sessionId: "s1", messageId: "m1", content: "done", metadata: { usage: { input: 2000, output: 200 } } };
+    agent.handle(end);
+    agent.handle(end);
+    const wrapper = mount(ChatPanel, {
+      props: { sessionId: "s1", projectId: "p1" },
+      global: { stubs: { Input: true, SkillSelect: true, PluginSelect: true, ConnectorSelect: true, ChatExpertPicker: true, ChatKbPicker: true, ChatKbBanner: true, ImportSkillDialog: true, ConfirmDialog: true } },
+    });
+    await flushPromises();
+    const total = wrapper.get(".composer-toolbar .token-usage-summary");
+    expect(total.text()).toContain("会话累计");
+    expect(total.get(".token-in").text()).toBe("↑12.0K");
+    expect(total.get(".token-out").text()).toBe("↓1.2K");
+    expect(total.text()).not.toContain("本次");
+    const headers = wrapper.findAll(".activity-summary");
+    expect(headers).toHaveLength(2);
+    expect(headers[0]!.text()).toContain("已工作 30s");
+    expect(headers[0]!.get(".token-in").text()).toBe("↑10.0K");
+    expect(headers[1]!.get(".token-in").text()).toBe("↑2.0K");
+    expect(headers[1]!.get(".token-out").text()).toBe("↓200");
+    expect(headers[1]!.text()).toContain("1 次调用");
+    agent.appendUser("s1", "next question");
+    await flushPromises();
+    expect(total.get(".token-in").text()).toBe("↑12.0K");
+    expect(headers[0]!.get(".token-in").text()).toBe("↑10.0K");
+    wrapper.unmount();
   });
 
   it("keeps the draft and requires the explicit stop button while busy", async () => {
