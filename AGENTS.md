@@ -87,3 +87,7 @@ feat: 会话默认标题取首句内容并优化新建会话展示
 
 - Codex 在本仓库创建提交时，默认按本规范书写 commit message，中文描述 + 英文 type。
 - 生成提交消息时末尾附 `Co-Authored-By: Codex <noreply@anthropic.com>`。
+
+## 版本更新说明
+
+创建 GitHub Release 时，必须按照 [版本更新说明规范](docs/release-notes-standard.md)，根据上一个版本 tag 到当前版本 tag 之间的提交整理用户可见变更，并使用 `1、2、3` 编号列表作为当前版本更新内容。

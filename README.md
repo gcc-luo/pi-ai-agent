@@ -120,6 +120,8 @@ git push origin v1.3.11
 
 依赖安装时会自动启用 `.githooks/pre-push`。推送 `vX.Y.Z` tag 前，hook 会校验三个桌面端版本是否与 tag 一致；GitHub Actions 也会在构建前再次校验。不要跳过该检查，也不要直接手动修改单个版本文件。
 
+Release 更新内容需按照 [版本更新说明规范](docs/release-notes-standard.md)，基于版本范围内的 Git 提交整理为编号列表。
+
 ### 构建 Web 和服务端
 
 ```bash
