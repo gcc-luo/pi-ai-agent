@@ -817,7 +817,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.theme": "Theme",
     "settings.themeDesc": "Choose light, dark, or gray theme",
     // Update
-    "update.title": "Update Available",
+    "update.title": "Update announcement",
     "update.releaseNotes": "Release Notes",
     "update.later": "Later",
     "update.downloadInstall": "Download & Install",
@@ -1648,7 +1648,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.theme": "主题",
     "settings.themeDesc": "选择浅色、深色或灰色主题",
     // Update
-    "update.title": "发现新版本",
+    "update.title": "更新公告",
     "update.releaseNotes": "更新说明",
     "update.later": "稍后更新",
     "update.downloadInstall": "下载并安装",
