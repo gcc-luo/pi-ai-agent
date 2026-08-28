@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { api } from "../api/client.js";
 import { isTauri, isTauriDev } from "../utils/platform.js";
 
 export type UpdateStatus =
@@ -9,6 +10,8 @@ export type UpdateStatus =
   | "downloading"
   | "ready"
   | "installing"
+  | "release-loading"
+  | "release-info"
   | "no-update"
   | "error";
 
@@ -63,6 +66,22 @@ export const useUpdateStore = defineStore("update", () => {
         status.value = "no-update";
         updateInfo.value = null;
       }
+    } catch (error) {
+      status.value = "error";
+      errorMessage.value = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function loadVersionInfo(): Promise<void> {
+    if (!isTauri()) return;
+
+    status.value = "release-loading";
+    errorMessage.value = null;
+    pendingUpdate = null;
+
+    try {
+      updateInfo.value = await api.getReleaseInfo();
+      status.value = "release-info";
     } catch (error) {
       status.value = "error";
       errorMessage.value = error instanceof Error ? error.message : String(error);
@@ -145,6 +164,7 @@ export const useUpdateStore = defineStore("update", () => {
     checkForUpdate,
     downloadAndInstall,
     installAndRestart,
+    loadVersionInfo,
     getAppVersion,
     reset,
   };

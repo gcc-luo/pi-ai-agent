@@ -61,6 +61,16 @@ describe("UpdateDialog", () => {
     expect(wrapper.findAll(".update-notes-content li")).toHaveLength(2);
   });
 
+  it("renders current release information without an update action", () => {
+    mockStore.status = "release-info";
+
+    const wrapper = mountDialog();
+
+    expect(wrapper.text()).toContain("v2.0.0");
+    expect(wrapper.find("[data-test=update-download]").exists()).toBe(false);
+    expect(wrapper.find("[data-test=update-later]").text()).toContain("关闭");
+  });
+
   it("hides the release notes region when the body is empty", () => {
     mockStore.updateInfo!.body = "";
 

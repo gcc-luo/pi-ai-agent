@@ -64,6 +64,7 @@ import { CredentialVault } from "./connectors/credential-vault.js";
 import { McpRuntimeManager } from "./connectors/mcp-runtime.js";
 import { ConnectorService } from "./connectors/connector-service.js";
 import { connectorsRoutes } from "./routes/connectors.js";
+import { releaseRoutes } from "./routes/releases.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -271,6 +272,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(channelsRoutes, { prefix: "/api/channels" });
   await app.register(backupsRoutes, { prefix: "/api/backups" });
   await app.register(connectorsRoutes, { prefix: "/api" });
+  await app.register(releaseRoutes, { prefix: "/api" });
 
   // Rebuild channel adapters from persisted configs so test/send works
   // immediately after restart without a re-save.

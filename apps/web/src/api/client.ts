@@ -31,6 +31,12 @@ export interface DatabaseBackupDto {
   createdAt: number;
 }
 
+export interface ReleaseInfoDto {
+  version: string;
+  date: string | null;
+  body: string;
+}
+
 const REQUEST_TIMEOUT_MS = 30_000;
 const TRANSIENT_RETRY_MS = 1_000;
 
@@ -171,6 +177,7 @@ export const api = {
 
   getConfig: () => request<ConfigDto>("GET", "/config"),
   updateConfig: (model: string) => request<ConfigDto>("PUT", "/config", { model }),
+  getReleaseInfo: () => request<ReleaseInfoDto>("GET", "/release-info"),
 
   listModels: () => request<ModelDto[]>("GET", "/models"),
   createModel: (data: { id: string; label: string; provider: string; modelType?: string; apiBaseUrl?: string; apiKey?: string; isDefault?: boolean }) =>

@@ -23,6 +23,12 @@ const showSettings = ref(false);
 const showUpdateDialog = ref(false);
 const updateStore = useUpdateStore();
 
+function handleViewVersionInfo() {
+  showSettings.value = false;
+  showUpdateDialog.value = true;
+  void updateStore.loadVersionInfo();
+}
+
 onMounted(async () => {
   if (isTauri()) {
     await updateStore.getAppVersion();
@@ -196,9 +202,13 @@ watch(() => updateStore.status, (newStatus) => {
       </button>
     </div>
 
-    <SettingsDialog :show="showSettings" @close="showSettings = false" />
+    <SettingsDialog
+      :show="showSettings"
+      @close="showSettings = false"
+      @view-version-info="handleViewVersionInfo"
+    />
     <UpdateDialog
-      :show="showUpdateDialog || updateStore.isDownloading || updateStore.isReady || updateStore.status === 'installing' || updateStore.status === 'error'"
+      :show="showUpdateDialog || updateStore.isDownloading || updateStore.isReady || updateStore.status === 'installing' || updateStore.status === 'release-loading' || updateStore.status === 'release-info' || updateStore.status === 'error'"
       @close="showUpdateDialog = false"
     />
   </nav>

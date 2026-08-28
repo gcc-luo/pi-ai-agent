@@ -54,8 +54,15 @@ function handleRestart() {
         </button>
       </div>
 
-      <!-- New version available -->
-      <div v-if="updateStore.status === 'available'" class="update-state update-state-available">
+      <!-- Loading version information -->
+      <div v-if="updateStore.status === 'release-loading'" class="update-state">
+        <div class="update-scroll-area update-status-area" aria-live="polite">
+          <p class="update-status-text">{{ t('update.loadingReleaseNotes') }}</p>
+        </div>
+      </div>
+
+      <!-- New version available or current release information -->
+      <div v-else-if="updateStore.status === 'available' || updateStore.status === 'release-info'" class="update-state update-state-available">
         <div class="update-scroll-area">
           <div class="update-version-row">
             <div class="update-release-meta">
@@ -74,7 +81,7 @@ function handleRestart() {
           </div>
         </div>
 
-        <div class="update-actions">
+        <div v-if="updateStore.status === 'available'" class="update-actions">
           <button type="button" class="update-btn update-btn-secondary" data-test="update-later" @click="handleLater">
             {{ t('update.later') }}
           </button>
@@ -86,6 +93,11 @@ function handleRestart() {
             @click="handleDownload"
           >
             {{ t('update.downloadInstall') }}
+          </button>
+        </div>
+        <div v-else class="update-actions">
+          <button type="button" class="update-btn update-btn-secondary" data-test="update-later" @click="handleLater">
+            {{ t('update.close') }}
           </button>
         </div>
       </div>

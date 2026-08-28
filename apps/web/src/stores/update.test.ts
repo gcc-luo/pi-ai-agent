@@ -3,10 +3,17 @@ import { setActivePinia, createPinia } from "pinia";
 import { useUpdateStore } from "./update.js";
 
 const mockIsTauriDev = vi.hoisted(() => vi.fn(() => false));
+const mockGetReleaseInfo = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/platform.js", () => ({
   isTauri: () => true,
   isTauriDev: mockIsTauriDev,
+}));
+
+vi.mock("../api/client.js", () => ({
+  api: {
+    getReleaseInfo: mockGetReleaseInfo,
+  },
 }));
 
 const mockCheck = vi.fn();
@@ -54,6 +61,7 @@ describe("useUpdateStore", () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     mockIsTauriDev.mockReturnValue(false);
+    mockGetReleaseInfo.mockReset();
     mockInvoke.mockResolvedValue(undefined);
   });
 
@@ -100,6 +108,25 @@ describe("useUpdateStore", () => {
     expect(mockCheck).not.toHaveBeenCalled();
     expect(store.status).toBe("no-update");
     expect(store.updateInfo).toBeNull();
+  });
+
+  it("loads the current release announcement for version information", async () => {
+    mockGetReleaseInfo.mockResolvedValue({
+      version: "1.4.1",
+      date: "2026-08-28T06:50:28Z",
+      body: "## 更新内容\n\n1. 优化更新公告。",
+    });
+
+    const store = useUpdateStore();
+    await store.loadVersionInfo();
+
+    expect(mockGetReleaseInfo).toHaveBeenCalledOnce();
+    expect(store.status).toBe("release-info");
+    expect(store.updateInfo).toEqual({
+      version: "1.4.1",
+      date: "2026-08-28T06:50:28Z",
+      body: "## 更新内容\n\n1. 优化更新公告。",
+    });
   });
 
   it("handles check failure gracefully", async () => {

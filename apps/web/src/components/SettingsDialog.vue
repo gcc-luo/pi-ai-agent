@@ -7,7 +7,10 @@ import { useUpdateStore } from "../stores/update.js";
 import { isTauri } from "../utils/platform.js";
 
 const props = defineProps<{ show: boolean }>();
-const emit = defineEmits<{ (e: "close"): void }>();
+const emit = defineEmits<{
+  (e: "close"): void;
+  (e: "view-version-info"): void;
+}>();
 
 const { t, currentLocale, toggleLocale } = useI18n();
 const themeStore = useThemeStore();
@@ -92,6 +95,19 @@ onMounted(() => {
               @click="handleCheckUpdate"
             >
               {{ updateButtonText }}
+            </button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">{{ t('settings.versionInfo') }}</span>
+              <span class="setting-desc">{{ t('settings.versionInfoDesc') }}</span>
+            </div>
+            <button
+              class="lang-switch"
+              data-test="view-version-info"
+              @click="emit('view-version-info')"
+            >
+              {{ t('settings.viewVersionInfo') }}
             </button>
           </div>
         </template>

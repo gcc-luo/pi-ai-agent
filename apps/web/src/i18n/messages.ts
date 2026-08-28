@@ -833,6 +833,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.noUpdate": "No updates available",
     "settings.newVersion": "New version available",
     "settings.currentVersion": "Current Version",
+    "settings.versionInfo": "Version information",
+    "settings.versionInfoDesc": "View the current release announcement",
+    "settings.viewVersionInfo": "View version info",
+    "update.loadingReleaseNotes": "Loading release notes...",
 
 
 
@@ -1664,6 +1668,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "settings.noUpdate": "已是最新版本",
     "settings.newVersion": "发现新版本",
     "settings.currentVersion": "当前版本",
+    "settings.versionInfo": "版本信息",
+    "settings.versionInfoDesc": "查看当前版本的更新公告",
+    "settings.viewVersionInfo": "查看版本信息",
+    "update.loadingReleaseNotes": "正在加载更新公告...",
 
 
     // Coding 模式
