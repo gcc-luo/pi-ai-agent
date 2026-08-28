@@ -59,7 +59,9 @@ function handleRestart() {
         <div class="update-scroll-area">
           <div class="update-version-row">
             <div class="update-release-meta">
-              <span class="update-notes-label">{{ t('update.releaseNotes') }}</span>
+              <span v-if="updateStore.updateInfo?.body" class="update-notes-label">
+                {{ t('update.releaseNotes') }}
+              </span>
               <span v-if="updateStore.updateInfo?.date" class="update-date">
                 {{ updateStore.updateInfo.date }}
               </span>
@@ -76,7 +78,13 @@ function handleRestart() {
           <button type="button" class="update-btn update-btn-secondary" data-test="update-later" @click="handleLater">
             {{ t('update.later') }}
           </button>
-          <button type="button" class="update-btn update-btn-primary" data-test="update-download" @click="handleDownload">
+          <button
+            type="button"
+            class="update-btn update-btn-primary"
+            data-test="update-download"
+            :disabled="updateStore.status !== 'available'"
+            @click="handleDownload"
+          >
             {{ t('update.downloadInstall') }}
           </button>
         </div>
@@ -109,7 +117,13 @@ function handleRestart() {
           <button type="button" class="update-btn update-btn-secondary" data-test="update-later" @click="handleLater">
             {{ t('update.later') }}
           </button>
-          <button type="button" class="update-btn update-btn-primary" data-test="update-restart" @click="handleRestart">
+          <button
+            type="button"
+            class="update-btn update-btn-primary"
+            data-test="update-restart"
+            :disabled="updateStore.status !== 'ready'"
+            @click="handleRestart"
+          >
             {{ t('update.restartNow') }}
           </button>
         </div>
@@ -148,7 +162,7 @@ function handleRestart() {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
-  box-shadow: 0 24px 60px rgba(var(--bg-deep-rgb), 0.45);
+  box-shadow: var(--shadow-lg);
 }
 
 .update-header {
@@ -387,6 +401,11 @@ function handleRestart() {
 .update-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.update-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .update-status-area {

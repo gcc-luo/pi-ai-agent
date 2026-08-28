@@ -67,6 +67,7 @@ describe("UpdateDialog", () => {
     const wrapper = mountDialog();
 
     expect(wrapper.find(".update-notes").exists()).toBe(false);
+    expect(wrapper.find(".update-notes-label").exists()).toBe(false);
   });
 
   it("resets and closes when later is clicked", async () => {
@@ -121,5 +122,15 @@ describe("UpdateDialog", () => {
 
     expect(wrapper.text()).toContain("更新失败");
     expect(wrapper.text()).toContain("Download failed");
+  });
+
+  it("closes the error state and resets the store", async () => {
+    mockStore.status = "error";
+
+    const wrapper = mountDialog();
+    await wrapper.get("[data-test=update-later]").trigger("click");
+
+    expect(mockStore.reset).toHaveBeenCalledOnce();
+    expect(wrapper.emitted("close")).toHaveLength(1);
   });
 });
