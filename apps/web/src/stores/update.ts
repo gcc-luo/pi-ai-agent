@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { isTauri } from "../utils/platform.js";
+import { isTauri, isTauriDev } from "../utils/platform.js";
 
 export type UpdateStatus =
   | "idle"
@@ -34,6 +34,14 @@ export const useUpdateStore = defineStore("update", () => {
 
   async function checkForUpdate(): Promise<void> {
     if (!isTauri()) return;
+
+    if (isTauriDev()) {
+      status.value = "no-update";
+      updateInfo.value = null;
+      errorMessage.value = null;
+      pendingUpdate = null;
+      return;
+    }
 
     status.value = "checking";
     errorMessage.value = null;

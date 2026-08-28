@@ -7,6 +7,10 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+export function isTauriDev(): boolean {
+  return isTauri() && import.meta.env.DEV;
+}
+
 export function isWeb(): boolean {
   return !isTauri();
 }

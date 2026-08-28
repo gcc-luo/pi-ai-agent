@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useUpdateStore } from "./update.js";
 
+const mockIsTauriDev = vi.hoisted(() => vi.fn(() => false));
+
 vi.mock("../utils/platform.js", () => ({
   isTauri: () => true,
+  isTauriDev: mockIsTauriDev,
 }));
 
 const mockCheck = vi.fn();
@@ -50,6 +53,7 @@ describe("useUpdateStore", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    mockIsTauriDev.mockReturnValue(false);
     mockInvoke.mockResolvedValue(undefined);
   });
 
@@ -85,6 +89,17 @@ describe("useUpdateStore", () => {
     expect(store.status).toBe("no-update");
     expect(store.updateInfo).toBeNull();
     expect(store.isAvailable).toBe(false);
+  });
+
+  it("does not contact the release updater in Tauri development mode", async () => {
+    mockIsTauriDev.mockReturnValue(true);
+
+    const store = useUpdateStore();
+    await store.checkForUpdate();
+
+    expect(mockCheck).not.toHaveBeenCalled();
+    expect(store.status).toBe("no-update");
+    expect(store.updateInfo).toBeNull();
   });
 
   it("handles check failure gracefully", async () => {
