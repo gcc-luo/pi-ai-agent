@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, defineAsyncComponent } from "vue";
 import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS, createDiscreteApi } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
@@ -25,6 +25,7 @@ import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
 import { useThemeStore } from "./stores/theme.js";
 import { useI18n } from "./i18n/index.js";
+import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -38,8 +39,51 @@ const { t, currentLocale } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
+const sidebarWidth = ref(320);
+const sidebarMaxWidth = ref(0);
+const isSidebarResizing = ref(false);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 const showOnboardingProject = ref(false);
+
+let resizeStartX = 0;
+let resizeStartWidth = sidebarWidth.value;
+
+function syncSidebarWidthToViewport() {
+  sidebarMaxWidth.value = getSidebarMaxWidth(window.innerWidth);
+  sidebarWidth.value = clampSidebarWidth(sidebarWidth.value, window.innerWidth);
+}
+
+function startSidebarResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+
+  event.preventDefault();
+  isSidebarResizing.value = true;
+  resizeStartX = event.clientX;
+  resizeStartWidth = sidebarWidth.value;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("pointermove", handleSidebarResize);
+  window.addEventListener("pointerup", stopSidebarResize, { once: true });
+  window.addEventListener("pointercancel", stopSidebarResize, { once: true });
+}
+
+function handleSidebarResize(event: PointerEvent) {
+  if (!isSidebarResizing.value) return;
+
+  sidebarWidth.value = clampSidebarWidth(
+    resizeStartWidth + event.clientX - resizeStartX,
+    window.innerWidth,
+  );
+}
+
+function stopSidebarResize() {
+  isSidebarResizing.value = false;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+  window.removeEventListener("pointermove", handleSidebarResize);
+  window.removeEventListener("pointerup", stopSidebarResize);
+  window.removeEventListener("pointercancel", stopSidebarResize);
+}
 
 
 const currentSession = computed(() =>
@@ -47,6 +91,8 @@ const currentSession = computed(() =>
 );
 
 onMounted(async () => {
+  syncSidebarWidthToViewport();
+  window.addEventListener("resize", syncSidebarWidthToViewport);
   await projectStore.loadAll();
   // On page refresh, auto-open the first project's first session so the user
   // lands directly in the conversation view instead of the welcome screen.
@@ -56,6 +102,11 @@ onMounted(async () => {
   connection.init();
   agent.init();
   trashStore.load();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", syncSidebarWidthToViewport);
+  stopSidebarResize();
 });
 
 watch(selectedProjectId, async (id) => {
@@ -256,6 +307,7 @@ function closePreview() {
 
       <template v-if="activeNav === 'chat'">
         <Sidebar
+          :style="{ width: `${sidebarWidth}px` }"
           :selected-project-id="selectedProjectId"
           :selected-session-id="selectedSessionId"
           @select-project="selectedProjectId = $event"
@@ -264,6 +316,16 @@ function closePreview() {
           @rename-session="renameSession"
           @delete-session="deleteSession"
           @select-file="filePath = $event"
+        />
+        <div
+          class="sidebar-resizer"
+          :class="{ active: isSidebarResizing }"
+          role="separator"
+          aria-orientation="vertical"
+          :aria-valuemin="SIDEBAR_MIN_WIDTH"
+          :aria-valuemax="sidebarMaxWidth"
+          :aria-valuenow="sidebarWidth"
+          @pointerdown="startSidebarResize"
         />
 
         <main class="workspace">
@@ -484,6 +546,29 @@ function closePreview() {
   display: flex;
   min-height: 0;
   overflow: hidden;
+}
+
+.sidebar-resizer {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 6px;
+  width: 6px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::after {
+  position: absolute;
+  inset: 0 2px;
+  content: "";
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer.active::after {
+  background: var(--accent);
 }
 
 .workspace-main {

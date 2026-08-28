@@ -407,6 +407,7 @@ function startDeleteSession(s: SessionDto) {
 <style scoped>
 .sidebar {
   width: var(--sidebar-width);
+  max-width: 40vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
