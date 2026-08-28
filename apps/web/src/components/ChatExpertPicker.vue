@@ -67,7 +67,7 @@ async function clearExpert() {
           <path d="M3.5 15c.6-3 2.5-4.6 5.5-4.6s4.9 1.6 5.5 4.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
           <path d="M14.1 4.3l.65.65 1.3-1.3" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        <span class="expert-trigger-label">{{ t('expert.chat.pick') }}</span>
+        <span class="expert-trigger-label">{{ t('expert.chat.trigger') }}</span>
       </button>
     </template>
 
