@@ -9,10 +9,6 @@ const windowApi = {
   setFocus: vi.fn(async () => undefined),
 };
 
-type NotificationAction = (notification: {
-  extra?: Record<string, unknown>;
-}) => void | Promise<void>;
-
 vi.mock("../utils/platform.js", () => ({
   isTauri: () => true,
 }));
@@ -21,35 +17,32 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => windowApi,
 }));
 
-const notificationApi = {
-  onAction: vi.fn<[NotificationAction], Promise<{ unregister: () => void }>>(
-    async () => ({ unregister: () => undefined }),
-  ),
-  sendNotification: vi.fn(),
+const invokeApi = {
+  invoke: vi.fn(async () => undefined),
 };
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeApi.invoke,
+}));
+
+type ClickListener = (event: { payload?: Record<string, unknown> }) => void | Promise<void>;
+
+const eventApi = {
+  listen: vi.fn<[string, ClickListener], Promise<() => void>>(async () => () => undefined),
+};
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: eventApi.listen,
+}));
 
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: vi.fn(async () => true),
   requestPermission: vi.fn(async () => "granted"),
-  sendNotification: notificationApi.sendNotification,
-  onAction: notificationApi.onAction,
 }));
-
-class MockNotification {
-  static instances: MockNotification[] = [];
-  onclick: (() => void | Promise<void>) | null = null;
-  close = vi.fn();
-
-  constructor(public title: string, public options?: NotificationOptions) {
-    MockNotification.instances.push(this);
-  }
-}
 
 describe("desktop task notifications", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    MockNotification.instances = [];
-    vi.stubGlobal("Notification", MockNotification);
     vi.clearAllMocks();
   });
 
@@ -72,12 +65,10 @@ describe("desktop task notifications", () => {
       unreadCount: 1,
     });
 
-    expect(MockNotification.instances).toHaveLength(0);
-    expect(notificationApi.sendNotification).toHaveBeenCalledWith({
+    expect(invokeApi.invoke).toHaveBeenCalledWith("show_native_notification", {
       title: "处理任务",
       body: "已经完成",
-      autoCancel: true,
-      extra: {
+      target: {
         notificationId: "notification-1",
         projectId: "project-1",
         sessionId: "session-1",
@@ -85,10 +76,10 @@ describe("desktop task notifications", () => {
       },
     });
 
-    const onAction = notificationApi.onAction.mock.calls[0]?.[0];
-    expect(onAction).toBeDefined();
-    await onAction?.({
-      extra: {
+    expect(eventApi.listen).toHaveBeenCalledWith("notification-clicked", expect.any(Function));
+    const onClick = eventApi.listen.mock.calls[0]?.[1];
+    await onClick?.({
+      payload: {
         notificationId: "notification-1",
         projectId: "project-1",
         sessionId: "session-1",
@@ -105,5 +96,19 @@ describe("desktop task notifications", () => {
       sessionId: "session-1",
       messageId: "message-1",
     });
+  });
+
+  it("ignores click events without a valid navigation target", async () => {
+    const { useDesktopStore } = await import("./desktop.js");
+    const desktop = useDesktopStore();
+    const navigate = vi.fn(async () => undefined);
+    await desktop.initNotificationNavigation(navigate);
+
+    const onClick = eventApi.listen.mock.calls[0]?.[1];
+    await onClick?.({ payload: undefined });
+    await onClick?.({ payload: { projectId: "project-1" } });
+
+    expect(windowApi.unminimize).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

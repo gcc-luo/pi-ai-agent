@@ -15,7 +15,7 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -101,6 +101,45 @@ async fn prepare_for_update(app: tauri::AppHandle) -> Result<(), String> {
     .map_err(|error| format!("failed to join sidecar cleanup task: {error}"))?
 }
 
+/// 显示原生桌面通知，并在用户点击时向所有窗口发送 `notification-clicked` 事件。
+///
+/// Tauri 插件在桌面端的 `onAction` 回调不会在 Windows toast 点击时触发，
+/// 因此点击行为由 `notify_rust` 的 `wait_for_action` 在 Rust 侧处理。
+#[tauri::command]
+fn show_native_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    target: Option<serde_json::Value>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn(async move {
+        let identifier = app.config().identifier.clone();
+        let click_app = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            let mut notification = notify_rust::Notification::new();
+            notification.summary(&title).body(&body).auto_icon();
+            #[cfg(windows)]
+            {
+                // 已安装的应用通过 AppUserModelID 关联 PI 名称与图标；
+                // 开发调试 (target/debug|release) 下跳过，与 Tauri 插件行为一致。
+                if !tauri::is_dev() {
+                    notification.app_id(&identifier);
+                }
+            }
+            let _ = notification.show().map(|handle| {
+                handle.wait_for_action(|action| {
+                    // `default` 表示用户点击了通知本体（非按钮）。
+                    if action == "default" {
+                        let _ = click_app.emit("notification-clicked", target.clone());
+                    }
+                });
+            });
+        })
+        .await;
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -117,7 +156,8 @@ pub fn run() {
         .manage(ServerStartupError::default())
         .invoke_handler(tauri::generate_handler![
             get_server_port,
-            prepare_for_update
+            prepare_for_update,
+            show_native_notification
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

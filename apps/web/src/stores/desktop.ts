@@ -95,9 +95,9 @@ export const useDesktopStore = defineStore("desktop", () => {
     navigationHandler = handler;
     if (!isTauri() || notificationListenerRegistered) return;
     try {
-      const { onAction } = await import("@tauri-apps/plugin-notification");
-      await onAction(async (notification) => {
-        const target = navigationTarget(notification.extra);
+      const { listen } = await import("@tauri-apps/api/event");
+      await listen<Record<string, unknown> | undefined>("notification-clicked", async (event) => {
+        const target = navigationTarget(event.payload ?? undefined);
         if (!target) return;
         await focusWindow();
         await navigationHandler?.(target);
@@ -111,9 +111,10 @@ export const useDesktopStore = defineStore("desktop", () => {
   async function showTaskNotification(event: TaskSettledEvent) {
     if (!isTauri()) return;
     try {
-      const { isPermissionGranted, requestPermission, sendNotification } = await import(
+      const { isPermissionGranted, requestPermission } = await import(
         "@tauri-apps/plugin-notification"
       );
+      const { invoke } = await import("@tauri-apps/api/core");
       let granted = await isPermissionGranted();
       if (!granted) granted = (await requestPermission()) === "granted";
       if (!granted) return;
@@ -123,13 +124,12 @@ export const useDesktopStore = defineStore("desktop", () => {
         sessionId: event.sessionId,
         ...(event.messageId ? { messageId: event.messageId } : {}),
       };
-      // Use the Tauri-native notification so Windows associates the toast with
-      // the packaged PI app name and icon instead of the host shell process.
-      sendNotification({
+      // 通过自定义命令调用 notify_rust 原生通知：Windows 下 toast 归属 PI 应用，
+      // 且点击回调由 Rust 侧 wait_for_action 处理并广播 notification-clicked 事件。
+      void invoke("show_native_notification", {
         title: event.title,
         body: event.summary,
-        autoCancel: true,
-        extra: { ...target },
+        target,
       });
     } catch {
       // Persistent unread state is the fallback when OS notifications fail.
