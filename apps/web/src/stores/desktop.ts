@@ -123,24 +123,14 @@ export const useDesktopStore = defineStore("desktop", () => {
         sessionId: event.sessionId,
         ...(event.messageId ? { messageId: event.messageId } : {}),
       };
-      // On desktop the Tauri notification plugin delegates to the Web
-      // Notification API. Keep the returned object so its click callback can
-      // restore the app and route to the exact session/message.
-      if (typeof window.Notification === "function") {
-        const notification = new window.Notification(event.title, { body: event.summary });
-        notification.onclick = async () => {
-          notification.close();
-          await focusWindow();
-          await navigationHandler?.(target);
-        };
-      } else {
-        sendNotification({
-          title: event.title,
-          body: event.summary,
-          autoCancel: true,
-          extra: { ...target },
-        });
-      }
+      // Use the Tauri-native notification so Windows associates the toast with
+      // the packaged PI app name and icon instead of the host shell process.
+      sendNotification({
+        title: event.title,
+        body: event.summary,
+        autoCancel: true,
+        extra: { ...target },
+      });
     } catch {
       // Persistent unread state is the fallback when OS notifications fail.
     }
