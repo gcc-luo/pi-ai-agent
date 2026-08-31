@@ -558,6 +558,29 @@ const MIGRATIONS = [
       WHERE active_revision_id IS NULL AND parse_generation > 0;
     `,
   },
+  {
+    name: "027_agent_notifications",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN unread_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN last_read_message_id TEXT;
+
+      CREATE TABLE notifications (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        message_id TEXT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER
+      );
+      CREATE INDEX idx_notifications_session_unread
+        ON notifications(session_id, is_read, created_at);
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

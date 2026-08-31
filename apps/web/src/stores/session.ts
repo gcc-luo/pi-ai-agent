@@ -39,5 +39,20 @@ export const useSessionStore = defineStore("sessions", {
       await api.deleteSession(id);
       this.sessions = this.sessions.filter((s) => s.id !== id);
     },
+    applySession(updated: SessionDto) {
+      const idx = this.sessions.findIndex((session) => session.id === updated.id);
+      if (idx >= 0) this.sessions.splice(idx, 1, updated);
+      if (this.current?.id === updated.id) this.current = updated;
+    },
+    applyUnreadCount(id: string, unreadCount: number) {
+      const session = this.sessions.find((candidate) => candidate.id === id);
+      if (session) session.unreadCount = unreadCount;
+      if (this.current?.id === id) this.current.unreadCount = unreadCount;
+    },
+    async markRead(id: string, messageId?: string) {
+      const updated = await api.markSessionRead(id, messageId);
+      this.applySession(updated);
+      return updated;
+    },
   },
 });

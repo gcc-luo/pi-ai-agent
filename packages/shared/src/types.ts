@@ -50,6 +50,19 @@ type ServerEventPayload =
     }
   | { type: "session_status"; sessionId: string; status: SessionStatus }
   | { type: "session_updated"; session: SessionDto }
+  | {
+      type: "agent_task_settled";
+      notificationId: string;
+      taskId: string;
+      projectId: string;
+      sessionId: string;
+      messageId?: string;
+      title: string;
+      summary: string;
+      status: "completed" | "failed";
+      completedAt: number;
+      unreadCount: number;
+    }
   | { type: "model_changed"; sessionId: string; provider: string; model: string }
   | { type: "error"; sessionId?: string; code: string; message: string }
   | { type: "raw"; sessionId: string; data: Record<string, unknown> }
@@ -132,7 +145,23 @@ export interface SessionDto {
   createdAt: number;
   updatedAt: number;
   lastActiveAt: number | null;
+  unreadCount: number;
+  lastReadMessageId: string | null;
   deletedAt: number | null;
+}
+
+export interface NotificationDto {
+  id: string;
+  taskId: string;
+  projectId: string;
+  sessionId: string;
+  messageId: string | null;
+  type: "task_completed" | "task_failed";
+  title: string;
+  body: string;
+  isRead: boolean;
+  createdAt: number;
+  readAt: number | null;
 }
 
 export type BrowserCapabilityStatus =

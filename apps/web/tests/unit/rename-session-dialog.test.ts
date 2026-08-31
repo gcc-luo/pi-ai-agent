@@ -34,6 +34,8 @@ describe("RenameSessionDialog", () => {
     createdAt: 0,
     updatedAt: 0,
     lastActiveAt: null,
+    unreadCount: 0,
+    lastReadMessageId: null,
     deletedAt: null,
   };
 

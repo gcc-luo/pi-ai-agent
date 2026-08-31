@@ -5,6 +5,7 @@ import { openDatabase } from "./db/sqlite.js";
 import { ProjectRepository } from "./db/repositories/project.js";
 import { SessionRepository } from "./db/repositories/session.js";
 import { MessageRepository } from "./db/repositories/message.js";
+import { NotificationRepository } from "./db/repositories/notification.js";
 import { ModelRepository } from "./db/repositories/model.js";
 import { ProcessManager } from "./agent/process-manager.js";
 import { SessionStateStore } from "./agent/session-state.js";
@@ -77,6 +78,7 @@ export async function buildConfiguredApp(config: Config) {
   const sessions = new SessionRepository(db);
   sessions.markActiveAsCrashed();
   const messages = new MessageRepository(db);
+  const notifications = new NotificationRepository(db);
   const repairedToolCalls = messages.finishDanglingToolCalls(
     "应用或 Agent 进程已结束，工具调用未完成。",
   );
@@ -142,7 +144,7 @@ export async function buildConfiguredApp(config: Config) {
 
   // Build app first so we can pass app.log to ProcessManager
   const app = await buildApp(config, {
-    db, projects, sessions, messages, models, sessionStates, sessionEvents, skills, skillStore,
+    db, projects, sessions, messages, notifications, models, sessionStates, sessionEvents, skills, skillStore,
     knowledgeBases, kbFiles, kbChunks, kbBindings, kbSearch, experts,
     kbParseJobs, scheduledTasks, taskLogs, channels, channelConversations, plugins, config,
   });

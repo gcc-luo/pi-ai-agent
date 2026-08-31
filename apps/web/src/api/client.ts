@@ -101,6 +101,9 @@ export const api = {
     request<SessionDto>("PUT", `/sessions/${id}`, { expertId }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
+  markSessionRead: (sessionId: string, messageId?: string) =>
+    request<SessionDto>("POST", `/sessions/${sessionId}/read`, messageId ? { messageId } : {}),
+  getUnreadCount: () => request<{ count: number }>("GET", "/notifications/unread-count"),
   getBrowserCapability: (sessionId: string) =>
     request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),
   setBrowserCapability: (sessionId: string, enabled: boolean) =>

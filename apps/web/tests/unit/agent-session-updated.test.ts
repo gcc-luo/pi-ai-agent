@@ -13,7 +13,8 @@ describe("agent store session_updated event", () => {
   const seedSession = (id: string, title: string | null) => ({
     id, projectId: "p1", title, parentId: null, expertId: null,
     selectedPluginIds: [], browserEnabled: false,
-    status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null, deletedAt: null,
+    status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null,
+    unreadCount: 0, lastReadMessageId: null, deletedAt: null,
   });
 
   it("registers the streaming event listener only once", () => {

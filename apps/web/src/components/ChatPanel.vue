@@ -454,13 +454,20 @@ const userQuestions = computed<OutlineItem[]>(() => {
     });
 });
 
-function scrollToMessage(msgId: string) {
+function scrollToMessage(msgId: string): boolean {
   const container = messagesEl.value;
-  if (!container) return;
+  if (!container) return false;
   const el = container.querySelector(`[data-msg-id="${msgId}"]`);
-  if (!el) return;
+  if (!el) return false;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
   showOutline.value = false;
+  return true;
+}
+
+async function revealNotificationMessage(messageId?: string) {
+  await loadMessages();
+  await nextTick();
+  if (!messageId || !scrollToMessage(messageId)) scrollToBottom();
 }
 
 function closeOutlineOnOutsideClick(event: MouseEvent) {
@@ -919,7 +926,10 @@ function respondToPermission(approved: boolean) {
 const pendingTipLabel = computed(() => {
   const key = activeTipLabel(selectedSkills.value);
   return key ? t(key) : null;
-});</script>
+});
+
+defineExpose({ revealNotificationMessage });
+</script>
 
 <template>
   <div class="chat-panel" @click="closeOutlineOnOutsideClick">

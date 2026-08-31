@@ -24,6 +24,8 @@ import { useConnectionStore } from "./stores/connection.js";
 import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
 import { useThemeStore } from "./stores/theme.js";
+import { useNotificationStore } from "./stores/notifications.js";
+import type { NotificationNavigationTarget } from "./stores/desktop.js";
 import { useI18n } from "./i18n/index.js";
 import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
 
@@ -34,6 +36,7 @@ const agent = useAgentStore();
 const trashStore = useTrashStore();
 const { message } = createDiscreteApi(["message"]);
 const themeStore = useThemeStore();
+const notifications = useNotificationStore();
 const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
@@ -44,6 +47,9 @@ const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 const showOnboardingProject = ref(false);
+const chatPanelRef = ref<{
+  revealNotificationMessage: (messageId?: string) => Promise<void>;
+} | null>(null);
 
 let resizeStartX = 0;
 let resizeStartWidth = sidebarWidth.value;
@@ -90,9 +96,22 @@ const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
 );
 
+let projectLoadPromise: Promise<void> = Promise.resolve();
+let sessionOpenPromise: Promise<void> = Promise.resolve();
+
+function handleWindowFocus() {
+  void notifications.markCurrentSessionReadIfViewed();
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible") handleWindowFocus();
+}
+
 onMounted(async () => {
   syncSidebarWidthToViewport();
   window.addEventListener("resize", syncSidebarWidthToViewport);
+  window.addEventListener("focus", handleWindowFocus);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   await projectStore.loadAll();
   // On page refresh, auto-open the first project's first session so the user
   // lands directly in the conversation view instead of the welcome screen.
@@ -101,29 +120,40 @@ onMounted(async () => {
   }
   connection.init();
   agent.init();
+  await notifications.init(handleNotificationNavigation);
   trashStore.load();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", syncSidebarWidthToViewport);
+  window.removeEventListener("focus", handleWindowFocus);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   stopSidebarResize();
 });
 
-watch(selectedProjectId, async (id) => {
-  filePath.value = null;
-  selectedSessionId.value = null;
-  if (id) {
+watch(selectedProjectId, (id) => {
+  projectLoadPromise = (async () => {
+    filePath.value = null;
+    selectedSessionId.value = null;
+    if (!id) return;
     await projectStore.loadOne(id);
     await sessionStore.loadForProject(id);
-    if (sessionStore.sessions.length) {
-      selectedSessionId.value = sessionStore.sessions[0]!.id;
-    }
-  }
-});
+    if (sessionStore.sessions.length) selectedSessionId.value = sessionStore.sessions[0]!.id;
+  })();
+}, { flush: "sync" });
 
-watch(selectedSessionId, async (id) => {
-  if (id) await sessionStore.open(id);
-});
+watch(selectedSessionId, (id) => {
+  sessionOpenPromise = (async () => {
+    if (!id) return;
+    await sessionStore.open(id);
+    const lastMessageId = sessionStore.messages[sessionStore.messages.length - 1]?.id;
+    await notifications.markCurrentSessionReadIfViewed(lastMessageId);
+  })();
+}, { flush: "sync" });
+
+watch([activeNav, selectedProjectId, selectedSessionId], ([nav, projectId, sessionId]) => {
+  notifications.setViewContext(nav, projectId, sessionId);
+}, { immediate: true, flush: "sync" });
 
 async function createSession() {
   if (!selectedProjectId.value) return;
@@ -149,6 +179,7 @@ async function renameSession(id: string, title: string) {
 async function deleteSession(id: string) {
   try {
     await sessionStore.remove(id);
+    await notifications.refreshTotalUnread();
     if (selectedSessionId.value === id) {
       selectedSessionId.value = null;
       sessionStore.current = null;
@@ -176,15 +207,18 @@ function navigateToProject(projectId: string) {
 async function navigateToSession(payload: { projectId: string; sessionId: string }) {
   activeNav.value = "chat";
   if (selectedProjectId.value !== payload.projectId) {
-    // Setting selectedProjectId triggers a watcher that loads sessions and
-    // auto-selects the first one. We wait for it to finish, then override
-    // with the expert session we actually want.
     selectedProjectId.value = payload.projectId;
-    await nextTick();
-    // Give the watcher time to complete its async loads.
-    await new Promise((r) => setTimeout(r, 100));
+    await projectLoadPromise;
   }
   selectedSessionId.value = payload.sessionId;
+  await sessionOpenPromise;
+}
+
+async function handleNotificationNavigation(target: NotificationNavigationTarget) {
+  await navigateToSession(target);
+  await nextTick();
+  await chatPanelRef.value?.revealNotificationMessage(target.messageId);
+  await notifications.markSessionRead(target.sessionId, target.messageId);
 }
 
 const lightOverrides = {
@@ -362,6 +396,7 @@ function closePreview() {
                 <div class="workspace-chat">
                   <ChatPanel
                     v-if="selectedSessionId"
+                    ref="chatPanelRef"
                     :session-id="selectedSessionId"
                     :project-id="selectedProjectId!"
                     @select-file="filePath = $event"

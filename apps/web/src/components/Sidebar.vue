@@ -9,6 +9,7 @@ import RenameSessionDialog from "./RenameSessionDialog.vue";
 import ProjectManagerDialog from "./ProjectManagerDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useI18n } from "../i18n/index.js";
+import { formatUnreadCount } from "../utils/task-notifications.js";
 import { renderMarkdown } from "../utils/markdown.js";
 import type { SessionDto, MessageDto } from "@pi-web-ui/shared";
 
@@ -282,6 +283,11 @@ function startDeleteSession(s: SessionDto) {
             <span class="item-label truncate">{{ s.title ?? t('sidebar.newSession') }}</span>
           </div>
           <span v-if="agent.isSessionBusy(s.id)" class="status-dot running" />
+          <span
+            v-if="s.id !== selectedSessionId && s.unreadCount > 0"
+            class="session-unread-badge"
+            :aria-label="`${s.unreadCount} 条未读更新`"
+          >{{ formatUnreadCount(s.unreadCount) }}</span>
           <span class="item-actions">
             <button class="item-action" :title="t('renameSession.title')" @click.stop="startRenameSession(s)">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -761,6 +767,23 @@ function startDeleteSession(s: SessionDto) {
 .list-item.active .item-label {
   color: var(--primary-color);
   font-weight: 600;
+}
+
+.session-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--primary-color);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 

@@ -73,6 +73,23 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     return app.messages.listBySession(req.params.id);
   });
 
+  app.post<{ Params: { id: string }; Body: { messageId?: string } }>(
+    "/sessions/:id/read",
+    async (req, reply) => {
+      const session = app.sessions.findById(req.params.id);
+      if (!session) return reply.code(404).send({ error: "not found" });
+      const messageId = typeof req.body?.messageId === "string" && req.body.messageId
+        ? req.body.messageId
+        : undefined;
+      app.notifications.markSessionRead(req.params.id, messageId);
+      return app.sessions.findById(req.params.id);
+    },
+  );
+
+  app.get("/notifications/unread-count", async () => ({
+    count: app.notifications.totalUnreadCount(),
+  }));
+
   app.delete<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
     const s = app.sessions.findById(req.params.id);
     if (!s) return reply.code(404).send({ error: "not found" });

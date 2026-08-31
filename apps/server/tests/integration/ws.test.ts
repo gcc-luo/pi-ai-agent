@@ -12,6 +12,7 @@ import { openDatabase } from "../../src/db/sqlite.js";
 import { ProjectRepository } from "../../src/db/repositories/project.js";
 import { SessionRepository } from "../../src/db/repositories/session.js";
 import { MessageRepository } from "../../src/db/repositories/message.js";
+import { NotificationRepository } from "../../src/db/repositories/notification.js";
 import { ModelRepository } from "../../src/db/repositories/model.js";
 import { ProcessManager } from "../../src/agent/process-manager.js";
 import { SessionStateStore } from "../../src/agent/session-state.js";
@@ -68,6 +69,7 @@ describe("ws agent", () => {
 
     app = await buildApp(config, {
       db, projects, sessions, messages: new MessageRepository(db),
+      notifications: new NotificationRepository(db),
       models: new ModelRepository(db),
       processManager, sessionStates: new SessionStateStore(),
       kbBindings: { listBySession: () => [] },
@@ -143,6 +145,13 @@ describe("ws agent", () => {
     await waitFor(() => received.some((e) => e.code === "compaction_busy"));
     proc.stdout.emit("data", JSON.stringify({ type: "agent_settled" }) + "\n");
     await waitFor(() => app.sessionStates.get(sessionId)?.runStatus === "idle");
+    await waitFor(() => received.some((event) => event.type === "agent_task_settled"));
+    expect(received).toContainEqual(expect.objectContaining({
+      type: "agent_task_settled",
+      sessionId,
+      status: "completed",
+      unreadCount: 1,
+    }));
     ws.send(JSON.stringify({ type: "compact", sessionId }));
     await waitFor(() => initial.readableLength > 0);
     expect(initial.read().toString()).toBe(JSON.stringify({ type: "compact" }) + "\n");

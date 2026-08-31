@@ -7,6 +7,7 @@ import { resolveSearchScopes } from "../kb/search-scopes.js";
 import { extractUserSearchQuery } from "../kb/query-text.js";
 import { ulid } from "../util/ulid.js";
 import { SessionEventBuffer } from "../agent/session-event-buffer.js";
+import { recordAgentTaskSettlement } from "../agent/task-notification.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
@@ -199,7 +200,29 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           modelConfig ? { provider: modelConfig.provider, model: modelConfig.model } : undefined,
         );
         nextState.send = send;
-        let lastAssistantMessage: { id: string; metadata: Record<string, unknown> } | null = null;
+        let lastAssistantMessage: {
+          id: string;
+          content: string;
+          metadata: Record<string, unknown>;
+        } | null = null;
+        const settleActiveTask = (fallbackError?: string) => {
+          const task = nextState.activeTask;
+          if (!task) return;
+          const terminalError = fallbackError ?? task.terminalError;
+          const settled = recordAgentTaskSettlement({
+            notifications: app.notifications,
+            sessions: app.sessions,
+            taskId: task.id,
+            projectId: project.id,
+            sessionId: session.id,
+            assistant: lastAssistantMessage
+              ? { id: lastAssistantMessage.id, content: lastAssistantMessage.content }
+              : null,
+            error: terminalError,
+          });
+          nextState.activeTask = null;
+          if (settled) nextState.send(settled);
+        };
         bridge.onEvent((e) => {
           let forwardedEvent = e;
           if (e.type === "agent_status") {
@@ -216,7 +239,14 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             if (e.status === "idle") nextState.runStartedAt = null;
           }
           nextState.send(forwardedEvent);
-          if (e.type === "tool_call") {
+          if (e.type === "error") {
+            if (e.code === "pi_model_error" && nextState.activeTask) {
+              nextState.activeTask.terminalError = e.message;
+            }
+            if ((e.code === "pi_prompt_failed" || e.code === "pi_prompt_write_failed") && nextState.activeTask) {
+              settleActiveTask(e.message);
+            }
+          } else if (e.type === "tool_call") {
             if (isFileModifyingTool(e.name, e.args)) {
               fileModifyingToolCalls.set(e.toolCallId, e.name);
             }
@@ -249,7 +279,8 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           } else if (e.type === "message_end") {
             const metadata = e.metadata ?? {};
             const saved = app.messages.append({ sessionId: e.sessionId, role: "assistant", content: e.content, metadata, createdAt: e.timestamp });
-            lastAssistantMessage = { id: saved.id, metadata };
+            lastAssistantMessage = { id: saved.id, content: e.content, metadata };
+            if (nextState.activeTask) nextState.activeTask.terminalError = null;
             const toolCalls = Array.isArray(metadata.toolCalls) ? metadata.toolCalls as ToolCall[] : [];
             for (const toolCall of toolCalls) {
               persistedToolCalls.set(toolCall.toolCallId, {
@@ -259,8 +290,14 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
               });
             }
           }
+          if (e.type === "agent_status" && e.status === "idle") settleActiveTask();
         });
         proc.on("exit", () => {
+          if (nextState.activeTask) {
+            settleActiveTask(
+              proc.status === "crashed" ? "Agent 进程异常退出" : "Agent 进程已结束",
+            );
+          }
           nextState.runStatus = "idle";
           nextState.runStartedAt = null;
           finishPendingToolCalls(session.id, "Agent 进程已结束，工具调用未完成。");
@@ -462,6 +499,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
             startedAt: state.runStartedAt,
           });
         }
+        if (event.type === "send") {
+          state.activeTask = {
+            id: ulid(),
+            prompt: event.content,
+            terminalError: null,
+          };
+        }
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
         const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
         if (event.type === "send" && event.images?.length) {
@@ -499,6 +543,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         app.pluginPermissions?.cancelSession(session.id);
         state.runStatus = "idle";
         state.runStartedAt = null;
+        state.activeTask = null;
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {

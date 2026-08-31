@@ -28,6 +28,7 @@ import type { PluginRepository } from "../db/repositories/plugin.js";
 import type { PluginManager } from "../plugins/plugin-manager.js";
 import type { PluginPermissionService } from "../plugins/plugin-permission-service.js";
 import type { ConnectorService } from "../connectors/connector-service.js";
+import type { NotificationRepository } from "../db/repositories/notification.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -35,6 +36,7 @@ declare module "fastify" {
     projects: ProjectRepository;
     sessions: SessionRepository;
     messages: MessageRepository;
+    notifications: NotificationRepository;
     models: ModelRepository;
     processManager: ProcessManager;
     sessionStates: SessionStateStore;

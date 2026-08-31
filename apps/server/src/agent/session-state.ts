@@ -10,6 +10,11 @@ export interface SessionState {
   model: string | null;
   runStatus: "working" | "idle";
   runStartedAt: number | null;
+  activeTask: {
+    id: string;
+    prompt: string;
+    terminalError: string | null;
+  } | null;
   lastActivityAt: number;
   send: (event: ServerEvent) => void;
 }
@@ -31,6 +36,7 @@ export class SessionStateStore {
       model: model?.model ?? null,
       runStatus: "idle",
       runStartedAt: null,
+      activeTask: null,
       lastActivityAt: Date.now(),
       send: () => {},
     };

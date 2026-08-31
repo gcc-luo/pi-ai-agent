@@ -11,6 +11,7 @@ import { openDatabase } from "../../src/db/sqlite.js";
 import { ProjectRepository } from "../../src/db/repositories/project.js";
 import { SessionRepository } from "../../src/db/repositories/session.js";
 import { MessageRepository } from "../../src/db/repositories/message.js";
+import { NotificationRepository } from "../../src/db/repositories/notification.js";
 import { ModelRepository } from "../../src/db/repositories/model.js";
 import { SessionStateStore } from "../../src/agent/session-state.js";
 import { agentRoutes } from "../../src/ws/agent.js";
@@ -63,6 +64,7 @@ describe("ws agent reconnect", () => {
       projects,
       sessions,
       messages: new MessageRepository(db),
+      notifications: new NotificationRepository(db),
       models: new ModelRepository(db),
       sessionStates: new SessionStateStore(),
       processManager,

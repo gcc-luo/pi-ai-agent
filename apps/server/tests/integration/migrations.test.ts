@@ -22,6 +22,7 @@ describe("migrations", () => {
     expect(names).toContain("connector_instances");
     expect(names).toContain("connector_tools");
     expect(names).toContain("connector_audits");
+    expect(names).toContain("notifications");
   });
 
   it("is idempotent", () => {
@@ -36,6 +37,14 @@ describe("migrations", () => {
     runMigrations(db);
     const cols = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
     expect(cols.map((c) => c.name)).toContain("deleted_at");
+  });
+
+  it("adds persisted unread state to sessions", () => {
+    runMigrations(db);
+    const columns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      "unread_count", "last_read_message_id",
+    ]));
   });
 
   it("adds the active revision pointer and multimodal segment columns", () => {
@@ -76,7 +85,7 @@ describe("migrations", () => {
         ('016_wechat_conversations', 0), ('017_channel_conversations', 0),
         ('018_session_browser_capability', 0), ('019_plugin_system', 0),
         ('020_kb_reliability_multimodal', 0), ('021_connectors', 0),
-        ('022_builtin_connectors', 0);
+        ('022_builtin_connectors', 0), ('027_agent_notifications', 0);
     `);
 
     runMigrations(db);

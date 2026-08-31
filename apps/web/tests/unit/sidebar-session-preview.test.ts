@@ -30,6 +30,8 @@ describe("Sidebar session preview", () => {
       createdAt: 1,
       updatedAt: 1,
       lastActiveAt: 1,
+      unreadCount: 4,
+      lastReadMessageId: null,
       deletedAt: null,
     }];
     vi.spyOn(api, "listMessages").mockResolvedValue([{
@@ -65,5 +67,8 @@ describe("Sidebar session preview", () => {
     expect(preview?.querySelector("h2")?.textContent).toBe("小径");
     expect(preview?.querySelector("strong")?.textContent).toBe("春风");
     expect(preview?.querySelector("script")).toBeNull();
+    expect(wrapper.get(".session-unread-badge").text()).toBe("4");
+    await wrapper.setProps({ selectedSessionId: "s1" });
+    expect(wrapper.find(".session-unread-badge").exists()).toBe(false);
   });
 });

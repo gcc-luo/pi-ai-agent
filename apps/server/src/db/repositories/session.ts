@@ -7,6 +7,7 @@ type Row = {
   expert_id: string | null; status: SessionStatus; pi_session_ref: string | null;
   browser_enabled: number;
   created_at: number; updated_at: number; last_active_at: number | null;
+  unread_count: number; last_read_message_id: string | null;
   deleted_at: number | null;
 };
 
@@ -16,6 +17,7 @@ function toDto(r: Row): SessionDto {
     selectedPluginIds: [],
     browserEnabled: r.browser_enabled === 1,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
+    unreadCount: r.unread_count, lastReadMessageId: r.last_read_message_id,
     deletedAt: r.deleted_at,
   };
 }
@@ -34,7 +36,8 @@ export class SessionRepository {
       id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
       selectedPluginIds: [],
       browserEnabled: false,
-      status: "active", createdAt: now, updatedAt: now, lastActiveAt: null, deletedAt: null,
+      status: "active", createdAt: now, updatedAt: now, lastActiveAt: null,
+      unreadCount: 0, lastReadMessageId: null, deletedAt: null,
     };
   }
 
