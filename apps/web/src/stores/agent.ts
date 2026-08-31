@@ -394,7 +394,11 @@ export const useAgentStore = defineStore("agent", {
         if (e.status === "working") {
           delete this.runEndedFromWorking[sid];
           delete this.runOutcomes[sid];
-          if (!this.runStartedAt[sid]) this.runStartedAt[sid] = Date.now();
+          if (typeof e.startedAt === "number" && Number.isFinite(e.startedAt) && e.startedAt > 0) {
+            this.runStartedAt[sid] = e.startedAt;
+          } else if (!this.runStartedAt[sid]) {
+            this.runStartedAt[sid] = Date.now();
+          }
         } else {
           this.runEndedFromWorking[sid] = wasWorking;
           delete this.runStartedAt[sid];

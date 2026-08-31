@@ -124,8 +124,8 @@ describe("agent store session_updated event", () => {
   it("tracks a live run start and attaches its final duration to the last assistant message", () => {
     const agent = useAgentStore();
 
-    agent.handle({ type: "agent_status", sessionId: "s1", status: "working" });
-    expect(agent.runStartedAtFor("s1")).toEqual(expect.any(Number));
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working", startedAt: 1_000 });
+    expect(agent.runStartedAtFor("s1")).toBe(1_000);
 
     agent.handle({
       type: "message_start", sessionId: "s1", messageId: "m1", role: "assistant",
@@ -139,6 +139,16 @@ describe("agent store session_updated event", () => {
 
     expect(agent.runStartedAtFor("s1")).toBeNull();
     expect(agent.messagesFor("s1")[0]?.metadata).toMatchObject({ durationMs: 74_000 });
+  });
+
+  it("restores the original run start after session status replay", () => {
+    const agent = useAgentStore();
+
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working", startedAt: 10_000 });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "idle" });
+    agent.handle({ type: "agent_status", sessionId: "s1", status: "working", startedAt: 10_000 });
+
+    expect(agent.runStartedAtFor("s1")).toBe(10_000);
   });
 
   it("ignores a repeated message_start boundary for the same assistant message", () => {

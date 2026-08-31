@@ -113,6 +113,9 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           type: "agent_status",
           sessionId: session.id,
           status: state?.runStatus ?? "idle",
+          ...(state?.runStatus === "working" && state.runStartedAt !== null
+            ? { startedAt: state.runStartedAt }
+            : {}),
         });
         send({
           type: "session_status",
@@ -198,17 +201,21 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         nextState.send = send;
         let lastAssistantMessage: { id: string; metadata: Record<string, unknown> } | null = null;
         bridge.onEvent((e) => {
+          let forwardedEvent = e;
           if (e.type === "agent_status") {
             nextState.runStatus = e.status;
             if (e.status === "working") {
+              if (nextState.runStartedAt === null) nextState.runStartedAt = Date.now();
+              forwardedEvent = { ...e, startedAt: nextState.runStartedAt };
               lastAssistantMessage = null;
             } else if (typeof e.durationMs === "number" && lastAssistantMessage) {
               const metadata = { ...lastAssistantMessage.metadata, durationMs: e.durationMs };
               app.messages.updateMetadata(lastAssistantMessage.id, metadata);
               lastAssistantMessage = { ...lastAssistantMessage, metadata };
             }
+            if (e.status === "idle") nextState.runStartedAt = null;
           }
-          nextState.send(e);
+          nextState.send(forwardedEvent);
           if (e.type === "tool_call") {
             if (isFileModifyingTool(e.name, e.args)) {
               fileModifyingToolCalls.set(e.toolCallId, e.name);
@@ -255,6 +262,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         });
         proc.on("exit", () => {
           nextState.runStatus = "idle";
+          nextState.runStartedAt = null;
           finishPendingToolCalls(session.id, "Agent 进程已结束，工具调用未完成。");
           const status = proc.status === "crashed" ? "crashed" : "suspended";
           app.sessions.setStatus(session.id, status);
@@ -306,7 +314,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           return;
         }
         state.runStatus = "working";
-        state.send({ type: "agent_status", sessionId: session.id, status: "working" });
+        state.runStartedAt = Date.now();
+        state.send({
+          type: "agent_status",
+          sessionId: session.id,
+          status: "working",
+          startedAt: state.runStartedAt,
+        });
         state.bridge.send({ type: "compact" });
         return;
       }
@@ -440,7 +454,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           // rejected image must not leave the composer in a perpetual
           // "working" state.
           state.runStatus = "working";
-          state.send({ type: "agent_status", sessionId: session.id, status: "working" });
+          state.runStartedAt = Date.now();
+          state.send({
+            type: "agent_status",
+            sessionId: session.id,
+            status: "working",
+            startedAt: state.runStartedAt,
+          });
         }
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
         const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
@@ -478,6 +498,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       } else if (event.type === "interrupt") {
         app.pluginPermissions?.cancelSession(session.id);
         state.runStatus = "idle";
+        state.runStartedAt = null;
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {

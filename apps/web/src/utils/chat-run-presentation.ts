@@ -21,6 +21,11 @@ interface ChatMessageSource {
   parts?: MessagePart[];
 }
 
+// A queued prompt can be persisted only after the WebSocket reconnects. Keep
+// enough room for that delay when matching legacy rows without a stable ID,
+// while the one-to-one pairing below still preserves repeated prompts.
+const USER_MESSAGE_MATCH_WINDOW_MS = 60_000;
+
 function userMessageSignature(message: ChatMessageSource): string | null {
   const visibleParts = (message.parts ?? []).flatMap((part) => {
     if (part.kind === "text") return [`text:${part.text}`];
@@ -75,7 +80,7 @@ export function mergeChatMessageSources<T extends ChatMessageSource>(
       if (candidate.clientMessageId && message.clientMessageId) return;
       if (userMessageSignature(message) !== signature) return;
       const distance = Math.abs(candidate.createdAt - message.createdAt);
-      if (distance <= 10_000) userPairs.push({ persistedIndex, liveIndex, distance });
+      if (distance <= USER_MESSAGE_MATCH_WINDOW_MS) userPairs.push({ persistedIndex, liveIndex, distance });
     });
   });
   userPairs.sort((left, right) => left.distance - right.distance);

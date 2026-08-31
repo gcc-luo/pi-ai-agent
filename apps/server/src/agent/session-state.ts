@@ -9,6 +9,7 @@ export interface SessionState {
   provider: string | null;
   model: string | null;
   runStatus: "working" | "idle";
+  runStartedAt: number | null;
   lastActivityAt: number;
   send: (event: ServerEvent) => void;
 }
@@ -29,6 +30,7 @@ export class SessionStateStore {
       provider: model?.provider ?? null,
       model: model?.model ?? null,
       runStatus: "idle",
+      runStartedAt: null,
       lastActivityAt: Date.now(),
       send: () => {},
     };

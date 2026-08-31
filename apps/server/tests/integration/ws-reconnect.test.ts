@@ -89,6 +89,10 @@ describe("ws agent reconnect", () => {
     await waitForOpen(ws1);
     ws1.send(JSON.stringify({ type: "send", sessionId, content: "first" }));
     await new Promise((r) => setTimeout(r, 50));
+    const initialWorkingStatus = ws1Received.find((event) =>
+      event.type === "agent_status" && event.status === "working",
+    );
+    expect(initialWorkingStatus?.startedAt).toEqual(expect.any(Number));
     fakeProc.stdout.write(
       JSON.stringify({ type: "message_start", message: { role: "assistant", timestamp: 1000 } }) + "\n",
     );
@@ -109,6 +113,7 @@ describe("ws agent reconnect", () => {
       type: "agent_status",
       sessionId,
       status: "working",
+      startedAt: initialWorkingStatus.startedAt,
     }));
     expect(ws2Received).toContainEqual(expect.objectContaining({
       type: "session_status",

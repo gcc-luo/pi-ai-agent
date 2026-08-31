@@ -600,4 +600,21 @@ describe("mergeChatMessageSources", () => {
       "local-u2",
     ]);
   });
+
+  it("matches a delayed persisted copy after a WebSocket reconnect", () => {
+    const persisted = [{
+      id: "db-u1",
+      role: "user" as const,
+      createdAt: 14_000,
+      parts: [{ kind: "text" as const, text: "检查当前项目" }],
+    }];
+    const live = [{
+      id: "local-u1",
+      role: "user" as const,
+      createdAt: 0,
+      parts: [{ kind: "text" as const, text: "检查当前项目" }],
+    }];
+
+    expect(mergeChatMessageSources(persisted, live).map((message) => message.id)).toEqual(["db-u1"]);
+  });
 });

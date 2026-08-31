@@ -33,6 +33,8 @@ type ServerEventPayload =
       type: "agent_status";
       sessionId: string;
       status: "working" | "idle";
+      /** Stable start time for the active run, used when clients resubscribe. */
+      startedAt?: number;
       /** Total time spent by the just-settled agent run. */
       durationMs?: number;
     }
