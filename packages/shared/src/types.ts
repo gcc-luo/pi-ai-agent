@@ -7,7 +7,7 @@ export interface ImageAttachment {
 
 // WebSocket events: client → server
 export type ClientEvent =
-  | { type: "send"; sessionId: string; content: string; model?: string; images?: ImageAttachment[] }
+  | { type: "send"; sessionId: string; content: string; clientMessageId?: string; model?: string; images?: ImageAttachment[] }
   | { type: "interrupt"; sessionId: string }
   | { type: "compact"; sessionId: string }
   | { type: "permission_response"; sessionId: string; requestId: string; approved: boolean }

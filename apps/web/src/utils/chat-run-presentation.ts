@@ -17,6 +17,7 @@ interface ChatMessageSource {
   id: string;
   role: "user" | "assistant";
   createdAt: number;
+  clientMessageId?: string;
   parts?: MessagePart[];
 }
 
@@ -48,19 +49,36 @@ export function mergeChatMessageSources<T extends ChatMessageSource>(
       .map((message) => message.createdAt),
   );
   const userPairs: Array<{ persistedIndex: number; liveIndex: number; distance: number }> = [];
+  const matchedPersistedUsers = new Set<number>();
+  const matchedLiveUsers = new Set<number>();
+
   persisted.forEach((candidate, persistedIndex) => {
-    if (candidate.role !== "user") return;
+    if (candidate.role !== "user" || !candidate.clientMessageId) return;
+    const liveIndex = live.findIndex((message, index) =>
+      !matchedLiveUsers.has(index)
+      && message.role === "user"
+      && message.clientMessageId === candidate.clientMessageId,
+    );
+    if (liveIndex < 0) return;
+    matchedPersistedUsers.add(persistedIndex);
+    matchedLiveUsers.add(liveIndex);
+  });
+
+  persisted.forEach((candidate, persistedIndex) => {
+    if (candidate.role !== "user" || matchedPersistedUsers.has(persistedIndex)) return;
     const signature = userMessageSignature(candidate);
     if (!signature) return;
     live.forEach((message, liveIndex) => {
-      if (message.role !== "user" || userMessageSignature(message) !== signature) return;
+      if (matchedLiveUsers.has(liveIndex) || message.role !== "user") return;
+      // Stable IDs are authoritative. Signature matching exists only for
+      // legacy rows or clients that do not yet provide one.
+      if (candidate.clientMessageId && message.clientMessageId) return;
+      if (userMessageSignature(message) !== signature) return;
       const distance = Math.abs(candidate.createdAt - message.createdAt);
       if (distance <= 10_000) userPairs.push({ persistedIndex, liveIndex, distance });
     });
   });
   userPairs.sort((left, right) => left.distance - right.distance);
-  const matchedPersistedUsers = new Set<number>();
-  const matchedLiveUsers = new Set<number>();
   for (const pair of userPairs) {
     if (
       matchedPersistedUsers.has(pair.persistedIndex)

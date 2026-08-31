@@ -204,7 +204,9 @@ export const useAgentStore = defineStore("agent", {
       this.runStates[sessionId] = "working";
       this.runStartedAt[sessionId] = Date.now();
       delete this.runOutcomes[sessionId];
-      const event: Record<string, unknown> = { type: "send", sessionId, content };
+      const event: Record<string, unknown> = {
+        type: "send", sessionId, content, clientMessageId: messageId,
+      };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
       if (!wsClient.send(event as any)) {
@@ -231,6 +233,7 @@ export const useAgentStore = defineStore("agent", {
       const sent = wsClient.send({
         type: "send",
         sessionId,
+        clientMessageId: messageId,
         content,
         ...(this.currentModel ? { model: this.currentModel } : {}),
         ...(images.length ? { images } : {}),

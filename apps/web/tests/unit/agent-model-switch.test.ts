@@ -47,6 +47,7 @@ describe("agent model selection", () => {
     expect(send).toHaveBeenCalledWith({
       type: "send",
       sessionId: "session-1",
+      clientMessageId: expect.any(String),
       content: "识别图片",
       model: "qwen3.7-plus",
     });

@@ -692,6 +692,9 @@ const mergedMessageSources = computed(() => {
     streaming: false,
     persisted: true,
     createdAt: m.createdAt,
+    clientMessageId: typeof m.metadata?.clientMessageId === "string"
+      ? m.metadata.clientMessageId
+      : undefined,
     metadata: m.metadata,
     failed: false,
     error: undefined as string | undefined,
@@ -703,6 +706,7 @@ const mergedMessageSources = computed(() => {
     streaming: m.status === "streaming",
     persisted: false,
     createdAt: m.createdAt,
+    clientMessageId: m.role === "user" ? m.id : undefined,
     metadata: m.metadata,
     failed: m.status === "error",
     error: m.error,

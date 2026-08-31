@@ -152,6 +152,26 @@ describe("ws agent", () => {
     ws.close();
   });
 
+  it("persists the stable client message ID together with image metadata", async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/agent`);
+    await new Promise<void>((resolve) => ws.on("open", resolve));
+
+    ws.send(JSON.stringify({
+      type: "send",
+      sessionId,
+      clientMessageId: "local-u1",
+      content: "检查截图",
+      images: [{ name: "shot.png", mediaType: "image/png", data: "abc" }],
+    }));
+
+    await waitFor(() => app.messages.listBySession(sessionId).length === 1);
+    expect(app.messages.listBySession(sessionId)[0]?.metadata).toEqual({
+      clientMessageId: "local-u1",
+      images: [{ name: "shot.png", mediaType: "image/png", data: "abc" }],
+    });
+    ws.close();
+  });
+
   it("starts and restarts the session with the model selected by the client", async () => {
     app.models.create({
       id: "model-a",

@@ -451,6 +451,13 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         console.log(`[WS Agent] bridge.send completed, appending message`);
 
         const msgMeta: Record<string, unknown> = {};
+        if (
+          event.type === "send"
+          && typeof event.clientMessageId === "string"
+          && event.clientMessageId.trim()
+        ) {
+          msgMeta.clientMessageId = event.clientMessageId;
+        }
         if (kbSearchMeta) msgMeta.kbSearch = kbSearchMeta;
         if (event.type === "send" && event.images?.length) {
           msgMeta.images = event.images.map((img: ImageAttachment) => ({

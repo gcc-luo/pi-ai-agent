@@ -315,6 +315,11 @@ describe("agent store session_updated event", () => {
 
     expect(agent.isSessionBusy("s1")).toBe(false);
     expect(agent.messagesFor("s1")[0]).toMatchObject({ id: messageId, status: "error" });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: "send",
+      sessionId: "s1",
+      clientMessageId: messageId,
+    }));
 
     send.mockImplementation(() => true);
     expect(agent.retryUserMessage("s1", messageId)).toBe(true);
@@ -323,6 +328,7 @@ describe("agent store session_updated event", () => {
     expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
       type: "send",
       sessionId: "s1",
+      clientMessageId: messageId,
       content: "请继续",
       images: [{ name: "shot.png", mediaType: "image/png", data: "abc" }],
     }));

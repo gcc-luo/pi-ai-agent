@@ -512,6 +512,46 @@ describe("formatProcessingDuration", () => {
 });
 
 describe("mergeChatMessageSources", () => {
+  it("matches a persisted user message by stable client ID despite timestamp drift", () => {
+    const persisted = [{
+      id: "db-u1",
+      role: "user" as const,
+      createdAt: 31_000,
+      clientMessageId: "local-u1",
+      parts: [
+        { kind: "image" as const, name: "shot.png", mediaType: "image/png", data: "abc" },
+        { kind: "text" as const, text: "检查截图" },
+      ],
+    }];
+    const live = [{
+      id: "local-u1",
+      role: "user" as const,
+      createdAt: 1_000,
+      clientMessageId: "local-u1",
+      parts: [
+        { kind: "image" as const, name: "shot.png", mediaType: "image/png", data: "abc" },
+        { kind: "text" as const, text: "检查截图" },
+      ],
+    }];
+
+    expect(mergeChatMessageSources(persisted, live).map((message) => message.id)).toEqual(["db-u1"]);
+  });
+
+  it("keeps identical user messages when their stable client IDs differ", () => {
+    const message = (id: string, clientMessageId: string) => ({
+      id,
+      role: "user" as const,
+      createdAt: 1_000,
+      clientMessageId,
+      parts: [{ kind: "text" as const, text: "再试一次" }],
+    });
+
+    expect(mergeChatMessageSources(
+      [message("db-u1", "local-u1")],
+      [message("local-u2", "local-u2")],
+    ).map((item) => item.id)).toEqual(["db-u1", "local-u2"]);
+  });
+
   it("prefers a persisted assistant message over its live stream copy", () => {
     const persisted = [{ id: "db-a1", role: "assistant" as const, createdAt: 1_000 }];
     const live = [
