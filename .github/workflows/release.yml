@@ -212,12 +212,21 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Generate latest.json
+        id: notes
         run: |
           set -euo pipefail
 
           VERSION="${{ steps.version.outputs.version }}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          NOTES="${{ github.event.head_commit.message }}"
+          NOTES_FILE="docs/release-notes/v${VERSION}.md"
+          if [[ ! -f "$NOTES_FILE" ]]; then
+            echo "::error::Release notes not found: $NOTES_FILE"
+            exit 1
+          fi
+          NOTES="$(cat "$NOTES_FILE")"
+          echo "RELEASE_NOTES<<EOF" >> "$GITHUB_ENV"
+          echo "$NOTES" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
           # macOS files
           MACOS_TARGZ=$(ls artifacts/macos/*.app.tar.gz | head -1)
@@ -260,7 +269,7 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
           body: |
-            ${{ github.event.head_commit.message }}
+            ${{ env.RELEASE_NOTES }}
 
             ## 下载说明
 

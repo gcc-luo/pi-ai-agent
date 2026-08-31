@@ -69,6 +69,12 @@ git log --pretty=format:"%h %s" v1.3.18..v1.4.0
 
 下载说明与更新内容分开维护，不要把安装包、签名文件或 CI 构建细节混入编号列表。
 
+## 更新内容文件
+
+每个版本的更新内容以 `docs/release-notes/v<版本号>.md` 文件随仓库提交（如 `docs/release-notes/v1.4.3.md`），在创建 tag 之前提交。文件内容为按本规范整理后的「## 更新内容」编号列表。
+
+发布工作流读取该文件，同一份内容同时用于 GitHub Release 正文与 `latest.json` 的 `notes` 字段；文件缺失时发布会直接失败，避免退回使用 commit message。
+
 ## 自动发布注意事项
 
 `${{ github.event.head_commit.message }}` 只代表触发工作流的最后一次提交，不能直接作为完整的版本更新说明。自动发布流程应使用按照本规范审核后的编号列表，并将同一份内容同时用于：
