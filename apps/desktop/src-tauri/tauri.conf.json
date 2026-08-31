@@ -17,6 +17,7 @@
         "height": 800,
         "minWidth": 800,
         "minHeight": 600,
+        "center": true,
         "resizable": true,
         "fullscreen": false,
         "backgroundColor": "#111716"
