@@ -129,6 +129,29 @@ describe("useUpdateStore", () => {
     });
   });
 
+  it("keeps the release announcement when an older update check finishes later", async () => {
+    let finishCheck!: (value: { available: boolean }) => void;
+    mockCheck.mockReturnValue(new Promise((resolve) => {
+      finishCheck = resolve;
+    }));
+    mockGetReleaseInfo.mockResolvedValue({
+      version: "1.4.1",
+      date: "2026-08-28T06:50:28Z",
+      body: "## 更新内容\n\n1. 优化更新公告。",
+    });
+
+    const store = useUpdateStore();
+    const checking = store.checkForUpdate();
+    await Promise.resolve();
+    await store.loadVersionInfo();
+
+    finishCheck({ available: false });
+    await checking;
+
+    expect(store.status).toBe("release-info");
+    expect(store.updateInfo?.version).toBe("1.4.1");
+  });
+
   it("handles check failure gracefully", async () => {
     mockCheck.mockRejectedValue(new Error("Network error"));
 

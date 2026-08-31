@@ -30,6 +30,7 @@ export const useUpdateStore = defineStore("update", () => {
 
   // Keep the update object alive across download → install
   let pendingUpdate: any = null;
+  let requestGeneration = 0;
 
   const isAvailable = computed(() => status.value === "available");
   const isDownloading = computed(() => status.value === "downloading");
@@ -38,7 +39,10 @@ export const useUpdateStore = defineStore("update", () => {
   async function checkForUpdate(): Promise<void> {
     if (!isTauri()) return;
 
+    const generation = ++requestGeneration;
+
     if (isTauriDev()) {
+      if (generation !== requestGeneration) return;
       status.value = "no-update";
       updateInfo.value = null;
       errorMessage.value = null;
@@ -53,6 +57,7 @@ export const useUpdateStore = defineStore("update", () => {
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
+      if (generation !== requestGeneration) return;
 
       if (update?.available) {
         pendingUpdate = update;
@@ -67,6 +72,7 @@ export const useUpdateStore = defineStore("update", () => {
         updateInfo.value = null;
       }
     } catch (error) {
+      if (generation !== requestGeneration) return;
       status.value = "error";
       errorMessage.value = error instanceof Error ? error.message : String(error);
     }
@@ -75,14 +81,19 @@ export const useUpdateStore = defineStore("update", () => {
   async function loadVersionInfo(): Promise<void> {
     if (!isTauri()) return;
 
+    const generation = ++requestGeneration;
+
     status.value = "release-loading";
     errorMessage.value = null;
     pendingUpdate = null;
 
     try {
-      updateInfo.value = await api.getReleaseInfo();
+      const releaseInfo = await api.getReleaseInfo();
+      if (generation !== requestGeneration) return;
+      updateInfo.value = releaseInfo;
       status.value = "release-info";
     } catch (error) {
+      if (generation !== requestGeneration) return;
       status.value = "error";
       errorMessage.value = error instanceof Error ? error.message : String(error);
     }
@@ -147,6 +158,7 @@ export const useUpdateStore = defineStore("update", () => {
   }
 
   function reset() {
+    requestGeneration += 1;
     status.value = "idle";
     errorMessage.value = null;
     pendingUpdate = null;
