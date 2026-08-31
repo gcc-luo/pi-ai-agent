@@ -1,7 +1,7 @@
 {
   "name": "@pi-web-ui/desktop",
   "productName": "PI-AI-Agent",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "PI AI Agent 桌面客户端",
   "private": true,
   "scripts": {
