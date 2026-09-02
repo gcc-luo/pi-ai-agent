@@ -322,9 +322,6 @@ const hasWorkspace = computed(
   () => selectedProjectId.value && selectedSessionId.value,
 );
 
-const modelSelectOptions = computed(() =>
-  agent.models.map((m) => ({ label: m.label, value: m.id })),
-);
 
 const showPreview = computed(() => filePath.value !== null);
 
@@ -373,15 +370,6 @@ function closePreview() {
                 </span>
               </div>
               <div class="header-right">
-                <NSelect
-                  v-if="agent.models.length"
-                  :value="agent.currentModel"
-                  :options="modelSelectOptions"
-                  size="small"
-                  :placeholder="t('model.selectForChat')"
-                  class="model-select"
-                  @update:value="agent.switchModel($event, selectedSessionId ?? undefined)"
-                />
                 <span class="connection-status" :class="connection.status">
                   <span class="conn-dot" />
                   {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
@@ -531,18 +519,7 @@ function closePreview() {
   gap: 12px;
 }
 
-.model-select {
-  width: 180px;
-}
-.model-select :deep(.n-base-selection) {
-  background: var(--bg-surface);
-}
-.model-select :deep(.n-base-selection .n-base-selection-label) {
-  background: var(--bg-surface);
-}
-.model-select :deep(.n-base-selection-input) {
-  background: transparent;
-}
+
 
 .connection-status {
   display: flex;

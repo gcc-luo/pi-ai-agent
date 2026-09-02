@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { NInput } from "naive-ui";
+import { NInput, NSelect } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
@@ -235,6 +235,9 @@ const pendingPermission = computed(() => agent.pendingPermissions[props.sessionI
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
+const modelSelectOptions = computed(() =>
+  agent.models.map((m) => ({ label: m.label, value: m.id })),
+);
 const expandedRunIds = ref<Set<string>>(new Set());
 const durationClock = ref(Date.now());
 const showScrollButton = ref(false);
@@ -1283,33 +1286,44 @@ defineExpose({ revealNotificationMessage });
           @paste="handlePaste"
           class="composer-input"
         />
-        <button
-          v-if="isBusy"
-          class="send-btn stop embedded"
-          @click="agent.interrupt(props.sessionId)"
-          :title="t('chat.stop')"
-          :aria-label="t('chat.stop')"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
-          </svg>
-        </button>
-        <button
-          v-else
-          class="send-btn embedded"
-          :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
-          @click="send"
-          :title="t('chat.send')"
-          :aria-label="t('chat.send')"
-        >
-          <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M2 9l14-7-7 14V9H2z"
-              fill="currentColor"
-            />
-          </svg>
-          <span class="send-label">{{ t('chat.send') }}</span>
-        </button>
+        <div class="composer-actions">
+          <NSelect
+            v-if="agent.models.length"
+            :value="agent.currentModel"
+            :options="modelSelectOptions"
+            size="small"
+            :placeholder="t('model.selectForChat')"
+            class="composer-model-select"
+            @update:value="agent.switchModel($event, sessionId)"
+          />
+          <button
+            v-if="isBusy"
+            class="send-btn stop embedded"
+            @click="agent.interrupt(props.sessionId)"
+            :title="t('chat.stop')"
+            :aria-label="t('chat.stop')"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            v-else
+            class="send-btn embedded"
+            :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
+            @click="send"
+            :title="t('chat.send')"
+            :aria-label="t('chat.send')"
+          >
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M2 9l14-7-7 14V9H2z"
+                fill="currentColor"
+              />
+            </svg>
+            <span class="send-label">{{ t('chat.send') }}</span>
+          </button>
+        </div>
       </div>
       <div v-if="isBusy" class="composer-busy-hint">{{ t('chat.busyDraftHint') }}</div>
     </div>
@@ -1339,7 +1353,7 @@ defineExpose({ revealNotificationMessage });
 
 <style scoped>
 .chat-panel {
-  --chat-content-gutter: clamp(40px, 5vw, 96px);
+  --chat-content-gutter: clamp(96px, 15vw, 280px);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -2253,19 +2267,40 @@ defineExpose({ revealNotificationMessage });
 }
 .composer-input :deep(.n-input) {
   background: var(--bg-surface);
-  /* reserve space on the right so embedded send button doesn't cover text */
-  padding-right: 96px;
+  /* reserve space on the right so embedded actions don't cover text */
+  padding-right: 240px;
 }
 .composer-input :deep(.n-input__textarea-el) {
   background: transparent;
   padding-right: 8px;
 }
 
-/* Embedded send button — absolutely positioned at bottom-right of the input */
-.send-btn.embedded {
+/* Actions container — model select + send button at bottom-right of the input */
+.composer-actions {
   position: absolute;
   right: 6px;
   bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-model-select {
+  width: 150px;
+}
+.composer-model-select :deep(.n-base-selection) {
+  background: var(--bg-surface);
+  font-size: 12px;
+}
+.composer-model-select :deep(.n-base-selection .n-base-selection-label) {
+  background: var(--bg-surface);
+}
+.composer-model-select :deep(.n-base-selection-input) {
+  background: transparent;
+}
+
+/* Embedded send button */
+.send-btn.embedded {
   width: auto;
   height: 30px;
   padding: 0 14px;
