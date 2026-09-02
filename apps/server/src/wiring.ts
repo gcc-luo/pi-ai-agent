@@ -283,7 +283,15 @@ export async function buildConfiguredApp(config: Config) {
 
   // Resume WeChat only when cached credentials exist. A new QR login must be
   // initiated from the visible UI, otherwise there is no place to show it.
-  void getWeChatWorker().ensureStarted().catch((err) => {
+  // Bound the auto-resume so an invalid cached credential or unreachable WeChat
+  // server cannot delay the rest of server startup indefinitely.
+  const WECHAT_AUTO_RESUME_TIMEOUT_MS = 15_000;
+  void Promise.race([
+    getWeChatWorker().ensureStarted(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("wechat auto-resume timed out")), WECHAT_AUTO_RESUME_TIMEOUT_MS),
+    ),
+  ]).catch((err) => {
     console.error("[wechat] failed to auto-resume:", err);
   });
 
