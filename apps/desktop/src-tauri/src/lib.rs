@@ -38,6 +38,10 @@ struct ServerStartupError(Mutex<Option<String>>);
 const EXTERNAL_SERVER_PORT_ENV: &str = "PI_DESKTOP_SERVER_PORT";
 const SIDECAR_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 
+fn is_notification_body_click(response: &notify_rust::NotificationResponse) -> bool {
+    response.is_default_action()
+}
+
 trait StoppableProcess {
     fn stop(self, timeout: Duration) -> Result<(), String>;
 }
@@ -127,12 +131,14 @@ fn show_native_notification(
                 }
             }
             let _ = notification.show().map(|handle| {
-                handle.wait_for_action(|action| {
-                    // `default` 表示用户点击了通知本体（非按钮）。
-                    if action == "default" {
-                        let _ = click_app.emit("notification-clicked", target.clone());
-                    }
-                });
+                let _ = handle.wait_for_response(
+                    |response: &notify_rust::NotificationResponse| {
+                        // `Default` 表示用户点击了通知本体（非按钮）。
+                        if is_notification_body_click(response) {
+                            let _ = click_app.emit("notification-clicked", target.clone());
+                        }
+                    },
+                );
             });
         })
         .await;
@@ -478,14 +484,23 @@ fn remove_dir_if_exists(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_external_server_port, stop_server_process, wait_for_server_port, ServerPort,
-        ServerStartupError, StoppableProcess,
+        is_notification_body_click, parse_external_server_port, stop_server_process,
+        wait_for_server_port, ServerPort, ServerStartupError, StoppableProcess,
     };
+    use notify_rust::NotificationResponse;
     use std::sync::atomic::Ordering;
     use std::sync::Mutex;
     use std::time::Duration;
 
     struct FakeProcess(Result<(), String>);
+
+    #[test]
+    fn treats_a_notification_body_click_as_navigation() {
+        assert!(is_notification_body_click(&NotificationResponse::Default));
+        assert!(!is_notification_body_click(&NotificationResponse::Closed(
+            notify_rust::CloseReason::Dismissed,
+        )));
+    }
 
     impl StoppableProcess for FakeProcess {
         fn stop(self, _timeout: Duration) -> Result<(), String> {
