@@ -140,4 +140,52 @@ describe("ws agent reconnect", () => {
     expect(ws2Received.some((e) => e.type === "message_end")).toBe(true);
     ws2.close();
   });
+
+  it("does not replay a completed run as a stream when an idle session is opened", async () => {
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}/ws/agent`);
+    await waitForOpen(ws1);
+
+    ws1.send(JSON.stringify({ type: "send", sessionId, content: "历史问题" }));
+    await new Promise((r) => setTimeout(r, 50));
+    fakeProc.stdout.write(
+      JSON.stringify({ type: "message_start", message: { role: "assistant", timestamp: 1000 } }) + "\n",
+    );
+    fakeProc.stdout.write(
+      JSON.stringify({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "历史回复" },
+      }) + "\n",
+    );
+    fakeProc.stdout.write(
+      JSON.stringify({
+        type: "message_end",
+        message: { role: "assistant", content: "历史回复", timestamp: 1000 },
+      }) + "\n",
+    );
+    fakeProc.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(app.sessionStates.get(sessionId)?.runStatus).toBe("idle");
+
+    ws1.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws/agent`);
+    const received: any[] = [];
+    ws2.on("message", (data) => received.push(JSON.parse(data.toString())));
+    await waitForOpen(ws2);
+    ws2.send(JSON.stringify({ type: "subscribe", sessionId }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(received).toContainEqual(expect.objectContaining({
+      type: "agent_status",
+      sessionId,
+      status: "idle",
+    }));
+    expect(received.some((event) =>
+      event.type === "message_start"
+      || event.type === "message_delta"
+      || event.type === "message_end",
+    )).toBe(false);
+    ws2.close();
+  });
 });

@@ -30,4 +30,18 @@ describe("SessionEventBuffer", () => {
     buffer.replay("session-1", 0, (event) => afterClear.push(event));
     expect(afterClear).toEqual([]);
   });
+
+  it("replays only the current run after an idle session is reopened", () => {
+    const buffer = new SessionEventBuffer(10);
+    buffer.append("session-1", { type: "agent_status", sessionId: "session-1", status: "working" });
+    buffer.append("session-1", { type: "message_delta", sessionId: "session-1", messageId: "old", delta: "old" });
+    buffer.append("session-1", { type: "agent_status", sessionId: "session-1", status: "idle" });
+    const currentStart = buffer.append("session-1", { type: "agent_status", sessionId: "session-1", status: "working" });
+    const currentDelta = buffer.append("session-1", { type: "message_delta", sessionId: "session-1", messageId: "new", delta: "new" });
+    const replayed: unknown[] = [];
+
+    buffer.replayCurrentRun("session-1", 0, (event) => replayed.push(event));
+
+    expect(replayed).toEqual([currentStart, currentDelta]);
+  });
 });

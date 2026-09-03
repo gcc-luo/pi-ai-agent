@@ -109,7 +109,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
       if (event.type === "subscribe") {
         const state = app.sessionStates.get(session.id);
         if (state) state.send = send;
-        eventBuffer.replay(session.id, event.afterEventSeq, write);
+        // Persisted messages are the source of truth for idle sessions. Only
+        // an active run needs transient event replay after reconnecting.
+        if (state?.runStatus === "working") {
+          eventBuffer.replayCurrentRun(session.id, event.afterEventSeq, write);
+        }
         send({
           type: "agent_status",
           sessionId: session.id,
