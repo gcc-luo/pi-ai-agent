@@ -2099,6 +2099,14 @@ defineExpose({ revealNotificationMessage });
   gap: 6px;
 }
 
+/* Assistant messages use a left-aligned flex column, so the body must not
+   fall back to its content's max-content width. Keep wide markdown inside the
+   message and let its own wrappers provide horizontal scrolling. */
+.msg.assistant .msg-body {
+  width: 100%;
+  min-width: 0;
+}
+
 .compaction-status {
   display: inline-flex;
   align-items: center;

@@ -53,4 +53,15 @@ describe("ChatPanel assistant presentation", () => {
     expect(source).toContain("display: table-row-group;");
     expect(source).not.toContain(".msg-content :deep(thead),\n.msg-content :deep(tbody),");
   });
+
+  it("constrains assistant message bodies so wide markdown stays inside the message", async () => {
+    const source = await readFile(componentPath, "utf8");
+    const bodyStart = source.indexOf(".msg.assistant .msg-body {");
+    const bodyEnd = source.indexOf("}\n", bodyStart);
+    const bodyStyles = source.slice(bodyStart, bodyEnd);
+
+    expect(bodyStart).toBeGreaterThan(-1);
+    expect(bodyStyles).toContain("width: 100%;");
+    expect(bodyStyles).toContain("min-width: 0;");
+  });
 });
