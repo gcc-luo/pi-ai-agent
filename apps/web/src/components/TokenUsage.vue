@@ -175,6 +175,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 .token-usage-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 .token-usage-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .token-usage-details p { color: var(--text-muted); line-height: 1.6; margin: 8px 0; }
+.token-usage-intro { font-size: 10px; }
 .token-usage-tabs { display: flex; gap: 22px; margin: 0 -20px 16px; padding: 0 20px; border-bottom: 1px solid var(--border-default); }
 .token-usage-tab { position: relative; padding: 9px 1px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; }
 .token-usage-tab[aria-selected="true"] { color: var(--accent); }
@@ -194,7 +195,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 .usage-facts small { display: block; margin-top: 3px; color: var(--text-faint); font-size: 9px; }
 .usage-facts b { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .usage-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
-.usage-actions .compact-context-hint { flex: 1; margin: 0; text-align: right; font-size: 12px; }
+.usage-actions .compact-context-hint { flex: 1; margin: 0; text-align: right; font-size: 10px; }
 .usage-table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 7px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border-default); }
