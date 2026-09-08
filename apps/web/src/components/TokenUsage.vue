@@ -59,7 +59,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </svg>
             </button>
           </header>
-          <p>{{ t('chat.usageHint') }}</p>
+          <p class="token-usage-intro">{{ t('chat.usageHint') }}</p>
           <div class="token-usage-tabs" role="tablist" :aria-label="t('chat.usageDetails')">
             <button
               id="usage-overview-tab"
@@ -133,8 +133,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
               </div>
             </div>
             <p v-if="usage.latest">{{ t('chat.usageLatest') }}: <TokenCounts :input="usage.latest.prompt" :output="usage.latest.output" /> · {{ usage.latest.model }}</p>
-            <button type="button" class="compact-context-btn" :disabled="busy || !usage.session.modelCalls" @click="emit('compact')">{{ t('chat.compactContext') }}</button>
-            <p>{{ t('chat.compactContextHint') }}</p>
+            <div class="usage-actions">
+              <button type="button" class="compact-context-btn" :disabled="busy || !usage.session.modelCalls" @click="emit('compact')">{{ t('chat.compactContext') }}</button>
+              <p class="compact-context-hint">{{ t('chat.compactContextHint') }}</p>
+            </div>
           </section>
           <section
             v-else
@@ -191,6 +193,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 .usage-facts span { min-width: 0; }
 .usage-facts small { display: block; margin-top: 3px; color: var(--text-faint); font-size: 9px; }
 .usage-facts b { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.usage-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
+.usage-actions .compact-context-hint { flex: 1; margin: 0; text-align: right; }
 .usage-table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 7px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border-default); }
@@ -200,5 +204,7 @@ th:first-child, td:first-child { text-align: left; }
 .compact-context-btn:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 520px) {
   .usage-metric-grid, .usage-facts { grid-template-columns: 1fr; }
+  .usage-actions { align-items: stretch; flex-direction: column; gap: 8px; }
+  .usage-actions .compact-context-hint { text-align: left; }
 }
 </style>

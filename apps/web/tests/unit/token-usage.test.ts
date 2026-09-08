@@ -52,6 +52,17 @@ describe("TokenUsage", () => {
     wrapper.unmount();
   });
 
+  it("uses concise overview copy and aligns the compact action with its hint", async () => {
+    const wrapper = mountUsage();
+    await wrapper.get(".token-usage-summary").trigger("click");
+
+    const overview = bodyGet("[data-panel=overview]");
+    expect(bodyGet(".token-usage-intro").textContent).toContain("查看本次请求与整个会话的 Token 消耗");
+    expect(overview.querySelector(".usage-actions .compact-context-btn")).not.toBeNull();
+    expect(overview.querySelector(".usage-actions .compact-context-hint")?.textContent).toContain("摘要旧历史");
+    wrapper.unmount();
+  });
+
   it("opens a centered modal with a close button and closes on Escape", async () => {
     const wrapper = mount(TokenUsage, { props: { usage, busy: false } });
 
