@@ -43,18 +43,20 @@ const emptyUsage = summarizeTokenUsage([
 
 - [ ] **步骤 2：增加默认概览和切换调用明细测试**
 
-测试先断言 `[role=tab][aria-selected=true]` 为“概览”、`[data-panel=overview]` 可见且调用面板不存在；点击 `[data-tab=calls]` 后断言调用标签选中、概览隐藏、调用表格展示模型调用数据。
+测试先点击 `.token-usage-summary` 打开 Teleport 弹框，再通过 `document.body.querySelector()` 断言 `[role=tab][aria-selected=true]` 为“概览”、`[data-panel=overview]` 可见且调用面板不存在；点击 `[data-tab=calls]` 后断言调用标签选中、概览隐藏、调用表格展示模型调用数据。
 
 ```ts
 it("starts on overview and switches to call details", async () => {
   const wrapper = mountUsage();
-  expect(wrapper.get("[role=tab][aria-selected=true]").text()).toContain("概览");
-  expect(wrapper.get("[data-panel=overview]").text()).toContain("1.2K");
-  expect(wrapper.find("[data-panel=calls]").exists()).toBe(false);
-  await wrapper.get("[data-tab=calls]").trigger("click");
-  expect(wrapper.get("[role=tab][aria-selected=true]").text()).toContain("调用明细");
-  expect(wrapper.find("[data-panel=overview]").exists()).toBe(false);
-  expect(wrapper.get("[data-panel=calls] table").text()).toContain("—");
+  await wrapper.get(".token-usage-summary").trigger("click");
+  expect(document.body.querySelector("[role=tab][aria-selected=true]")?.textContent).toContain("概览");
+  expect(document.body.querySelector("[data-panel=overview]")?.textContent).toContain("1.2K");
+  expect(document.body.querySelector("[data-panel=calls]")).toBeNull();
+  document.body.querySelector<HTMLButtonElement>("[data-tab=calls]")?.click();
+  await nextTick();
+  expect(document.body.querySelector("[role=tab][aria-selected=true]")?.textContent).toContain("调用明细");
+  expect(document.body.querySelector("[data-panel=overview]")).toBeNull();
+  expect(document.body.querySelector("[data-panel=calls] table")?.textContent).toContain("—");
   wrapper.unmount();
 });
 ```
@@ -66,9 +68,11 @@ it("starts on overview and switches to call details", async () => {
 ```ts
 it("shows an empty state instead of an empty table", async () => {
   const wrapper = mountUsage(emptyUsage);
-  await wrapper.get("[data-tab=calls]").trigger("click");
-  expect(wrapper.get("[data-panel=calls]").text()).toContain("暂无调用明细");
-  expect(wrapper.find("[data-panel=calls] table").exists()).toBe(false);
+  await wrapper.get(".token-usage-summary").trigger("click");
+  document.body.querySelector<HTMLButtonElement>("[data-tab=calls]")?.click();
+  await nextTick();
+  expect(document.body.querySelector("[data-panel=calls]")?.textContent).toContain("暂无调用明细");
+  expect(document.body.querySelector("[data-panel=calls] table")).toBeNull();
   wrapper.unmount();
 });
 ```
