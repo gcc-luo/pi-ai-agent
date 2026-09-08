@@ -59,7 +59,7 @@ describe("TokenUsage", () => {
     const overview = bodyGet("[data-panel=overview]");
     expect(bodyGet(".token-usage-intro").textContent).toContain("查看本次请求与整个会话的 Token 消耗");
     expect(overview.querySelector(".usage-actions .compact-context-btn")).not.toBeNull();
-    expect(overview.querySelector(".usage-actions .compact-context-hint")?.textContent).toContain("摘要旧历史");
+    expect(overview.querySelector(".usage-actions .compact-context-hint")?.textContent).toBe("摘要旧历史以减少后续输入，不会清零累计用量。");
     wrapper.unmount();
   });
 

@@ -194,7 +194,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 .usage-facts small { display: block; margin-top: 3px; color: var(--text-faint); font-size: 9px; }
 .usage-facts b { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .usage-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
-.usage-actions .compact-context-hint { flex: 1; margin: 0; text-align: right; }
+.usage-actions .compact-context-hint { flex: 1; margin: 0; text-align: right; font-size: 12px; }
 .usage-table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 7px 6px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border-default); }
