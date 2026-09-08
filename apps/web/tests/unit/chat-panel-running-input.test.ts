@@ -29,7 +29,7 @@ describe("ChatPanel running input", () => {
       global: { stubs: { Input: true, SkillSelect: true, PluginSelect: true, ConnectorSelect: true, ChatExpertPicker: true, ChatKbPicker: true, ChatKbBanner: true, ImportSkillDialog: true, ConfirmDialog: true } },
     });
     await flushPromises();
-    const total = wrapper.get(".composer-toolbar .token-usage-summary");
+    const total = wrapper.get(".composer-token-usage .token-usage-summary");
     expect(total.text()).toContain("会话累计");
     expect(total.get(".token-in").text()).toBe("↑12.0K");
     expect(total.get(".token-out").text()).toBe("↓1.2K");

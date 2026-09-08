@@ -1270,7 +1270,6 @@ defineExpose({ revealNotificationMessage });
           <span v-else class="compaction-icon">↻</span>
           {{ compactionLabel }}
         </span>
-        <TokenUsage :key="sessionId" :usage="tokenUsage" :busy="isBusy" @compact="agent.compact(sessionId)" />
       </div>
       <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
@@ -1324,6 +1323,9 @@ defineExpose({ revealNotificationMessage });
             <span class="send-label">{{ t('chat.send') }}</span>
           </button>
         </div>
+      </div>
+      <div class="composer-token-usage">
+        <TokenUsage :key="sessionId" :usage="tokenUsage" :busy="isBusy" @compact="agent.compact(sessionId)" />
       </div>
       <div v-if="isBusy" class="composer-busy-hint">{{ t('chat.busyDraftHint') }}</div>
     </div>
@@ -2117,10 +2119,6 @@ defineExpose({ revealNotificationMessage });
   white-space: nowrap;
 }
 
-.compaction-status + .token-usage {
-  margin-left: 0;
-}
-
 .compaction-status.failed {
   color: var(--error-color, #d45b5b);
 }
@@ -2268,6 +2266,13 @@ defineExpose({ revealNotificationMessage });
   position: relative;
   display: flex;
   align-items: flex-end;
+}
+
+.composer-token-usage {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 16px;
+  padding: 0 2px;
 }
 
 .composer-input {
