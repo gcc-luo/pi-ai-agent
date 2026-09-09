@@ -128,6 +128,7 @@ describe("ChatPanel artifact validation", () => {
 
     expect(wrapper.find(".artifact-card").exists()).toBe(true);
     expect(wrapper.find(".artifact-card .file-type-icon").exists()).toBe(true);
+    expect(wrapper.find(".artifact-name").text()).toBe("界面布局提示词.md");
     expect(wrapper.find(".artifact-invalid").exists()).toBe(false);
     wrapper.unmount();
   });

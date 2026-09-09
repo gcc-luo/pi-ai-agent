@@ -19,7 +19,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const kind = computed(() => filePreviewKind(props.artifact.name));
+const fileName = computed(() => {
+  const normalizedPath = props.artifact.path.replaceAll("\\\\", "/");
+  return normalizedPath.split("/").pop() || props.artifact.name;
+});
+const kind = computed(() => filePreviewKind(fileName.value));
 const canPreview = computed(() => kind.value !== "unsupported");
 const rawUrl = computed(() => api.rawFileUrl(props.projectId, props.artifact.path));
 
@@ -40,9 +44,9 @@ function formatBytes(bytes: number): string {
 
 <template>
   <div class="artifact-card" :class="{ 'artifact-missing': !exists }">
-    <FileTypeIcon class="artifact-icon" :filename="artifact.name" :size="16" />
+    <FileTypeIcon class="artifact-icon" :filename="fileName" :size="16" />
     <div class="artifact-info">
-      <span class="artifact-name">{{ artifact.name }}</span>
+      <span class="artifact-name">{{ fileName }}</span>
       <span v-if="formattedSize" class="artifact-size">{{ formattedSize }}</span>
       <span class="artifact-mime">{{ artifact.mimeType }}</span>
       <span v-if="!exists" class="artifact-missing-label">{{ t('artifact.fileNotFound') }}</span>
@@ -64,7 +68,7 @@ function formatBytes(bytes: number): string {
         v-if="exists"
         class="artifact-btn artifact-download"
         :href="rawUrl"
-        :download="artifact.name"
+        :download="fileName"
         :title="t('artifact.download')"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
