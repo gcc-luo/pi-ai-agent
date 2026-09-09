@@ -28,6 +28,7 @@ import { useNotificationStore } from "./stores/notifications.js";
 import type { NotificationNavigationTarget } from "./stores/desktop.js";
 import { useI18n } from "./i18n/index.js";
 import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
+import { clampPreviewWidth, getPreviewMaxWidth, PREVIEW_MIN_WIDTH } from "./utils/preview-width.js";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -45,6 +46,9 @@ const filePath = ref<string | null>(null);
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
+const previewWidth = ref(480);
+const previewMaxWidth = ref(0);
+const isPreviewResizing = ref(false);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 const showOnboardingProject = ref(false);
 const chatPanelRef = ref<{
@@ -53,10 +57,22 @@ const chatPanelRef = ref<{
 
 let resizeStartX = 0;
 let resizeStartWidth = sidebarWidth.value;
+let previewResizeStartX = 0;
+let previewResizeStartWidth = previewWidth.value;
 
 function syncSidebarWidthToViewport() {
   sidebarMaxWidth.value = getSidebarMaxWidth(window.innerWidth);
   sidebarWidth.value = clampSidebarWidth(sidebarWidth.value, window.innerWidth);
+}
+
+function syncPreviewWidthToViewport() {
+  previewMaxWidth.value = getPreviewMaxWidth(window.innerWidth);
+  previewWidth.value = clampPreviewWidth(previewWidth.value, window.innerWidth);
+}
+
+function syncLayoutWidthsToViewport() {
+  syncSidebarWidthToViewport();
+  syncPreviewWidthToViewport();
 }
 
 function startSidebarResize(event: PointerEvent) {
@@ -91,6 +107,38 @@ function stopSidebarResize() {
   window.removeEventListener("pointercancel", stopSidebarResize);
 }
 
+function startPreviewResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+
+  event.preventDefault();
+  isPreviewResizing.value = true;
+  previewResizeStartX = event.clientX;
+  previewResizeStartWidth = previewWidth.value;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  window.addEventListener("pointermove", handlePreviewResize);
+  window.addEventListener("pointerup", stopPreviewResize, { once: true });
+  window.addEventListener("pointercancel", stopPreviewResize, { once: true });
+}
+
+function handlePreviewResize(event: PointerEvent) {
+  if (!isPreviewResizing.value) return;
+
+  previewWidth.value = clampPreviewWidth(
+    previewResizeStartWidth + previewResizeStartX - event.clientX,
+    window.innerWidth,
+  );
+}
+
+function stopPreviewResize() {
+  isPreviewResizing.value = false;
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+  window.removeEventListener("pointermove", handlePreviewResize);
+  window.removeEventListener("pointerup", stopPreviewResize);
+  window.removeEventListener("pointercancel", stopPreviewResize);
+}
+
 
 const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
@@ -108,8 +156,8 @@ function handleVisibilityChange() {
 }
 
 onMounted(async () => {
-  syncSidebarWidthToViewport();
-  window.addEventListener("resize", syncSidebarWidthToViewport);
+  syncLayoutWidthsToViewport();
+  window.addEventListener("resize", syncLayoutWidthsToViewport);
   window.addEventListener("focus", handleWindowFocus);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   await projectStore.loadAll();
@@ -125,10 +173,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", syncSidebarWidthToViewport);
+  window.removeEventListener("resize", syncLayoutWidthsToViewport);
   window.removeEventListener("focus", handleWindowFocus);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   stopSidebarResize();
+  stopPreviewResize();
 });
 
 watch(selectedProjectId, (id) => {
@@ -395,7 +444,22 @@ function closePreview() {
 
               <!-- Right preview panel (slides in, office mode only) -->
               <Transition name="preview-slide">
-                <div v-if="showPreview" class="workspace-preview">
+                <div
+                  v-if="showPreview"
+                  class="workspace-preview"
+                  :style="{ width: `${previewWidth}px` }"
+                >
+                  <div
+                    class="preview-resizer"
+                    :class="{ active: isPreviewResizing }"
+                    role="separator"
+                    aria-orientation="vertical"
+                    :aria-valuemin="PREVIEW_MIN_WIDTH"
+                    :aria-valuemax="previewMaxWidth"
+                    :aria-valuenow="previewWidth"
+                    data-test="preview-resizer"
+                    @pointerdown="startPreviewResize"
+                  />
                   <div class="preview-header">
                     <span class="preview-title">{{ filePath?.split('/').pop() }}</span>
                     <button class="preview-close" @click="closePreview">
@@ -604,6 +668,7 @@ function closePreview() {
 /* ─── Preview Panel ─── */
 
 .workspace-preview {
+  position: relative;
   width: 480px;
   flex-shrink: 0;
   display: flex;
@@ -611,6 +676,30 @@ function closePreview() {
   border-left: 1px solid var(--border-default);
   background: var(--bg-deep);
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
+}
+
+.preview-resizer {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.preview-resizer::after {
+  position: absolute;
+  inset: 0 2px;
+  content: "";
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+
+.preview-resizer:hover::after,
+.preview-resizer.active::after {
+  background: var(--accent);
 }
 
 .preview-header {
