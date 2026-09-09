@@ -327,11 +327,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "newProject.loading": "Loading...",
     "newProject.empty": "No directories found",
     "newProject.open": "Open",
-    "newProject.manualPath": "Enter path manually...",
-    "newProject.go": "Go",
-    "newProject.name": "Name",
     "newProject.cancel": "Cancel",
-    "newProject.create": "Create",
+    "newProject.chooseCurrentDirectory": "Choose This Folder",
 
     // Rename + delete project
     "rename.title": "Rename Project",
@@ -1165,11 +1162,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "newProject.loading": "加载中...",
     "newProject.empty": "未找到目录",
     "newProject.open": "打开",
-    "newProject.manualPath": "手动输入路径...",
-    "newProject.go": "前往",
-    "newProject.name": "名称",
     "newProject.cancel": "取消",
-    "newProject.create": "创建",
+    "newProject.chooseCurrentDirectory": "选择此目录",
 
     // Rename + delete project
     "rename.title": "重命名项目",

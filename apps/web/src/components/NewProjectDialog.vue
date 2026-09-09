@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { NModal, NInput } from "naive-ui";
+import { NModal } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
+import { isTauri } from "../utils/platform.js";
+import { projectNameFromPath } from "../utils/project-path.js";
 
 const props = defineProps<{ show: boolean }>();
 const emit = defineEmits<{
@@ -16,20 +18,41 @@ const currentPath = ref("");
 const parentPath = ref("");
 const directories = ref<{ name: string; path: string }[]>([]);
 const selectedPath = ref<string | null>(null);
-const projectName = ref("");
 const loading = ref(false);
-const manualPath = ref("");
+const creating = ref(false);
+const desktop = isTauri();
 
 watch(
   () => props.show,
   async (visible) => {
     if (!visible) return;
-    projectName.value = "";
     selectedPath.value = null;
-    manualPath.value = "";
+    if (desktop) {
+      await chooseDesktopDirectory();
+      return;
+    }
     await navigateTo();
   },
 );
+
+async function chooseDesktopDirectory() {
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected !== "string" || !selected) {
+      emit("close");
+      return;
+    }
+    creating.value = true;
+    emit("create", projectNameFromPath(selected), selected);
+    emit("close");
+  } catch (error) {
+    console.error("Failed to choose project directory", error);
+    emit("close");
+  } finally {
+    creating.value = false;
+  }
+}
 
 async function navigateTo(dirPath?: string) {
   loading.value = true;
@@ -39,7 +62,6 @@ async function navigateTo(dirPath?: string) {
     parentPath.value = res.parentPath;
     directories.value = res.directories;
     selectedPath.value = null;
-    manualPath.value = "";
   } catch {
     // path not found, keep current
   } finally {
@@ -49,7 +71,6 @@ async function navigateTo(dirPath?: string) {
 
 function selectDir(dir: { name: string; path: string }) {
   selectedPath.value = dir.path;
-  projectName.value = dir.name;
 }
 
 function goUp() {
@@ -60,22 +81,20 @@ function goInto(dir: { name: string; path: string }) {
   navigateTo(dir.path);
 }
 
-function useManualPath() {
-  if (!manualPath.value.trim()) return;
-  navigateTo(manualPath.value.trim());
-}
-
-function handleCreate() {
+function chooseCurrentDirectory() {
   const workdir = selectedPath.value ?? currentPath.value;
-  const name = projectName.value.trim() || workdir.split("/").pop() || "Untitled";
-  if (!workdir) return;
+  if (!workdir || creating.value) return;
+  creating.value = true;
+  const name = projectNameFromPath(workdir);
   emit("create", name, workdir);
   emit("close");
+  creating.value = false;
 }
+
 </script>
 
 <template>
-  <NModal :show="show" @update:show="emit('close')">
+  <NModal v-if="!desktop" :show="show" @update:show="emit('close')">
     <div class="dialog" @click.stop>
       <!-- Header -->
       <div class="dialog-header">
@@ -95,7 +114,7 @@ function handleCreate() {
           </svg>
         </div>
         <div class="path-display" :title="currentPath">{{ currentPath }}</div>
-        <div class="path-select" v-if="selectedPath" @click="selectedPath = null; projectName = ''">
+        <div class="path-select" v-if="selectedPath" @click="selectedPath = null">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
           </svg>
@@ -110,6 +129,7 @@ function handleCreate() {
             v-for="d in directories"
             :key="d.path"
             class="dir-item"
+            data-test="directory-item"
             :class="{ selected: d.path === selectedPath }"
             @click="selectDir(d)"
             @dblclick="goInto(d)"
@@ -132,36 +152,16 @@ function handleCreate() {
         </template>
       </div>
 
-      <!-- Manual path -->
-      <div class="manual-row">
-        <NInput
-          v-model:value="manualPath"
-          size="small"
-          :placeholder="t('newProject.manualPath')"
-          @keydown.enter="useManualPath"
-        />
-        <button class="manual-go" @click="useManualPath">{{ t('newProject.go') }}</button>
-      </div>
-
-      <!-- Project name -->
-      <div class="name-row">
-        <label class="name-label">{{ t('newProject.name') }}</label>
-        <NInput
-          v-model:value="projectName"
-          size="small"
-          :placeholder="t('sidebar.projectPlaceholder')"
-        />
-      </div>
-
       <!-- Actions -->
       <div class="dialog-actions">
         <button class="btn-cancel" @click="emit('close')">{{ t('newProject.cancel') }}</button>
         <button
+          data-test="choose-current-directory"
           class="btn-create"
-          @click="handleCreate"
-          :disabled="!projectName.trim()"
+          @click="chooseCurrentDirectory"
+          :disabled="loading || creating || !currentPath"
         >
-          {{ t('newProject.create') }}
+          {{ t('newProject.chooseCurrentDirectory') }}
         </button>
       </div>
     </div>
@@ -349,50 +349,6 @@ function handleCreate() {
 .dir-enter:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-/* ─── Manual Path ─── */
-
-.manual-row {
-  display: flex;
-  gap: 6px;
-  padding: 10px 20px 0;
-}
-
-.manual-go {
-  flex-shrink: 0;
-  padding: 0 12px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-.manual-go:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* ─── Name Row ─── */
-
-.name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 20px 0;
-}
-
-.name-label {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ─── Actions ─── */
