@@ -1785,7 +1785,8 @@ defineExpose({ revealNotificationMessage });
   flex-direction: column;
   gap: 8px;
   margin-top: 10px;
-  max-width: 420px;
+  width: 100%;
+  max-width: none;
 }
 
 .artifact-invalid-list {
