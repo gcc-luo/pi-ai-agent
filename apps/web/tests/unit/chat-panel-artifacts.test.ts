@@ -127,6 +127,7 @@ describe("ChatPanel artifact validation", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".artifact-card").exists()).toBe(true);
+    expect(wrapper.find(".artifact-card .file-type-icon").exists()).toBe(true);
     expect(wrapper.find(".artifact-invalid").exists()).toBe(false);
     wrapper.unmount();
   });
