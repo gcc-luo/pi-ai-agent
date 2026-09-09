@@ -1030,15 +1030,6 @@ defineExpose({ revealNotificationMessage });
           'run-status-only': m.statusOnly,
         }]"
       >
-        <div v-if="m.role === 'user'" class="msg-avatar-row">
-          <span class="msg-avatar-label">user</span>
-          <div class="msg-avatar" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <circle cx="7" cy="4.8" r="2.4" fill="currentColor" />
-              <path d="M2.3 12c0-2.6 2.1-4.6 4.7-4.6s4.7 2 4.7 4.6z" fill="currentColor" />
-            </svg>
-          </div>
-        </div>
         <AgentActivity
           v-if="m.showActivity && m.activity"
           :activity="m.activity"
@@ -1525,19 +1516,6 @@ defineExpose({ revealNotificationMessage });
   margin-bottom: 10px;
 }
 
-/* Fixed user avatar — a soft blue disc with a person glyph, floating above the bubble */
-.msg-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  background: linear-gradient(135deg, #7ba4e8 0%, #4d7fc9 100%);
-  box-shadow: 0 2px 8px rgba(77, 127, 201, 0.35);
-}
-
 /* The bubble itself — very pale blue, snubbed bottom-right tail */
 .msg.user .msg-body {
   position: relative;
@@ -1614,41 +1592,6 @@ defineExpose({ revealNotificationMessage });
 @keyframes msgInLeft {
   from { opacity: 0; transform: translateX(-6px) translateY(2px); }
   to   { opacity: 1; transform: translateX(0)   translateY(0); }
-}
-
-/* ─── Message Header ─── */
-
-.msg-avatar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 22px;
-}
-
-/* User row mirrors the agent row but flips order so the disc sits at the bubble's right edge */
-.msg.user .msg-avatar-row {
-  flex-direction: row-reverse;
-}
-
-.msg-avatar-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-/* Fixed agent avatar — a native 22px panda SVG, floating above the body */
-.msg-avatar.assistant {
-  background: #ddf7e7;
-  box-shadow: 0 2px 8px rgba(105, 180, 130, 0.3);
-}
-
-.msg-avatar.assistant img {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
 
 /* ─── Message actions row (copy button + timestamp, role-aligned) ─── */
