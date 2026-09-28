@@ -35,6 +35,7 @@ function handleRestart() {
   >
     <div
       class="update-dialog"
+      :class="{ 'update-dialog-release': updateStore.status === 'release-loading' || updateStore.status === 'release-info' }"
       role="dialog"
       aria-labelledby="update-dialog-title"
       @click.stop
@@ -56,7 +57,8 @@ function handleRestart() {
 
       <!-- Loading version information -->
       <div v-if="updateStore.status === 'release-loading'" class="update-state">
-        <div class="update-scroll-area update-status-area" aria-live="polite">
+        <div class="update-scroll-area update-status-area update-loading-area" role="status" aria-live="polite">
+          <span class="update-loading-spinner" aria-hidden="true"></span>
           <p class="update-status-text">{{ t('update.loadingReleaseNotes') }}</p>
         </div>
       </div>
@@ -175,6 +177,10 @@ function handleRestart() {
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   box-shadow: var(--shadow-lg);
+}
+
+.update-dialog-release {
+  height: min(560px, calc(100vh - 32px));
 }
 
 .update-header {
@@ -427,6 +433,19 @@ function handleRestart() {
   flex-direction: column;
 }
 
+.update-loading-area { gap: 14px; }
+
+.update-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: update-spin 0.8s linear infinite;
+}
+
+@keyframes update-spin { to { transform: rotate(360deg); } }
+
 .update-status-text {
   margin: 0;
   color: var(--text-primary);
@@ -464,10 +483,15 @@ function handleRestart() {
     max-height: calc(100vh - 20px);
   }
 
+  .update-dialog-release { height: min(520px, calc(100vh - 20px)); }
   .update-header { padding: 17px 18px 14px; }
   .update-title { font-size: 18px; }
   .update-scroll-area { padding: 22px 18px 18px; }
   .update-actions { flex-wrap: wrap; padding: 14px 18px 18px; }
   .update-btn { flex: 1 1 140px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-loading-spinner { animation: none; }
 }
 </style>
