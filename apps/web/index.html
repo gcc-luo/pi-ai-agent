@@ -20,48 +20,172 @@
         place-items: center;
         overflow: hidden;
         color: #eaf8f5;
-        background: #111716;
+        background:
+          radial-gradient(ellipse at 50% 42%, rgba(36, 98, 80, .2), transparent 46%),
+          #111716;
         font-family: "Sora", "Microsoft YaHei UI", sans-serif;
       }
       .startup-screen::before {
         position: absolute;
-        width: min(62vw, 760px);
-        aspect-ratio: 1;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(41, 202, 167, .17), transparent 67%);
+        inset: 0;
+        background-image: linear-gradient(rgba(209, 243, 232, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(209, 243, 232, .025) 1px, transparent 1px);
+        background-position: center center;
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse at center, black, transparent 78%);
         content: "";
-        animation: startup-glow 2.8s ease-in-out infinite;
+        pointer-events: none;
       }
-      .startup-card { position: relative; display: grid; justify-items: center; gap: 18px; text-align: center; }
+      .startup-card {
+        position: relative;
+        display: grid;
+        width: min(100% - 40px, 356px);
+        justify-items: center;
+        text-align: center;
+      }
+      .startup-eyebrow {
+        margin: 0 0 20px;
+        color: #7c928b;
+        font: 500 10px/1.2 "IBM Plex Mono", Consolas, monospace;
+        letter-spacing: .22em;
+      }
+      .startup-mark-wrap {
+        position: relative;
+        display: grid;
+        width: 72px;
+        height: 72px;
+        margin-bottom: 18px;
+        place-items: center;
+      }
+      .startup-mark-orbit {
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(98, 228, 191, .24);
+        border-radius: 23px;
+        transform: rotate(45deg) scale(.82);
+        animation: startup-orbit 8s linear infinite;
+      }
+      .startup-mark-orbit::after {
+        position: absolute;
+        top: 2px;
+        left: 50%;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #62e4bf;
+        box-shadow: 0 0 12px rgba(98, 228, 191, .85);
+        content: "";
+      }
       .startup-mark {
         display: grid;
-        place-items: center;
         width: 54px;
         height: 54px;
-        border: 1px solid rgba(104, 232, 197, .45);
-        border-radius: 16px;
-        box-shadow: 0 0 0 7px rgba(74, 213, 176, .08), 0 14px 42px rgba(0, 0, 0, .28);
-        color: #73edc9;
-        font: 700 18px/1 "IBM Plex Mono", Consolas, monospace;
+        place-items: center;
+        border: 1px solid rgba(104, 232, 197, .48);
+        border-radius: 17px;
+        background: linear-gradient(145deg, rgba(37, 76, 66, .7), rgba(20, 31, 29, .82));
+        box-shadow: 0 0 0 6px rgba(74, 213, 176, .06), 0 12px 30px rgba(0, 0, 0, .3);
+        color: #8af0d1;
+        font: 600 25px/1 "IBM Plex Mono", Consolas, monospace;
       }
-      .startup-title { margin: 3px 0 0; font-size: 20px; font-weight: 600; letter-spacing: .02em; }
-      .startup-message { margin: 0; color: #9aaca7; font-size: 13px; }
-      .startup-dots { display: flex; gap: 7px; margin-top: 5px; }
-      .startup-dots i { width: 6px; height: 6px; border-radius: 50%; background: #62e4bf; animation: startup-dot 1.05s ease-in-out infinite; }
-      .startup-dots i:nth-child(2) { animation-delay: .16s; }.startup-dots i:nth-child(3) { animation-delay: .32s; }
-      @keyframes startup-glow { 50% { transform: scale(1.1); opacity: .7; } }
-      @keyframes startup-dot { 50% { transform: translateY(-5px); opacity: .35; } }
-      @media (prefers-reduced-motion: reduce) { .startup-screen::before, .startup-dots i { animation: none; } }
+      .startup-title { margin: 0; font-size: 19px; font-weight: 500; letter-spacing: .015em; }
+      .startup-tagline { margin: 8px 0 24px; color: #82948e; font-size: 11px; letter-spacing: .025em; }
+      .startup-message-row { display: flex; align-items: center; gap: 9px; min-height: 20px; }
+      .startup-status-dot {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: #62e4bf;
+        box-shadow: 0 0 11px rgba(98, 228, 191, .5);
+        animation: startup-breathe 1.8s ease-in-out infinite;
+      }
+      .startup-message { margin: 0; color: #b3c3be; font-size: 12px; }
+      .startup-steps { display: grid; width: 100%; margin: 22px 0 0; padding: 0; list-style: none; text-align: left; }
+      .startup-step {
+        display: grid;
+        grid-template-columns: 25px 1fr auto;
+        align-items: center;
+        min-height: 43px;
+        gap: 10px;
+        border-top: 1px solid rgba(161, 190, 181, .15);
+        color: #62716d;
+        font-size: 11px;
+      }
+      .startup-step:last-child { border-bottom: 1px solid rgba(161, 190, 181, .15); }
+      .startup-step-indicator {
+        display: grid;
+        width: 19px;
+        height: 19px;
+        place-items: center;
+        border: 1px solid rgba(161, 190, 181, .21);
+        border-radius: 50%;
+        color: #71817b;
+        font: 500 9px/1 "IBM Plex Mono", Consolas, monospace;
+      }
+      .startup-step-state { color: #6f817a; font-size: 10px; }
+      .startup-step[data-state="complete"] { color: #91aaa0; }
+      .startup-step[data-state="complete"] .startup-step-indicator {
+        border-color: rgba(98, 228, 191, .28);
+        background: rgba(98, 228, 191, .09);
+        color: #73e5c3;
+      }
+      .startup-step[data-state="active"] { color: #e0f5ee; }
+      .startup-step[data-state="active"] .startup-step-indicator {
+        border-color: rgba(98, 228, 191, .65);
+        background: rgba(98, 228, 191, .11);
+        box-shadow: 0 0 0 4px rgba(98, 228, 191, .05);
+        color: #62e4bf;
+        animation: startup-breathe 1.8s ease-in-out infinite;
+      }
+      .startup-step[data-state="active"] .startup-step-state { color: #80e9c8; }
+      .startup-track {
+        position: relative;
+        width: 100%;
+        height: 2px;
+        margin-top: 17px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: rgba(205, 231, 221, .1);
+      }
+      .startup-track::after {
+        position: absolute;
+        inset: 0 auto 0 -34%;
+        width: 34%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, transparent, #68e8c5, transparent);
+        content: "";
+        animation: startup-sweep 2.2s ease-in-out infinite;
+      }
+      .startup-footnote { margin: 15px 0 0; color: #6d7c77; font: 400 10px/1.5 "IBM Plex Mono", Consolas, monospace; letter-spacing: .03em; }
+      @keyframes startup-orbit { to { transform: rotate(405deg) scale(.82); } }
+      @keyframes startup-breathe { 50% { opacity: .48; } }
+      @keyframes startup-sweep { 0% { transform: translateX(0); } 70%, 100% { transform: translateX(390%); } }
+      @media (max-width: 520px) {
+        .startup-card { width: min(100% - 36px, 356px); }
+        .startup-steps { margin-top: 18px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-mark-orbit, .startup-status-dot, .startup-step[data-state="active"] .startup-step-indicator, .startup-track::after { animation: none; }
+        .startup-track::after { inset-inline-start: 0; width: 28%; opacity: .65; }
+      }
     </style>
   </head>
   <body>
     <div id="app">
-      <main class="startup-screen" data-startup-screen aria-busy="true" aria-live="polite">
+      <main class="startup-screen" data-startup-screen data-startup-stage="starting" aria-busy="true" aria-live="polite">
         <section class="startup-card">
-          <div class="startup-mark" aria-hidden="true">π</div>
+          <p class="startup-eyebrow">PI · LOCAL INTELLIGENCE</p>
+          <div class="startup-mark-wrap" aria-hidden="true"><span class="startup-mark-orbit"></span><span class="startup-mark">π</span></div>
           <h1 class="startup-title">PI AI Agent</h1>
-          <p class="startup-message" data-startup-message>正在启动本地服务</p>
-          <div class="startup-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <p class="startup-tagline">本地运行 · 私有工作空间</p>
+          <div class="startup-message-row"><span class="startup-status-dot" aria-hidden="true"></span><p class="startup-message" data-startup-message>正在启动本地服务</p></div>
+          <ol class="startup-steps" aria-label="启动阶段">
+            <li class="startup-step" data-startup-step="starting" data-state="active"><span class="startup-step-indicator" aria-hidden="true">1</span><span>准备本地运行环境</span><span class="startup-step-state">进行中</span></li>
+            <li class="startup-step" data-startup-step="checking" data-state="waiting"><span class="startup-step-indicator" aria-hidden="true">2</span><span>确认服务就绪</span><span class="startup-step-state">等待中</span></li>
+            <li class="startup-step" data-startup-step="ready" data-state="waiting"><span class="startup-step-indicator" aria-hidden="true">3</span><span>载入工作界面</span><span class="startup-step-state">等待中</span></li>
+          </ol>
+          <div class="startup-track" role="progressbar" aria-label="本地服务启动中"></div>
+          <p class="startup-footnote">启动状态会根据本地服务响应更新</p>
         </section>
       </main>
     </div>
