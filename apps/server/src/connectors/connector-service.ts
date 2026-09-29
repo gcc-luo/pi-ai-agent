@@ -28,6 +28,8 @@ function queryTerms(query: string): string[] {
 }
 
 export class ConnectorService {
+  private readonly sessionConnectorScopes = new Map<string, Set<string>>();
+
   constructor(
     private readonly repository: ConnectorRepository,
     private readonly vault: CredentialVault,
@@ -131,10 +133,18 @@ export class ConnectorService {
   setTool(id: string, name: string, patch: { enabled?: boolean; policy?: ConnectorToolPolicy }) { return this.repository.setTool(id, name, patch); }
   listAudits(id: string) { return this.repository.listAudits(id); }
 
-  searchTools(query: string, workspaceId: string, limit = 10) {
+  setSessionConnectorScope(sessionId: string, connectorIds: string[]): void {
+    this.sessionConnectorScopes.set(sessionId, new Set(connectorIds));
+  }
+
+  clearSessionConnectorScope(sessionId: string): void {
+    this.sessionConnectorScopes.delete(sessionId);
+  }
+
+  searchTools(query: string, workspaceId: string, limit = 10, sessionId?: string) {
     const terms = queryTerms(query);
     const normalizedQuery = query.toLowerCase().replace(/腾讯云文档/g, "腾讯文档");
-    return this.repository.list(workspaceId).filter((connector) => connector.enabled).flatMap((connector) =>
+    return this.repository.list(workspaceId).filter((connector) => connector.enabled && this.isConnectorAllowed(sessionId, connector.id)).flatMap((connector) =>
       this.repository.listTools(connector.id).filter((tool) => tool.enabled).map((tool) => {
         const name = tool.name.toLowerCase();
         const connectorName = connector.name.toLowerCase();
@@ -158,8 +168,8 @@ export class ConnectorService {
       }));
   }
 
-  describeTool(compoundName: string, workspaceId: string) {
-    const { connector, tool } = this.resolveCompound(compoundName, workspaceId);
+  describeTool(compoundName: string, workspaceId: string, sessionId?: string) {
+    const { connector, tool } = this.resolveCompound(compoundName, workspaceId, sessionId);
     return {
       tool: `${connector.id}.${tool.name}`, connectorName: connector.name, ...tool,
       ...(connector.builtinKey === "tencent-docs" ? { usageGuidance: TENCENT_DOCS_GUIDANCE } : {}),
@@ -168,7 +178,7 @@ export class ConnectorService {
 
   async invoke(compoundName: string, args: Record<string, unknown>, context: ConnectorInvocationContext, approve: () => Promise<boolean>) {
     const started = Date.now();
-    const { connector, tool } = this.resolveCompound(compoundName, context.workspaceId);
+    const { connector, tool } = this.resolveCompound(compoundName, context.workspaceId, context.sessionId);
     if (!connector.enabled) throw new ConnectorError("POLICY_DENIED", "连接器已禁用。");
     if (!tool.enabled) throw new ConnectorError("TOOL_DISABLED", "该能力已禁用。");
     let approval = "not_required";
@@ -210,8 +220,11 @@ export class ConnectorService {
     return { isError: false, content: [{ type: "text", text: `结果过大，已保存到 .pimono/mcp-results/${filename}` }] };
   }
 
-  private resolveCompound(compoundName: string, workspaceId: string) {
-    const connector = this.repository.list(workspaceId).filter((item) => compoundName.startsWith(`${item.id}.`)).sort((a, b) => b.id.length - a.id.length)[0];
+  private resolveCompound(compoundName: string, workspaceId: string, sessionId?: string) {
+    const connector = this.repository.list(workspaceId)
+      .filter((item) => this.isConnectorAllowed(sessionId, item.id))
+      .filter((item) => compoundName.startsWith(`${item.id}.`))
+      .sort((a, b) => b.id.length - a.id.length)[0];
     if (!connector) throw new ConnectorError("TOOL_NOT_FOUND", "未找到连接器或当前工作空间无权访问。");
     const tool = this.repository.findTool(connector.id, compoundName.slice(connector.id.length + 1));
     if (!tool) throw new ConnectorError("TOOL_NOT_FOUND", "未找到该连接器能力。");
@@ -222,6 +235,11 @@ export class ConnectorService {
     const connector = this.repository.find(id);
     if (!connector) throw new ConnectorError("CONFIG_INVALID", "连接器不存在。");
     return connector;
+  }
+
+  private isConnectorAllowed(sessionId: string | undefined, connectorId: string): boolean {
+    const scope = sessionId ? this.sessionConnectorScopes.get(sessionId) : undefined;
+    return !scope || scope.has(connectorId);
   }
 
   private toDto(connector: ReturnType<ConnectorRepository["find"]> extends infer T ? Exclude<T, null> : never): ConnectorDto {

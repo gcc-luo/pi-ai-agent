@@ -6,7 +6,12 @@ import { useSessionStore } from "../stores/session.js";
 import { useI18n } from "../i18n/index.js";
 import type { ExpertDto } from "@pi-web-ui/shared";
 
-const props = defineProps<{ sessionId: string }>();
+const props = defineProps<{
+  sessionId?: string;
+  draft?: boolean;
+  modelValue?: string | null;
+}>();
+const emit = defineEmits<{ (event: "update:modelValue", value: string | null): void }>();
 
 const expertStore = useExpertStore();
 const sessionStore = useSessionStore();
@@ -15,8 +20,10 @@ const showPopover = ref(false);
 const saving = ref(false);
 
 const selectedExpertId = computed(() =>
-  sessionStore.sessions.find((session) => session.id === props.sessionId)?.expertId
-    ?? (sessionStore.current?.id === props.sessionId ? sessionStore.current.expertId : null),
+  props.draft
+    ? (props.modelValue ?? null)
+    : (sessionStore.sessions.find((session) => session.id === props.sessionId)?.expertId
+      ?? (sessionStore.current?.id === props.sessionId ? sessionStore.current?.expertId ?? null : null)),
 );
 const selectedExpert = computed(() =>
   expertStore.experts.find((expert) => expert.id === selectedExpertId.value) ?? null,
@@ -32,6 +39,12 @@ watch(() => props.sessionId, async () => {
 
 async function selectExpert(expert: ExpertDto) {
   if (saving.value || expert.id === selectedExpertId.value) return;
+  if (props.draft) {
+    emit("update:modelValue", expert.id);
+    showPopover.value = false;
+    return;
+  }
+  if (!props.sessionId) return;
   saving.value = true;
   try {
     await sessionStore.setExpert(props.sessionId, expert.id);
@@ -43,6 +56,12 @@ async function selectExpert(expert: ExpertDto) {
 
 async function clearExpert() {
   if (saving.value || !selectedExpertId.value) return;
+  if (props.draft) {
+    emit("update:modelValue", null);
+    showPopover.value = false;
+    return;
+  }
+  if (!props.sessionId) return;
   saving.value = true;
   try {
     await sessionStore.setExpert(props.sessionId, null);

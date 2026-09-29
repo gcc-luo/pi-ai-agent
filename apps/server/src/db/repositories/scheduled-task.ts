@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { ScheduledTaskDto, TaskLogDto, TaskType } from "@pi-web-ui/shared";
+import type { ScheduledTaskCapabilities, ScheduledTaskDto, TaskLogDto, TaskType } from "@pi-web-ui/shared";
 import { ulid } from "../../util/ulid.js";
 
 // ─── Row types (snake_case, matches DB columns) ───
@@ -14,12 +14,41 @@ type TaskRow = {
   project_id: string | null;
   create_new_session: number;
   session_id: string | null;
+  capabilities_json: string;
   enabled: number;
   last_run_at: number | null;
   next_run_at: number | null;
   created_at: number;
   updated_at: number;
 };
+
+export const EMPTY_TASK_CAPABILITIES: ScheduledTaskCapabilities = {
+  skillNames: [],
+  pluginIds: [],
+  connectorIds: [],
+  expertId: null,
+};
+
+function normalizeCapabilities(input?: Partial<ScheduledTaskCapabilities> | null): ScheduledTaskCapabilities {
+  const uniqueStrings = (value: unknown): string[] => Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0))]
+    : [];
+  return {
+    skillNames: uniqueStrings(input?.skillNames),
+    pluginIds: uniqueStrings(input?.pluginIds),
+    connectorIds: uniqueStrings(input?.connectorIds),
+    expertId: typeof input?.expertId === "string" && input.expertId.trim() ? input.expertId : null,
+  };
+}
+
+function parseCapabilities(value: string | null | undefined): ScheduledTaskCapabilities {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return normalizeCapabilities(parsed);
+  } catch {
+    return { ...EMPTY_TASK_CAPABILITIES };
+  }
+}
 
 type LogRow = {
   id: string;
@@ -42,6 +71,7 @@ function taskToDto(r: TaskRow): ScheduledTaskDto {
     projectId: r.project_id,
     createNewSession: r.create_new_session === 1,
     sessionId: r.session_id,
+    capabilities: parseCapabilities(r.capabilities_json),
     enabled: r.enabled === 1,
     lastRunAt: r.last_run_at,
     nextRunAt: r.next_run_at,
@@ -98,6 +128,7 @@ export class ScheduledTaskRepository {
     payload?: string;
     projectId?: string;
     createNewSession?: boolean;
+    capabilities?: Partial<ScheduledTaskCapabilities>;
     enabled?: boolean;
   }): ScheduledTaskDto {
     const id = ulid();
@@ -106,15 +137,16 @@ export class ScheduledTaskRepository {
     const payload = input.payload ?? "{}";
     const projectId = input.projectId ?? null;
     const createNewSession = input.createNewSession ? 1 : 0;
+    const capabilities = normalizeCapabilities(input.capabilities);
     const enabled = input.enabled !== false ? 1 : 0;
 
     this.db
       .prepare(
         `INSERT INTO scheduled_tasks
-          (id, name, description, cron_expression, task_type, payload, project_id, create_new_session, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, name, description, cron_expression, task_type, payload, project_id, create_new_session, capabilities_json, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name, description, input.cronExpression, input.taskType, payload, projectId, createNewSession, enabled, now, now);
+      .run(id, input.name, description, input.cronExpression, input.taskType, payload, projectId, createNewSession, JSON.stringify(capabilities), enabled, now, now);
 
     return {
       id,
@@ -126,6 +158,7 @@ export class ScheduledTaskRepository {
       projectId,
       createNewSession: createNewSession === 1,
       sessionId: null,
+      capabilities,
       enabled: enabled === 1,
       lastRunAt: null,
       nextRunAt: null,
@@ -144,6 +177,7 @@ export class ScheduledTaskRepository {
       payload: string;
       projectId: string | null;
       createNewSession: boolean;
+      capabilities: Partial<ScheduledTaskCapabilities>;
       enabled: boolean;
     }>,
   ): ScheduledTaskDto | null {
@@ -157,16 +191,17 @@ export class ScheduledTaskRepository {
     const payload = patch.payload ?? cur.payload;
     const projectId = patch.projectId !== undefined ? patch.projectId : cur.projectId;
     const createNewSession = patch.createNewSession !== undefined ? (patch.createNewSession ? 1 : 0) : cur.createNewSession ? 1 : 0;
+    const capabilities = patch.capabilities !== undefined ? normalizeCapabilities(patch.capabilities) : cur.capabilities;
     const enabled = patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : cur.enabled ? 1 : 0;
     const now = Date.now();
 
     this.db
       .prepare(
         `UPDATE scheduled_tasks
-         SET name = ?, description = ?, cron_expression = ?, task_type = ?, payload = ?, project_id = ?, create_new_session = ?, enabled = ?, updated_at = ?
+         SET name = ?, description = ?, cron_expression = ?, task_type = ?, payload = ?, project_id = ?, create_new_session = ?, capabilities_json = ?, enabled = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(name, description, cronExpression, taskType, payload, projectId, createNewSession, enabled, now, id);
+      .run(name, description, cronExpression, taskType, payload, projectId, createNewSession, JSON.stringify(capabilities), enabled, now, id);
 
     return {
       ...cur,
@@ -177,6 +212,7 @@ export class ScheduledTaskRepository {
       payload,
       projectId,
       createNewSession: createNewSession === 1,
+      capabilities,
       enabled: enabled === 1,
       updatedAt: now,
     };

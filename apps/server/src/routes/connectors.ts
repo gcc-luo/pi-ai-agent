@@ -69,14 +69,14 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     if (!authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) return reply.code(403).send({ error: "forbidden" });
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
-    return app.connectorService.searchTools(req.body.query ?? "", resolved.project.id, req.body.limit);
+    return app.connectorService.searchTools(req.body.query ?? "", resolved.project.id, req.body.limit, req.params.sessionId);
   });
 
   app.post<{ Params: { sessionId: string }; Body: { tool?: string } }>("/internal/connectors/:sessionId/describe", async (req, reply) => {
     if (!authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) return reply.code(403).send({ error: "forbidden" });
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
-    try { return app.connectorService.describeTool(req.body.tool ?? "", resolved.project.id); }
+    try { return app.connectorService.describeTool(req.body.tool ?? "", resolved.project.id, req.params.sessionId); }
     catch (error) { return errorReply(reply, error); }
   });
 

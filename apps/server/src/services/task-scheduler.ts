@@ -165,9 +165,9 @@ export class TaskScheduler {
           });
           return {
             sessionId: result.sessionId,
-            output: result.response
+            output: `${result.warnings.length ? `能力警告：\n${result.warnings.join("\n")}\n\n` : ""}${result.response
               ? `会话已创建，AI 回复如下:\n\n${result.response}`
-              : `会话已创建 (sessionId: ${result.sessionId})，请前往对话查看回复。`,
+              : `会话已创建 (sessionId: ${result.sessionId})，请前往对话查看回复。`}`,
           };
         }
         return {

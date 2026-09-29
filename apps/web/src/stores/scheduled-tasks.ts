@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "../api/client.js";
-import type { ScheduledTaskDto, TaskLogDto, TaskType } from "@pi-web-ui/shared";
+import type { ScheduledTaskCapabilities, ScheduledTaskDto, TaskLogDto, TaskType } from "@pi-web-ui/shared";
 
 export const useScheduledTasksStore = defineStore("scheduled-tasks", {
   state: () => ({
@@ -25,6 +25,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       payload?: string;
       projectId?: string;
       createNewSession?: boolean;
+      capabilities?: ScheduledTaskCapabilities;
       enabled?: boolean;
     }) {
       const task = await api.createScheduledTask(input);
@@ -39,6 +40,7 @@ export const useScheduledTasksStore = defineStore("scheduled-tasks", {
       payload?: string;
       projectId?: string | null;
       createNewSession?: boolean;
+      capabilities?: ScheduledTaskCapabilities;
       enabled?: boolean;
     }) {
       const updated = await api.updateScheduledTask(id, patch);

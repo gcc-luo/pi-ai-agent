@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import type { TaskType } from "@pi-web-ui/shared";
+import type { ScheduledTaskCapabilities, TaskType } from "@pi-web-ui/shared";
 import { Cron } from "croner";
 
 function validateTaskInput(input: {
@@ -25,6 +25,30 @@ function validateTaskInput(input: {
   return null;
 }
 
+function normalizeCapabilities(input: unknown): ScheduledTaskCapabilities | null {
+  if (input === undefined) return { skillNames: [], pluginIds: [], connectorIds: [], expertId: null };
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const value = input as Record<string, unknown>;
+  const readIds = (key: string): string[] | null => {
+    const raw = value[key];
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) return null;
+    return [...new Set(raw.map((item) => item.trim()).filter(Boolean))];
+  };
+  const skillNames = readIds("skillNames");
+  const pluginIds = readIds("pluginIds");
+  const connectorIds = readIds("connectorIds");
+  const expertId = value.expertId;
+  if (!skillNames || !pluginIds || !connectorIds) return null;
+  if (expertId !== undefined && expertId !== null && typeof expertId !== "string") return null;
+  return {
+    skillNames,
+    pluginIds,
+    connectorIds,
+    expertId: typeof expertId === "string" && expertId.trim() ? expertId.trim() : null,
+  };
+}
+
 export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
   // List all tasks
   app.get("/", async () => {
@@ -41,10 +65,15 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       payload?: string;
       projectId?: string;
       createNewSession?: boolean;
+      capabilities?: unknown;
       enabled?: boolean;
     };
     const validationError = validateTaskInput(body);
     if (validationError) return reply.code(400).send({ error: validationError });
+    const capabilities = body.taskType === "prompt"
+      ? normalizeCapabilities(body.capabilities)
+      : normalizeCapabilities(undefined);
+    if (!capabilities) return reply.code(400).send({ error: "invalid capabilities" });
 
     // Validate project if provided
     if (body.projectId) {
@@ -60,6 +89,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       payload: body.payload,
       projectId: body.projectId,
       createNewSession: body.createNewSession,
+      capabilities,
       enabled: body.enabled,
     });
 
@@ -88,6 +118,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       payload?: string;
       projectId?: string | null;
       createNewSession?: boolean;
+      capabilities?: unknown;
       enabled?: boolean;
     };
 
@@ -100,6 +131,14 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       payload: body.payload ?? current.payload,
     });
     if (validationError) return reply.code(400).send({ error: validationError });
+    const effectiveTaskType = body.taskType ?? current.taskType;
+    const requestedCapabilities = effectiveTaskType === "reminder"
+      ? undefined
+      : body.capabilities;
+    const capabilities = requestedCapabilities === undefined
+      ? (effectiveTaskType === "reminder" ? normalizeCapabilities(undefined) : current.capabilities)
+      : normalizeCapabilities(requestedCapabilities);
+    if (!capabilities) return reply.code(400).send({ error: "invalid capabilities" });
 
     // Validate project if provided
     if (body.projectId) {
@@ -107,7 +146,7 @@ export const scheduledTasksRoutes: FastifyPluginAsync = async (app) => {
       if (!project) return reply.code(400).send({ error: "project not found" });
     }
 
-    const updated = app.scheduledTasks.update(req.params.id, body);
+    const updated = app.scheduledTasks.update(req.params.id, { ...body, capabilities });
     if (!updated) return reply.code(404).send({ error: "not found" });
 
     // Re-schedule the task

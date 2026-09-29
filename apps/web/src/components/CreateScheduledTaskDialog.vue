@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { NModal, NInput, NButton, NSelect, NSwitch, NSpace, NTag, NTooltip } from "naive-ui";
-import type { TaskType, ScheduledTaskDto } from "@pi-web-ui/shared";
+import type { TaskType, ScheduledTaskCapabilities, ScheduledTaskDto } from "@pi-web-ui/shared";
 import { useI18n } from "../i18n/index.js";
 import { useProjectStore } from "../stores/project.js";
 import { cronPresets, cronToHuman, validateCron, getNextRuns } from "../utils/cron-helper.js";
 import CronPicker from "./CronPicker.vue";
+import ChatCapabilityToolbar from "./ChatCapabilityToolbar.vue";
+import ImportSkillDialog from "./ImportSkillDialog.vue";
 
 const props = defineProps<{
   show: boolean;
@@ -22,8 +24,10 @@ const emit = defineEmits<{
     payload: string;
     projectId?: string;
     createNewSession?: boolean;
+    capabilities: ScheduledTaskCapabilities;
     enabled: boolean;
   }): void;
+  (e: "manage-connectors"): void;
 }>();
 
 const { t } = useI18n();
@@ -39,6 +43,13 @@ const projectId = ref<string | null>(null);
 const createNewSession = ref(false);
 const enabled = ref(true);
 const showCronPicker = ref(false);
+const showImportSkill = ref(false);
+
+function emptyCapabilities(): ScheduledTaskCapabilities {
+  return { skillNames: [], pluginIds: [], connectorIds: [], expertId: null };
+}
+
+const capabilities = ref<ScheduledTaskCapabilities>(emptyCapabilities());
 
 // Touch tracking — errors only show after the user interacts with a field
 const touched = ref({ name: false, cron: false, project: false, payload: false });
@@ -59,6 +70,12 @@ watch(() => props.show, (visible) => {
     projectId.value = props.task.projectId;
     createNewSession.value = props.task.createNewSession;
     enabled.value = props.task.enabled;
+    capabilities.value = {
+      skillNames: [...(props.task.capabilities?.skillNames ?? [])],
+      pluginIds: [...(props.task.capabilities?.pluginIds ?? [])],
+      connectorIds: [...(props.task.capabilities?.connectorIds ?? [])],
+      expertId: props.task.capabilities?.expertId ?? null,
+    };
     try {
       const p = JSON.parse(props.task.payload || "{}");
       promptText.value = p.prompt || "";
@@ -78,6 +95,7 @@ watch(() => props.show, (visible) => {
     projectId.value = null;
     createNewSession.value = false;
     enabled.value = true;
+    capabilities.value = emptyCapabilities();
   }
   // Always reset touched state when dialog opens
   touched.value = { name: false, cron: false, project: false, payload: false };
@@ -116,6 +134,16 @@ function applyPreset(expr: string) {
   touched.value.cron = true;
 }
 
+function addSkill(name: string) {
+  if (!capabilities.value.skillNames.includes(name)) {
+    capabilities.value.skillNames = [...capabilities.value.skillNames, name];
+  }
+}
+
+function removeSkill(name: string) {
+  capabilities.value.skillNames = capabilities.value.skillNames.filter((item) => item !== name);
+}
+
 function handleSubmit() {
   // Mark all fields as touched so errors display
   touched.value = { name: true, cron: true, project: true, payload: true };
@@ -135,6 +163,12 @@ function handleSubmit() {
     payload,
     projectId: taskType.value === "prompt" ? (projectId.value ?? undefined) : undefined,
     createNewSession: taskType.value === "prompt" ? createNewSession.value : undefined,
+    capabilities: taskType.value === "prompt" ? {
+      skillNames: [...capabilities.value.skillNames],
+      pluginIds: [...capabilities.value.pluginIds],
+      connectorIds: [...capabilities.value.connectorIds],
+      expertId: capabilities.value.expertId,
+    } : emptyCapabilities(),
     enabled: enabled.value,
   });
 }
@@ -268,15 +302,41 @@ function handleSubmit() {
       <!-- Payload -->
       <div class="form-field">
         <label class="form-label"><span class="required-mark">*</span>{{ t('scheduledTasks.payload') }}</label>
-        <NInput
-          v-if="taskType === 'prompt'"
-          v-model:value="promptText"
-          type="textarea"
-          :rows="3"
-          :placeholder="t('scheduledTasks.payloadPromptPlaceholder')"
-          :status="payloadError ? 'error' : undefined"
-          @blur="touched.payload = true"
-        />
+        <div v-if="taskType === 'prompt'" class="scheduled-composer">
+          <div v-if="capabilities.skillNames.length" class="skill-chips">
+            <span v-for="skill in capabilities.skillNames" :key="skill" class="skill-chip">
+              <span class="chip-icon">◇</span>
+              <span class="chip-name">{{ skill }}</span>
+              <button class="chip-remove" type="button" @click="removeSkill(skill)">×</button>
+            </span>
+          </div>
+          <NInput
+            v-model:value="promptText"
+            type="textarea"
+            :rows="3"
+            :autosize="{ minRows: 3, maxRows: 5 }"
+            :placeholder="t('scheduledTasks.payloadPromptPlaceholder')"
+            :status="payloadError ? 'error' : undefined"
+            class="composer-input"
+            @blur="touched.payload = true"
+          />
+          <div class="composer-toolbar">
+            <ChatCapabilityToolbar
+              mode="draft"
+              :project-id="projectId ?? ''"
+              :skill-names="capabilities.skillNames"
+              :plugin-ids="capabilities.pluginIds"
+              :connector-ids="capabilities.connectorIds"
+              :expert-id="capabilities.expertId"
+              @select-skill="addSkill"
+              @update:plugin-ids="capabilities.pluginIds = $event"
+              @update:connector-ids="capabilities.connectorIds = $event"
+              @update:expert-id="capabilities.expertId = $event"
+              @import-skill="showImportSkill = true"
+              @manage-connectors="emit('manage-connectors')"
+            />
+          </div>
+        </div>
         <NInput
           v-else
           v-model:value="reminderText"
@@ -309,6 +369,8 @@ function handleSubmit() {
       </NSpace>
     </template>
   </NModal>
+
+  <ImportSkillDialog :show="showImportSkill" @close="showImportSkill = false" />
 
   <!-- Cron Picker Modal -->
   <NModal
@@ -442,4 +504,91 @@ function handleSubmit() {
 .preset-tag:hover {
   opacity: 0.8;
 }
+
+/* Keep the task dialog close action quiet until it is needed. */
+:deep(.n-card__close) {
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(20, 28, 45, 0.06);
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+:deep(.n-card__close:hover) {
+  border-color: color-mix(in srgb, var(--primary-color) 40%, var(--border-default));
+  background: color-mix(in srgb, var(--primary-color) 9%, var(--bg-surface));
+  color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(20, 28, 45, 0.1);
+  transform: rotate(90deg);
+}
+
+:deep(.n-card__close:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--primary-color) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.scheduled-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.scheduled-composer .composer-input :deep(.n-input) {
+  background: var(--bg-surface);
+}
+
+.composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 23px;
+  padding: 0 4px 0 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-default));
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.chip-name { font-family: var(--font-mono); }
+.chip-icon { font-size: 13px; line-height: 1; }
+.chip-remove {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 15px;
+}
+.chip-remove:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
 </style>

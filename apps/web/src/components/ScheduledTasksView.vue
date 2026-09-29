@@ -17,12 +17,13 @@ import { useScheduledTasksStore } from "../stores/scheduled-tasks.js";
 import { useProjectStore } from "../stores/project.js";
 import { useI18n } from "../i18n/index.js";
 import { cronToHuman, timeAgo, formatDateTime } from "../utils/cron-helper.js";
-import type { ScheduledTaskDto, TaskLogDto } from "@pi-web-ui/shared";
+import type { ScheduledTaskCapabilities, ScheduledTaskDto, TaskLogDto } from "@pi-web-ui/shared";
 import CreateScheduledTaskDialog from "./CreateScheduledTaskDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
 const emit = defineEmits<{
   "navigate-session": [payload: { projectId: string; sessionId: string }];
+  "manage-connectors": [];
 }>();
 
 const store = useScheduledTasksStore();
@@ -125,7 +126,7 @@ function handleEdit(task: ScheduledTaskDto) {
 async function handleSubmit(data: {
   name: string; description: string; cronExpression: string;
   taskType: string; payload: string; projectId?: string;
-  createNewSession?: boolean; enabled: boolean;
+  createNewSession?: boolean; capabilities: ScheduledTaskCapabilities; enabled: boolean;
 }) {
   try {
     if (editTask.value) {
@@ -181,9 +182,33 @@ const tooltipOverrides = {
   fontSize: "12px",
   padding: "4px 8px",
   borderRadius: "4px",
-  color: "var(--primary-color)",
-  textColor: "#ffffff",
+  color: "var(--bg-surface)",
+  textColor: "var(--text-primary)",
   boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+};
+
+const paginationThemeOverrides = {
+  itemTextColor: "var(--text-secondary)",
+  itemTextColorHover: "var(--primary-color)",
+  itemTextColorPressed: "var(--primary-color)",
+  itemTextColorActive: "var(--primary-color)",
+  itemTextColorDisabled: "var(--text-disabled)",
+  itemColor: "transparent",
+  itemColorHover: "var(--background-hover)",
+  itemColorActive: "var(--background-selected)",
+  itemColorActiveHover: "var(--background-selected)",
+  itemColorDisabled: "var(--background-page)",
+  itemBorder: "1px solid transparent",
+  itemBorderHover: "1px solid var(--border-color)",
+  itemBorderActive: "1px solid var(--primary-color)",
+  itemBorderRadius: "4px",
+  jumperTextColor: "var(--text-secondary)",
+  buttonColor: "var(--background-panel)",
+  buttonColorHover: "var(--background-hover)",
+  buttonBorder: "1px solid var(--border-color)",
+  buttonBorderHover: "1px solid var(--border-active)",
+  buttonIconColor: "var(--text-muted)",
+  buttonIconColorHover: "var(--text-primary)",
 };
 
 function renderAction(label: string, icon: VNode, onClick: () => void, danger = false) {
@@ -285,7 +310,8 @@ const columns = computed<DataTableColumns<ScheduledTaskDto>>(() => [
   {
     title: t("scheduledTasks.actions"),
     key: "actions",
-    width: 160,
+    width: 176,
+    fixed: "right",
     render: (task) => h("div", { class: "task-actions" }, [
       renderAction(t("scheduledTasks.runNow"), runIcon(), () => handleRun(task)),
       renderAction(t("scheduledTasks.viewLogs"), logsIcon(), () => openLogs(task)),
@@ -333,7 +359,7 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
         size="small"
         bordered
         :single-line="false"
-        :scroll-x="1100"
+        :scroll-x="1120"
       />
     </div>
 
@@ -347,6 +373,7 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
         :page-size="pageSize"
         :item-count="total"
         :page-sizes="[10, 20, 50, 100]"
+        :theme-overrides="paginationThemeOverrides"
         show-size-picker
         show-quick-jumper
         @update:page="handlePageChange"
@@ -360,6 +387,7 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
       :task="editTask"
       @close="showCreate = false; editTask = null"
       @submit="handleSubmit"
+      @manage-connectors="emit('manage-connectors')"
     />
 
     <!-- Delete Confirm -->
@@ -416,6 +444,14 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 
 <style scoped>
 .tasks-view {
+  --task-surface: var(--background-panel);
+  --task-page: var(--background-page);
+  --task-header: var(--bg-elevated);
+  --task-hover: var(--background-hover);
+  --task-border: var(--border-color);
+  --task-text: var(--text-primary);
+  --task-secondary: var(--text-secondary);
+  --task-muted: var(--text-muted);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -459,7 +495,8 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 .tasks-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 48px 12px;
+  padding: 20px 48px 16px;
+  background: var(--task-page);
 }
 .tasks-state {
   display: flex;
@@ -474,16 +511,51 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 
 /* ─── Table overrides ─── */
 .task-data-table :deep(.n-data-table-th) {
-  font-family: var(--font-mono);
-  font-size: 12px;
+  background: var(--task-header);
+  color: var(--task-secondary);
+  font-family: inherit;
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 8px 12px;
+  letter-spacing: 0;
+  padding: 12px 14px;
+  white-space: nowrap;
 }
 .task-data-table :deep(.n-data-table-td) {
   font-size: 13px;
-  padding: 8px 12px;
+  padding: 12px 14px;
+  color: var(--task-text);
+  background: var(--task-surface);
+  transition: background-color 0.15s ease;
+}
+.task-data-table :deep(.n-data-table-tr:hover .n-data-table-td) {
+  background: var(--task-hover);
+}
+.task-data-table :deep(.n-data-table-th),
+.task-data-table :deep(.n-data-table-td) {
+  border-color: var(--task-border);
+}
+.task-data-table :deep(.n-data-table-wrapper) {
+  border: 1px solid var(--task-border);
+  border-radius: 6px;
+  background: var(--task-surface);
+}
+.task-data-table :deep(.n-data-table-base-table-header) {
+  background: var(--task-header);
+}
+.task-data-table :deep(.n-data-table-td--last-col) {
+  border-right: 0;
+}
+/* Keep the pinned action column opaque while content scrolls beneath it. */
+.task-data-table :deep(.n-data-table-td--fixed-right),
+.task-data-table :deep(.n-data-table-th--fixed-right) {
+  background: var(--task-surface);
+}
+.task-data-table :deep(.n-data-table-th--fixed-right) {
+  background: var(--task-header);
+}
+.task-data-table :deep(.n-data-table-td--fixed-right)::after,
+.task-data-table :deep(.n-data-table-th--fixed-right)::after {
+  box-shadow: -6px 0 8px -7px rgba(31, 45, 61, 0.28);
 }
 
 /* Name cell with description subtitle */
@@ -494,11 +566,11 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 }
 .task-data-table :deep(.task-name-text) {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--task-text);
 }
 .task-data-table :deep(.task-desc) {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--task-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -507,7 +579,7 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 
 /* Project cell */
 .task-data-table :deep(.project-cell) {
-  color: var(--text-secondary);
+  color: var(--task-secondary);
 }
 
 /* Cron cell */
@@ -519,8 +591,8 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
 /* Time cell */
 .task-data-table :deep(.time-cell) {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: var(--task-muted);
 }
 
 /* Action buttons */
@@ -541,15 +613,17 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
   background: transparent;
   appearance: none;
   box-shadow: none;
-  color: var(--text-muted);
+  color: var(--task-muted);
   cursor: pointer;
   transition: background-color 60ms ease, color 60ms ease;
 }
 .task-data-table :deep(.action-btn:hover) {
-  color: var(--text-primary);
+  color: var(--primary-color);
+  background: var(--primary-light);
 }
 .task-data-table :deep(.action-danger:hover) {
-  color: var(--rose);
+  color: var(--danger-color);
+  background: var(--rose-dim);
 }
 
 /* ─── Pagination ─── */
@@ -557,15 +631,57 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 28px 16px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 12px 48px 18px;
+  border-top: 1px solid var(--task-border);
+  background: var(--task-page);
   flex-shrink: 0;
   gap: 12px;
 }
 .pagination-info {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--task-secondary);
+}
+
+.tasks-pagination :deep(.n-base-selection-label) {
+  background: var(--background-panel);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+.tasks-pagination :deep(.n-input) {
+  background: var(--background-panel);
+  color: var(--text-secondary);
+}
+.tasks-pagination :deep(.n-input__border),
+.tasks-pagination :deep(.n-input__state-border) {
+  border-color: var(--border-color);
+}
+
+@media (max-width: 900px) {
+  .tasks-header {
+    padding: 24px;
+  }
+  .tasks-body {
+    padding: 16px 24px 12px;
+  }
+  .tasks-pagination {
+    padding: 12px 24px 16px;
+  }
+}
+
+@media (max-width: 620px) {
+  .tasks-header {
+    padding: 20px 16px;
+  }
+  .tasks-body {
+    padding: 12px 16px;
+  }
+  .tasks-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px 16px 16px;
+  }
 }
 
 /* ─── Logs modal ─── */

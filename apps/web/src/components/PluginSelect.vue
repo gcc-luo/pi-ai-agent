@@ -6,15 +6,18 @@ import { usePluginStore } from "../stores/plugin.js";
 import { useI18n } from "../i18n/index.js";
 
 const props = defineProps<{
-  sessionId: string;
+  sessionId?: string;
   disabled?: boolean;
+  draft?: boolean;
+  modelValue?: string[];
 }>();
+const emit = defineEmits<{ (e: "update:modelValue", value: string[]): void }>();
 
 const plugins = usePluginStore();
 const { t } = useI18n();
 const showPopover = ref(false);
 
-const selectedIds = computed(() => plugins.selectedBySession[props.sessionId] ?? []);
+const selectedIds = computed(() => props.draft ? (props.modelValue ?? []) : (props.sessionId ? plugins.selectedBySession[props.sessionId] ?? [] : []));
 const availablePlugins = computed(() => plugins.enabledPlugins);
 const selectedPlugins = computed(() =>
   selectedIds.value
@@ -22,13 +25,13 @@ const selectedPlugins = computed(() =>
     .filter((plugin): plugin is PluginDto => Boolean(plugin)),
 );
 const primarySelectedPlugin = computed(() => selectedPlugins.value[0] ?? null);
-const saving = computed(() => plugins.updatingSessionId === props.sessionId);
+const saving = computed(() => !props.draft && plugins.updatingSessionId === props.sessionId);
 
 watch(
   () => props.sessionId,
   async (sessionId) => {
     if (plugins.plugins.length === 0) await plugins.loadAll();
-    await plugins.loadSession(sessionId);
+    if (!props.draft && sessionId) await plugins.loadSession(sessionId);
   },
   { immediate: true },
 );
@@ -44,6 +47,11 @@ function pluginDescription(plugin: PluginDto): string {
 }
 
 async function update(value: string[]) {
+  if (props.draft) {
+    emit("update:modelValue", value);
+    return;
+  }
+  if (!props.sessionId) return;
   try {
     await plugins.setSessionPlugins(props.sessionId, value);
   } catch {

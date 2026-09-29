@@ -86,6 +86,19 @@ describe("connector system", () => {
     expect(service.searchTools("Test MCP read data please", "workspace-a").map((tool) => tool.name)).toContain("read_data");
   });
 
+  it("restricts scheduled sessions to their connector snapshot", async () => {
+    const allowed = create();
+    const other = create();
+    await service.test(allowed.id);
+    await service.test(other.id);
+
+    service.setSessionConnectorScope("scheduled-session", [allowed.id]);
+    expect(service.searchTools("read", "workspace-a", 10, "scheduled-session")
+      .every((tool) => tool.connectorId === allowed.id)).toBe(true);
+    expect(() => service.describeTool(`${other.id}.read_data`, "workspace-a", "scheduled-session"))
+      .toThrow();
+  });
+
   it("finds the correct Tencent Docs workflow from Chinese natural language", () => {
     const connector = service.connectBuiltin("tencent-docs", "docs-secret-token");
     repository.upsertTools(connector.id, [

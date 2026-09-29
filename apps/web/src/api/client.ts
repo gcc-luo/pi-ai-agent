@@ -2,7 +2,7 @@
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
-  ScheduledTaskDto, TaskLogDto, TaskType,
+  ScheduledTaskDto, ScheduledTaskCapabilities, TaskLogDto, TaskType,
   ArtifactItem, ArtifactValidation,
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
   PluginDto,
@@ -269,12 +269,12 @@ export const api = {
   createScheduledTask: (data: {
     name: string; description?: string; cronExpression: string;
     taskType: TaskType; payload?: string; projectId?: string;
-    createNewSession?: boolean; enabled?: boolean;
+    createNewSession?: boolean; capabilities?: ScheduledTaskCapabilities; enabled?: boolean;
   }) => request<ScheduledTaskDto>("POST", "/scheduled-tasks", data),
   updateScheduledTask: (id: string, data: {
     name?: string; description?: string; cronExpression?: string;
     taskType?: TaskType; payload?: string; projectId?: string | null;
-    createNewSession?: boolean; enabled?: boolean;
+    createNewSession?: boolean; capabilities?: ScheduledTaskCapabilities; enabled?: boolean;
   }) => request<ScheduledTaskDto>("PUT", `/scheduled-tasks/${id}`, data),
   deleteScheduledTask: (id: string) =>
     request<void>("DELETE", `/scheduled-tasks/${id}`),

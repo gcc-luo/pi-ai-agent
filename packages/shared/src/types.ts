@@ -590,6 +590,13 @@ export interface Result<T, E = string> {
 
 export type TaskType = "prompt" | "reminder";
 
+export interface ScheduledTaskCapabilities {
+  skillNames: string[];
+  pluginIds: string[];
+  connectorIds: string[];
+  expertId: string | null;
+}
+
 export interface ScheduledTaskDto {
   id: string;
   name: string;
@@ -604,6 +611,8 @@ export interface ScheduledTaskDto {
   createNewSession: boolean;
   /** Persistent session ID for reuse mode. Set after first execution when createNewSession is false. */
   sessionId: string | null;
+  /** Snapshot of the AI capabilities selected when the task was saved. */
+  capabilities: ScheduledTaskCapabilities;
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number | null;

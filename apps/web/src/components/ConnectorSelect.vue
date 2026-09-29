@@ -3,13 +3,30 @@ import { computed, onMounted, ref, watch } from "vue";
 import { NPopover, NSwitch } from "naive-ui";
 import { useConnectorStore } from "../stores/connector.js";
 
-const props = defineProps<{ projectId: string; disabled?: boolean }>();
-const emit = defineEmits<{ (event: "manage"): void }>();
+const props = defineProps<{
+  projectId: string;
+  disabled?: boolean;
+  draft?: boolean;
+  modelValue?: string[];
+}>();
+const emit = defineEmits<{
+  (event: "manage"): void;
+  (event: "update:modelValue", value: string[]): void;
+}>();
 const store = useConnectorStore();
 const show = ref(false);
 const available = computed(() => store.connectors.filter((item) => item.scopeType === "user" || item.scopeId === props.projectId));
+const selectedIds = computed(() => props.modelValue ?? []);
 onMounted(() => store.load(props.projectId));
 watch(() => props.projectId, (id) => store.load(id));
+
+function toggleSelection(id: string, enabled: boolean) {
+  if (!props.draft) return;
+  const next = enabled
+    ? [...selectedIds.value, id]
+    : selectedIds.value.filter((selectedId) => selectedId !== id);
+  emit("update:modelValue", [...new Set(next)]);
+}
 </script>
 <template>
   <NPopover v-model:show="show" trigger="click" placement="top-start" :width="300">
@@ -23,7 +40,7 @@ watch(() => props.projectId, (id) => store.load(id));
         <span class="tool-btn-label">连接器</span>
       </button>
     </template>
-    <div class="picker"><strong>连接器</strong><p v-if="!available.length">暂无连接器</p><div v-for="item in available" :key="item.id" class="row"><span>{{ item.icon }}</span><span class="name">{{ item.name }}</span><NSwitch size="small" :value="item.enabled" @update:value="store.update(item.id, { enabled: $event })" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
+    <div class="picker"><strong>连接器</strong><p v-if="!available.length">暂无连接器</p><div v-for="item in available" :key="item.id" class="row"><span>{{ item.icon }}</span><span class="name">{{ item.name }}</span><NSwitch size="small" :value="draft ? selectedIds.includes(item.id) : item.enabled" @update:value="draft ? toggleSelection(item.id, $event) : store.update(item.id, { enabled: $event })" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
   </NPopover>
 </template>
 <style scoped>

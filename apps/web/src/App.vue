@@ -514,7 +514,7 @@ function closePreview() {
       <ConnectorView v-else-if="activeNav === 'connectors'" :project-id="selectedProjectId" />
       <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
       <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
-      <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToSession" />
+        <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToSession" @manage-connectors="activeNav = 'connectors'" />
       <ChannelView v-else-if="activeNav === 'channels'" />
       <TrashView v-else-if="activeNav === 'trash'" @restore-project="navigateToProject" />
     </div>

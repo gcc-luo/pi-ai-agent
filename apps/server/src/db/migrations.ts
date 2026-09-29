@@ -581,6 +581,13 @@ const MIGRATIONS = [
         ON notifications(session_id, is_read, created_at);
     `,
   },
+  {
+    name: "028_scheduled_task_capabilities",
+    sql: `
+      ALTER TABLE scheduled_tasks ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}';
+    `,
+    safe: true,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

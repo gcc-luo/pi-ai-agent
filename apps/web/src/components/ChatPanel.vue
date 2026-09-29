@@ -4,15 +4,11 @@ import { NInput, NSelect } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
-import SkillSelect from "./SkillSelect.vue";
-import PluginSelect from "./PluginSelect.vue";
-import ConnectorSelect from "./ConnectorSelect.vue";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
 import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
 import { useKbStore } from "../stores/kb.js";
-import ChatKbPicker from "./ChatKbPicker.vue";
-import ChatExpertPicker from "./ChatExpertPicker.vue";
+import ChatCapabilityToolbar from "./ChatCapabilityToolbar.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
@@ -1243,14 +1239,15 @@ defineExpose({ revealNotificationMessage });
           </svg>
           <span class="tool-btn-label">{{ t('chat.upload') }}</span>
         </button>
-        <SkillSelect
-          @select="onSkillSelect"
-          @import="showImportSkill = true"
+        <ChatCapabilityToolbar
+          mode="session"
+          :session-id="sessionId"
+          :project-id="projectId"
+          :disabled="isBusy"
+          @select-skill="onSkillSelect"
+          @import-skill="showImportSkill = true"
+          @manage-connectors="emit('manage-connectors')"
         />
-        <ChatExpertPicker :session-id="sessionId" />
-        <ChatKbPicker :session-id="sessionId" />
-        <PluginSelect :session-id="sessionId" :disabled="isBusy" />
-        <ConnectorSelect :project-id="projectId" :disabled="isBusy" @manage="emit('manage-connectors')" />
         <span
           v-if="compaction"
           class="compaction-status"
