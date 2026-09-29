@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, h, type VNode } from "vue";
+import { onMounted, ref, computed, h, watch, type VNode } from "vue";
 import {
   NButton,
   NDataTable,
@@ -17,7 +17,9 @@ import { useScheduledTasksStore } from "../stores/scheduled-tasks.js";
 import { useProjectStore } from "../stores/project.js";
 import { useI18n } from "../i18n/index.js";
 import { cronToHuman, timeAgo, formatDateTime } from "../utils/cron-helper.js";
-import type { ScheduledTaskCapabilities, ScheduledTaskDto, TaskLogDto } from "@pi-web-ui/shared";
+import { api } from "../api/client.js";
+import { messagesForExecution } from "../utils/scheduled-task-logs.js";
+import type { MessageDto, ScheduledTaskCapabilities, ScheduledTaskDto, TaskLogDto } from "@pi-web-ui/shared";
 import CreateScheduledTaskDialog from "./CreateScheduledTaskDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
@@ -39,6 +41,12 @@ const deleteTarget = ref<ScheduledTaskDto | null>(null);
 // Logs modal
 const logsTaskId = ref<string | null>(null);
 const logsLoading = ref(false);
+const logsPage = ref(1);
+const logsPageSize = ref(10);
+const detailLog = ref<TaskLogDto | null>(null);
+const detailMessages = ref<MessageDto[]>([]);
+const detailLoading = ref(false);
+const detailError = ref<string | null>(null);
 
 // Client-side pagination
 const page = ref(1);
@@ -108,6 +116,7 @@ async function handleRun(task: ScheduledTaskDto) {
 
 async function openLogs(task: ScheduledTaskDto) {
   logsTaskId.value = task.id;
+  logsPage.value = 1;
   logsLoading.value = true;
   try {
     await store.loadLogs(task.id);
@@ -120,6 +129,7 @@ async function openLogs(task: ScheduledTaskDto) {
 
 function closeLogs() {
   logsTaskId.value = null;
+  closeLogDetail();
 }
 
 function handleEdit(task: ScheduledTaskDto) {
@@ -178,6 +188,51 @@ function logStatusType(status: string): "success" | "error" | "info" {
     case "failed": return "error";
     default: return "info";
   }
+}
+
+function logOutputSummary(log: TaskLogDto): string {
+  const output = log.output.trim();
+  if (!output) return "—";
+  return output.split("\n").find((line) => line.trim())?.trim() ?? "—";
+}
+
+async function openLogDetail(log: TaskLogDto) {
+  detailLog.value = log;
+  detailMessages.value = [];
+  detailError.value = null;
+  detailLoading.value = true;
+  if (!log.sessionId) {
+    detailLoading.value = false;
+    return;
+  }
+  try {
+    const messages = await api.listMessages(log.sessionId);
+    detailMessages.value = messagesForExecution(log, messages);
+  } catch (error) {
+    detailError.value = error instanceof Error ? error.message : "加载执行对话失败";
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+function closeLogDetail() {
+  detailLog.value = null;
+  detailMessages.value = [];
+  detailError.value = null;
+}
+
+function navigateFromDetail() {
+  if (detailLog.value && logsTask.value) {
+    navigateToSession(logsTask.value, detailLog.value);
+  }
+  closeLogDetail();
+  closeLogs();
+}
+
+function messageRoleLabel(role: MessageDto["role"]): string {
+  if (role === "user") return "用户提示词";
+  if (role === "assistant") return "AI 回复";
+  return "工具消息";
 }
 
 // ─── Table columns ───
@@ -328,6 +383,64 @@ const columns = computed<DataTableColumns<ScheduledTaskDto>>(() => [
 // Logs for the currently-viewed task
 const logsTask = computed(() => store.tasks.find((t) => t.id === logsTaskId.value) ?? null);
 const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.value] ?? []) : []);
+const logsTotal = computed(() => currentLogs.value.length);
+const pagedLogs = computed(() => {
+  const start = (logsPage.value - 1) * logsPageSize.value;
+  return currentLogs.value.slice(start, start + logsPageSize.value);
+});
+const logsRangeStart = computed(() => logsTotal.value === 0 ? 0 : (logsPage.value - 1) * logsPageSize.value + 1);
+const logsRangeEnd = computed(() => Math.min(logsPage.value * logsPageSize.value, logsTotal.value));
+
+watch(currentLogs, () => {
+  const lastPage = Math.max(1, Math.ceil(logsTotal.value / logsPageSize.value));
+  if (logsPage.value > lastPage) logsPage.value = lastPage;
+});
+
+function handleLogsPageSizeChange(next: number) {
+  logsPageSize.value = next;
+  logsPage.value = 1;
+}
+
+const logColumns = computed<DataTableColumns<TaskLogDto>>(() => [
+  {
+    title: "状态",
+    key: "status",
+    width: 92,
+    render: (log) => h(NTag, { size: "small", bordered: false, type: logStatusType(log.status) }, {
+      default: () => logStatusLabel(log.status),
+    }),
+  },
+  {
+    title: "执行时间",
+    key: "startedAt",
+    width: 150,
+    render: (log) => h("span", { class: "log-table-time" }, formatDateTime(log.startedAt)),
+  },
+  {
+    title: "执行结果",
+    key: "output",
+    ellipsis: { tooltip: true },
+    render: (log) => h("span", { class: "log-output-summary" }, logOutputSummary(log)),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 180,
+    render: (log) => h("div", { class: "log-table-actions" }, [
+      h(NButton, {
+        size: "small",
+        secondary: true,
+        onClick: () => openLogDetail(log),
+      }, { default: () => "详情" }),
+      h(NButton, {
+        size: "small",
+        quaternary: true,
+        disabled: !(log.sessionId && logsTask.value?.projectId),
+        onClick: () => logsTask.value && navigateToSession(logsTask.value, log),
+      }, { default: () => t("scheduledTasks.viewSession") }),
+    ]),
+  },
+]);
 </script>
 
 <template>
@@ -421,26 +534,78 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
       <div v-else-if="!currentLogs.length" class="logs-modal-empty">
         <NEmpty :description="t('scheduledTasks.noLogs')" size="small" />
       </div>
-      <div v-else class="logs-modal-list">
-        <div v-for="log in currentLogs" :key="log.id" class="log-modal-item">
-          <div class="log-modal-header">
-            <NTag size="tiny" :bordered="false" :type="logStatusType(log.status)">
-              {{ logStatusLabel(log.status) }}
-            </NTag>
-            <span class="log-modal-time">{{ formatDateTime(log.startedAt) }}</span>
-            <button
-              v-if="log.sessionId && logsTask?.projectId"
-              class="log-session-link"
-              @click="navigateToSession(logsTask!, log)"
-            >
-              {{ t('scheduledTasks.viewSession') }}
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-          <pre v-if="log.output" class="log-modal-output">{{ log.output }}</pre>
+      <template v-else>
+        <NDataTable
+          class="logs-modal-table"
+          :columns="logColumns"
+          :data="pagedLogs"
+          :pagination="false"
+          :single-line="false"
+          :scroll-x="560"
+          size="small"
+          bordered
+        />
+        <div class="logs-modal-pagination">
+          <span class="logs-pagination-info">显示第 {{ logsRangeStart }}–{{ logsRangeEnd }} 条，共 {{ logsTotal }} 条</span>
+          <NPagination
+            :page="logsPage"
+            :page-size="logsPageSize"
+            :item-count="logsTotal"
+            :page-sizes="[10, 20, 50]"
+            :theme-overrides="paginationThemeOverrides"
+            show-size-picker
+            @update:page="(next: number) => logsPage = next"
+            @update:page-size="handleLogsPageSizeChange"
+          />
         </div>
+      </template>
+    </NModal>
+
+    <!-- Execution conversation detail -->
+    <NModal
+      class="log-detail-modal"
+      :show="detailLog !== null"
+      preset="card"
+      title="本次执行对话"
+      :style="{ width: '680px', maxWidth: '95vw' }"
+      :mask-closable="true"
+      @update:show="(v: boolean) => !v && closeLogDetail()"
+    >
+      <div class="log-detail-meta" v-if="detailLog">
+        <NTag size="small" :bordered="false" :type="logStatusType(detailLog.status)">
+          {{ logStatusLabel(detailLog.status) }}
+        </NTag>
+        <span>{{ formatDateTime(detailLog.startedAt) }}</span>
+        <span v-if="logsTask">{{ logsTask.name }}</span>
+      </div>
+      <div v-if="detailLoading" class="logs-modal-loading">
+        <NSpin size="small" />
+      </div>
+      <div v-else-if="detailError" class="log-detail-error" role="alert">{{ detailError }}</div>
+      <div v-else-if="detailMessages.length" class="log-detail-messages">
+        <article
+          v-for="item in detailMessages"
+          :key="item.id"
+          class="log-detail-message"
+          :class="item.role"
+        >
+          <div class="log-detail-message-role">{{ messageRoleLabel(item.role) }}</div>
+          <pre class="log-detail-message-content">{{ item.content || '—' }}</pre>
+        </article>
+      </div>
+      <div v-else class="log-detail-fallback">
+        <NEmpty description="该执行没有可定位的会话消息" size="small" />
+        <pre v-if="detailLog?.output" class="log-modal-output">{{ detailLog.output }}</pre>
+      </div>
+      <div class="log-detail-footer">
+        <NButton @click="closeLogDetail">关闭</NButton>
+        <NButton
+          v-if="detailLog?.sessionId && logsTask?.projectId"
+          type="primary"
+          @click="navigateFromDetail"
+        >
+          {{ t('scheduledTasks.viewSession') }}
+        </NButton>
       </div>
     </NModal>
   </div>
@@ -697,64 +862,145 @@ const currentLogs = computed(() => logsTaskId.value ? (store.logs[logsTaskId.val
   padding: 32px 0;
 }
 
-.logs-modal-list {
+.logs-modal-table {
+  --log-table-surface: var(--background-panel);
+  --log-table-header: var(--bg-elevated);
+  --log-table-hover: var(--background-hover);
+  --log-table-border: var(--border-color);
+}
+.logs-modal-table :deep(.n-data-table-th) {
+  background: var(--log-table-header);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 10px 12px;
+}
+.logs-modal-table :deep(.n-data-table-td) {
+  background: var(--log-table-surface);
+  border-color: var(--log-table-border);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+.logs-modal-table :deep(.n-data-table-tr:hover .n-data-table-td) {
+  background: var(--log-table-hover);
+}
+.logs-modal-table :deep(.n-data-table-wrapper) {
+  border: 1px solid var(--log-table-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.log-table-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.log-output-summary {
+  color: var(--text-secondary);
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.logs-modal-pagination {
+  align-items: center;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 0 0;
+}
+.logs-pagination-info {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.log-detail-meta {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.log-detail-messages {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 480px;
+  max-height: 420px;
   overflow-y: auto;
 }
-
-.log-modal-item {
+.log-detail-message {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 10px 14px;
-  background: var(--background-page);
+  padding: 10px 12px;
 }
-
-.log-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.log-detail-message.user {
+  background: var(--primary-light);
+  border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+  margin-left: 42px;
+}
+.log-detail-message.assistant {
+  background: var(--background-page);
+  margin-right: 42px;
+}
+.log-detail-message.tool {
+  background: var(--background-hover);
+  margin-right: 42px;
+}
+.log-detail-message-role {
+  color: var(--text-muted);
+  font-size: 11px;
   margin-bottom: 6px;
 }
-
-.log-modal-time {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.log-session-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: auto;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--primary-color);
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.log-session-link:hover {
-  opacity: 0.75;
-  text-decoration: underline;
-}
-
-.log-modal-output {
+.log-detail-message-content {
   margin: 0;
-  padding: 8px 10px;
+  padding: 0;
+  color: var(--text-primary);
   font-size: 12px;
   line-height: 1.5;
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  border-radius: var(--radius-sm);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
+}
+.log-detail-error {
+  color: var(--danger-color);
+  padding: 20px 0;
+}
+.log-detail-fallback {
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.log-detail-footer {
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+@media (max-width: 620px) {
+  .logs-modal-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .log-detail-message.user,
+  .log-detail-message.assistant,
+  .log-detail-message.tool {
+    margin-left: 0;
+    margin-right: 0;
+  }
 }
 </style>
