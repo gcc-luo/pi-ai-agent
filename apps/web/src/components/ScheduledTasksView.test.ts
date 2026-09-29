@@ -12,5 +12,7 @@ describe("ScheduledTasksView execution logs", () => {
     expect(source).toContain("<NPagination");
     expect(source).toContain("openLogDetail");
     expect(source).toContain("log-detail-modal");
+    expect(source).toContain(".n-data-table-base-table-body");
+    expect(source).toContain("min-height: 529px");
   });
 });

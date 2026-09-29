@@ -890,6 +890,10 @@ const logColumns = computed<DataTableColumns<TaskLogDto>>(() => [
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
+.logs-modal-table :deep(.n-data-table-base-table-body) {
+  /* Keep the modal stable when the final page contains fewer than 10 rows. */
+  min-height: 529px;
+}
 .log-table-time {
   color: var(--text-muted);
   font-family: var(--font-mono);
