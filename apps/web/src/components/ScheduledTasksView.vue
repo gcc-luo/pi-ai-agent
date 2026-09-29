@@ -22,7 +22,7 @@ import CreateScheduledTaskDialog from "./CreateScheduledTaskDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
 const emit = defineEmits<{
-  "navigate-session": [payload: { projectId: string; sessionId: string }];
+  "navigate-session": [payload: { projectId: string; sessionId: string; messageId?: string | null }];
   "manage-connectors": [];
 }>();
 
@@ -73,7 +73,11 @@ function projectName(id: string | null): string {
 
 function navigateToSession(task: ScheduledTaskDto, log: TaskLogDto) {
   if (log.sessionId && task.projectId) {
-    emit("navigate-session", { projectId: task.projectId, sessionId: log.sessionId });
+    emit("navigate-session", {
+      projectId: task.projectId,
+      sessionId: log.sessionId,
+      messageId: log.messageId,
+    });
   }
 }
 

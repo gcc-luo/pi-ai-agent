@@ -394,6 +394,7 @@ watch(() => props.sessionId, async (sessionId, previousSessionId) => {
 
 onUnmounted(() => {
   stopDurationTimer();
+  if (revealMessageTimer !== null) window.clearTimeout(revealMessageTimer);
   agent.unsubscribe(props.sessionId);
 });
 
@@ -453,12 +454,21 @@ const userQuestions = computed<OutlineItem[]>(() => {
     });
 });
 
+const revealedMessageId = ref<string | null>(null);
+let revealMessageTimer: number | null = null;
+
 function scrollToMessage(msgId: string): boolean {
   const container = messagesEl.value;
   if (!container) return false;
   const el = container.querySelector(`[data-msg-id="${msgId}"]`);
   if (!el) return false;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
+  revealedMessageId.value = msgId;
+  if (revealMessageTimer !== null) window.clearTimeout(revealMessageTimer);
+  revealMessageTimer = window.setTimeout(() => {
+    if (revealedMessageId.value === msgId) revealedMessageId.value = null;
+    revealMessageTimer = null;
+  }, 1800);
   showOutline.value = false;
   return true;
 }
@@ -1024,6 +1034,7 @@ defineExpose({ revealNotificationMessage });
           streaming: m.streaming,
           continued: !m.showHeader && !m.statusOnly,
           'run-status-only': m.statusOnly,
+          revealed: revealedMessageId === m.id,
         }]"
       >
         <AgentActivity
@@ -1495,6 +1506,17 @@ defineExpose({ revealNotificationMessage });
   max-width: 80%;
   padding: 10px 14px;
   border-radius: var(--radius-lg);
+}
+
+.msg.revealed {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 7px;
+  animation: scheduled-message-reveal 1.8s var(--ease-out) both;
+}
+
+@keyframes scheduled-message-reveal {
+  0%, 100% { outline-color: color-mix(in srgb, var(--accent) 0%, transparent); }
+  18%, 72% { outline-color: color-mix(in srgb, var(--accent) 58%, transparent); }
 }
 
 /* User ─ right-aligned column: fixed avatar above, pale-blue bubble below, time under that */

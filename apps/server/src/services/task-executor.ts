@@ -99,7 +99,7 @@ export class TaskExecutor {
     promptText: string;
     taskId: string;
     createNewSession: boolean;
-  }): Promise<{ sessionId: string; response: string; warnings: string[] }> {
+  }): Promise<{ sessionId: string; messageId: string; response: string; warnings: string[] }> {
     const { taskName, projectId, promptText, taskId, createNewSession } = params;
 
     // Verify project exists
@@ -181,6 +181,7 @@ export class TaskExecutor {
 
     // Wait for the agent to finish processing
     let response: string;
+    let messageId = "";
     try {
       response = await new Promise<string>((resolve, reject) => {
       let responseText = "";
@@ -236,12 +237,13 @@ export class TaskExecutor {
       // Send the prompt with artifact instruction (persisted message uses original text)
       const skillSuffix = resolvedCapabilities.skillNames.map((name) => ` /skill:${name}`).join("");
       bridge.send({ type: "send", sessionId: session.id, content: `${promptText}${skillSuffix}\n\n${ARTIFACT_INSTRUCTION}` });
-      this.messages.append({
+      const userMessage = this.messages.append({
         sessionId: session.id,
         role: "user",
         content: promptText,
         metadata: { source: "scheduled-task" },
       });
+      messageId = userMessage.id;
       this.logger.debug(`[TaskExecutor] persisted user message for session ${session.id}`);
       });
     } finally {
@@ -254,6 +256,6 @@ export class TaskExecutor {
       this.logger.info(`[TaskExecutor] saved session_id ${session.id} on task ${taskId} for reuse`);
     }
 
-    return { sessionId: session.id, response, warnings: resolvedCapabilities.warnings };
+    return { sessionId: session.id, messageId, response, warnings: resolvedCapabilities.warnings };
   }
 }

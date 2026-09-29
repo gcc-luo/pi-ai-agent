@@ -197,4 +197,45 @@ describe("ChatPanel running input", () => {
     expect(wrapper.findAll(".msg.assistant .msg-avatar-label")).toHaveLength(0);
     expect(wrapper.findAll(".msg.assistant .msg-actions")).toHaveLength(1);
   });
+
+  it("reveals the exact message when navigation supplies its id", async () => {
+    const agent = useAgentStore();
+    agent.streams.s1 = [
+      {
+        id: "scheduled-user",
+        role: "user",
+        parts: [{ kind: "text", text: "定时执行的提问" }],
+        status: "complete",
+        createdAt: 1_000,
+        metadata: null,
+      },
+    ];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    const wrapper = mount(ChatPanel, {
+      props: { sessionId: "s1", projectId: "p1" },
+      global: {
+        stubs: {
+          Input: true,
+          SkillSelect: true,
+          PluginSelect: true,
+          ChatExpertPicker: true,
+          ChatKbPicker: true,
+          ChatKbBanner: true,
+          ImportSkillDialog: true,
+          ConfirmDialog: true,
+        },
+      },
+    });
+    await flushPromises();
+
+    await (wrapper.vm as unknown as { revealNotificationMessage: (messageId?: string) => Promise<void> })
+      .revealNotificationMessage("scheduled-user");
+
+    expect(wrapper.get('[data-msg-id="scheduled-user"]').classes()).toContain("revealed");
+    wrapper.unmount();
+  });
 });

@@ -31,6 +31,26 @@ describe("ScheduledTaskRepository capabilities", () => {
     db.close();
   });
 
+  it("persists the message that an execution should reveal", async () => {
+    const db = new Database(":memory:");
+    runMigrations(db);
+    const { TaskLogRepository } = await import("../../src/db/repositories/scheduled-task.js");
+    const tasks = new ScheduledTaskRepository(db);
+    const task = tasks.create({
+      name: "message target",
+      cronExpression: "0 9 * * *",
+      taskType: "prompt",
+      payload: JSON.stringify({ prompt: "检查" }),
+    });
+    const logs = new TaskLogRepository(db);
+    const log = logs.create(task.id);
+
+    logs.setMessageId(log.id, "message-9-05");
+
+    expect(logs.listByTaskId(task.id)[0]?.messageId).toBe("message-9-05");
+    db.close();
+  });
+
   it("uses an empty capability snapshot when none is provided", () => {
     const db = new Database(":memory:");
     runMigrations(db);

@@ -56,6 +56,7 @@ type LogRow = {
   status: "success" | "failed" | "running";
   output: string;
   session_id: string | null;
+  message_id: string | null;
   started_at: number;
   finished_at: number | null;
 };
@@ -87,6 +88,7 @@ function logToDto(r: LogRow): TaskLogDto {
     status: r.status,
     output: r.output,
     sessionId: r.session_id,
+    messageId: r.message_id,
     startedAt: r.started_at,
     finishedAt: r.finished_at,
   };
@@ -266,7 +268,7 @@ export class TaskLogRepository {
     this.db
       .prepare("INSERT INTO task_logs (id, task_id, status, session_id, started_at) VALUES (?, ?, 'running', ?, ?)")
       .run(id, taskId, sid, now);
-    return { id, taskId, status: "running", output: "", sessionId: sid, startedAt: now, finishedAt: null };
+    return { id, taskId, status: "running", output: "", sessionId: sid, messageId: null, startedAt: now, finishedAt: null };
   }
 
   finish(id: string, status: "success" | "failed", output: string): void {
@@ -279,6 +281,12 @@ export class TaskLogRepository {
     this.db
       .prepare("UPDATE task_logs SET session_id = ? WHERE id = ?")
       .run(sessionId, id);
+  }
+
+  setMessageId(id: string, messageId: string): void {
+    this.db
+      .prepare("UPDATE task_logs SET message_id = ? WHERE id = ?")
+      .run(messageId, id);
   }
 
   /** Mark executions interrupted by a process restart as failed. */

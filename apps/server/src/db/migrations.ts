@@ -588,6 +588,13 @@ const MIGRATIONS = [
     `,
     safe: true,
   },
+  {
+    name: "029_scheduled_task_log_message",
+    sql: `
+      ALTER TABLE task_logs ADD COLUMN message_id TEXT;
+    `,
+    safe: true,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

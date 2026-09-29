@@ -118,6 +118,7 @@ export class TaskScheduler {
     let output = "";
     let status: "success" | "failed" = "failed";
     let sessionId: string | null = null;
+    let messageId: string | null = null;
     const maxAttempts = 3;
 
     try {
@@ -126,6 +127,7 @@ export class TaskScheduler {
           const result = await this.executeOnce(task);
           output = result.output;
           sessionId = result.sessionId;
+          messageId = result.messageId;
           status = "success";
           break;
         } catch (err) {
@@ -138,6 +140,7 @@ export class TaskScheduler {
         }
       }
       if (sessionId) this.logs.setSessionId(log.id, sessionId);
+      if (messageId) this.logs.setMessageId(log.id, messageId);
       this.logs.finish(log.id, status, output);
 
       const now = Date.now();
@@ -149,7 +152,7 @@ export class TaskScheduler {
     }
   }
 
-  private async executeOnce(task: ScheduledTaskDto): Promise<{ output: string; sessionId: string | null }> {
+  private async executeOnce(task: ScheduledTaskDto): Promise<{ output: string; sessionId: string | null; messageId: string | null }> {
     const payload = JSON.parse(task.payload || "{}");
     switch (task.taskType) {
       case "prompt": {
@@ -165,6 +168,7 @@ export class TaskScheduler {
           });
           return {
             sessionId: result.sessionId,
+            messageId: result.messageId,
             output: `${result.warnings.length ? `能力警告：\n${result.warnings.join("\n")}\n\n` : ""}${result.response
               ? `会话已创建，AI 回复如下:\n\n${result.response}`
               : `会话已创建 (sessionId: ${result.sessionId})，请前往对话查看回复。`}`,
@@ -172,12 +176,13 @@ export class TaskScheduler {
         }
         return {
           sessionId: null,
+          messageId: null,
           output: `[自动提问] ${task.name}\n\n提示词: ${promptText}\n\n提示: 请为任务指定目标项目以启用自动执行。`,
         };
       }
       case "reminder": {
         const message = payload.message || "";
-        return { sessionId: null, output: `[提醒] ${task.name}\n\n${message}` };
+        return { sessionId: null, messageId: null, output: `[提醒] ${task.name}\n\n${message}` };
       }
       default:
         throw new Error(`未知任务类型: ${task.taskType}`);
