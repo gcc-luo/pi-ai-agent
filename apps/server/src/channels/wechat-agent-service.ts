@@ -136,7 +136,7 @@ export class WeChatAgentService {
       else userText = "请总结并分析附件。";
     }
     const attachmentLines = media.attachmentOrder.map((attachment) => attachment.kind === "image"
-      ? `- 图片：${attachment.fileName}`
+      ? `- 图片：${attachment.fileName}（${attachment.relativePath}）`
       : `- 文件：${attachment.fileName}（${attachment.relativePath}）`);
     const storedText = attachmentLines.length > 0
       ? `${userText}\n\n微信附件（保存在项目目录）：\n${attachmentLines.join("\n")}`

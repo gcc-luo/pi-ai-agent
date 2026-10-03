@@ -43,7 +43,7 @@ export interface WeChatPreparedMedia {
   images: ImageAttachment[];
   files: WeChatSavedFile[];
   attachmentOrder: Array<
-    | { kind: "image"; fileName: string }
+    | { kind: "image"; fileName: string; relativePath: string }
     | { kind: "file"; fileName: string; relativePath: string }
   >;
 }
@@ -129,23 +129,30 @@ async function createFileDestination(workdir: string, fileName: string): Promise
 
 async function prepareImage(
   item: WireMessageItem,
+  workdir: string,
   downloadRaw: DownloadRaw,
   index: number,
-): Promise<{ image: ImageAttachment; size: number }> {
+  remainingTotalBytes: number,
+): Promise<{ image: ImageAttachment; size: number; relativePath: string }> {
   const media = item.image_item?.media;
   if (!media) throw new Error("图片缺少下载信息，无法识别");
   const data = await downloadRaw(media, item.image_item?.aeskey);
   if (data.length === 0) throw new Error("图片数据为空，无法识别");
   if (data.length > MAX_WECHAT_IMAGE_BYTES) throw new Error("单张图片超过 5 MiB 限制，请压缩后重试");
+  if (data.length > remainingTotalBytes) throw new Error("图片总大小超过 20 MiB 限制，请减少图片数量或压缩后重试");
   const detected = detectImage(data);
   if (!detected) throw new Error("图片格式无法识别，支持 PNG、JPEG、GIF 和 WebP");
+  const fileName = `image-${index}${detected.extension}`;
+  const destination = await createFileDestination(workdir, fileName);
+  await writeFile(destination.localPath, data, { flag: "wx" });
   return {
     image: {
-      name: `image-${index}${detected.extension}`,
+      name: fileName,
       mediaType: detected.mediaType,
       data: data.toString("base64"),
     },
     size: data.length,
+    relativePath: destination.relativePath,
   };
 }
 
@@ -204,13 +211,16 @@ export async function prepareWeChatMedia(
   for (const item of attachmentItems) {
     if (item.type === MessageItemType.IMAGE) {
       imageIndex += 1;
-      const prepared = await prepareImage(item, downloadRaw, imageIndex);
+      const prepared = await prepareImage(
+        item,
+        workdir,
+        downloadRaw,
+        imageIndex,
+        MAX_WECHAT_TOTAL_IMAGE_BYTES - totalImageBytes,
+      );
       totalImageBytes += prepared.size;
-      if (totalImageBytes > MAX_WECHAT_TOTAL_IMAGE_BYTES) {
-        throw new Error("图片总大小超过 20 MiB 限制，请减少图片数量或压缩后重试");
-      }
       images.push(prepared.image);
-      attachmentOrder.push({ kind: "image", fileName: prepared.image.name });
+      attachmentOrder.push({ kind: "image", fileName: prepared.image.name, relativePath: prepared.relativePath });
     } else {
       fileIndex += 1;
       const prepared = await prepareFile(
