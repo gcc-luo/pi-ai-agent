@@ -7,6 +7,9 @@ export interface CoreToolRiskResult {
   reason: string;
 }
 
+const SHELL_EXECUTABLES = new Set(["sh", "bash", "zsh"]);
+const MAX_NESTED_SHELL_COMMANDS = 4;
+
 export function classifyCoreToolRisk(input: {
   toolName: string;
   input: Record<string, unknown>;
@@ -37,7 +40,7 @@ export function classifyCoreToolRisk(input: {
     : { risk: "normal", reason: "普通 Bash 命令" };
 }
 
-function findDestructiveCommand(command: string): string | null {
+function findDestructiveCommand(command: string, depth = 0): string | null {
   const segments = splitShellSegments(command);
   const wordsBySegment = segments.map(tokenizeShellSegment);
 
@@ -45,7 +48,15 @@ function findDestructiveCommand(command: string): string | null {
     const executableIndex = words.findIndex((word) => !["env", "command", "builtin"].includes(word));
     const executable = words[executableIndex]?.split("/").pop()?.toLowerCase();
     if (!executable) continue;
-    const args = words.slice(executableIndex + 1).map((word) => word.toLowerCase());
+    const rawArgs = words.slice(executableIndex + 1);
+    const args = rawArgs.map((word) => word.toLowerCase());
+
+    const nestedCommand = getShellCommandPayload(executable, rawArgs);
+    if (nestedCommand !== null) {
+      if (depth >= MAX_NESTED_SHELL_COMMANDS) return "Shell 命令嵌套过深，无法安全检查";
+      const nestedReason = findDestructiveCommand(nestedCommand, depth + 1);
+      if (nestedReason) return nestedReason;
+    }
 
     if (["sudo", "doas", "su", "pkexec"].includes(executable)) return "命令请求提升系统权限";
     if (["shutdown", "reboot", "halt", "poweroff", "init"].includes(executable)) return "命令会关闭或重启系统";
@@ -57,6 +68,18 @@ function findDestructiveCommand(command: string): string | null {
   }
 
   if (hasDownloadedContentShellPipeline(command, segments)) return "命令会将下载内容交给 Shell 执行";
+  return null;
+}
+
+function getShellCommandPayload(executable: string, args: string[]): string | null {
+  if (!SHELL_EXECUTABLES.has(executable)) return null;
+  for (let i = 0; i < args.length; i += 1) {
+    const option = args[i];
+    if (!option) continue;
+    if (option === "--command" || option === "-c" || (/^-[^-]+$/.test(option) && option.slice(1).includes("c"))) {
+      return args[i + 1] ?? "";
+    }
+  }
   return null;
 }
 

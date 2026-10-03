@@ -35,6 +35,26 @@ describe("classifyCoreToolRisk", () => {
     expect(classifyCoreToolRisk({ toolName: "bash", input: { command: "echo preparing && rm -rf ./build" }, workdir }).risk).toBe("destructive");
   });
 
+  it.each([
+    "bash -c 'rm -rf /tmp/build'",
+    "sh -c 'rm -rf /tmp/build'",
+    "zsh -c 'rm -rf /tmp/build'",
+  ])("classifies destructive commands nested in %s", (command) => {
+    expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("destructive");
+  });
+
+  it("does not classify ordinary text inside a shell -c payload as destructive", () => {
+    expect(classifyCoreToolRisk({ toolName: "bash", input: { command: `bash -c 'printf "rm -rf /tmp/build"'` }, workdir }).risk).toBe("normal");
+  });
+
+  it("bounds deeply nested shell -c parsing and asks for review", () => {
+    let command = "rm -rf /tmp/build";
+    for (let depth = 0; depth < 8; depth += 1) command = `bash -c ${JSON.stringify(command)}`;
+    const result = classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir });
+    expect(result.risk).toBe("destructive");
+    expect(result.reason).toContain("无法安全检查");
+  });
+
   it("does not mistake destructive words in unrelated arguments for commands", () => {
     expect(classifyCoreToolRisk({ toolName: "bash", input: { command: "printf 'run rm -rf later'" }, workdir }).risk).toBe("normal");
   });
