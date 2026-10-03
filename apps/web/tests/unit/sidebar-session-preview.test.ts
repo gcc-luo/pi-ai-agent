@@ -24,6 +24,7 @@ describe("Sidebar session preview", () => {
       title: "诗歌会话",
       parentId: null,
       expertId: null,
+      authorizationMode: "risk_based",
       selectedPluginIds: [],
       browserEnabled: false,
       status: "active",

@@ -21,7 +21,7 @@ const settled = {
 function session(unreadCount: number) {
   return {
     id: "session-1", projectId: "project-1", title: "处理任务",
-    parentId: null, expertId: null, selectedPluginIds: [], browserEnabled: false,
+    parentId: null, expertId: null, authorizationMode: "risk_based" as const, selectedPluginIds: [], browserEnabled: false,
     status: "active" as const, createdAt: 0, updatedAt: 0, lastActiveAt: null,
     unreadCount, lastReadMessageId: null, deletedAt: null,
   };
