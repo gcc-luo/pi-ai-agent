@@ -172,9 +172,12 @@ export async function buildConfiguredApp(config: Config) {
       if (!state) return false;
       return pluginPermissions.request({
         sessionId: input.sessionId,
-        pluginId: "core-tool",
+        source: input.source ?? "core_tool",
+        pluginId: input.pluginId,
+        toolName: input.toolName,
         action: `${input.toolName}:${input.action}`,
         reason: input.reason ?? `工具 ${input.toolName} 需要确认`,
+        intent: input.intent,
         context: input.context,
         send: state.send,
         signal: input.signal,

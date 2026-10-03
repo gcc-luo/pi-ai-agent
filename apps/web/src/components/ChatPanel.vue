@@ -918,7 +918,7 @@ const permissionMessage = computed(() => {
     ? `\n${t("plugins.permissionFiles", { files: pending.context.files.join(", ") })}`
     : "";
   return `${pending.reason}\n${t("plugins.permissionAction", {
-    plugin: pending.pluginId,
+    plugin: pending.pluginId ?? pending.toolName ?? pending.source,
     action: pending.action,
   })}${intent}${url}${target}${windowId}${files}`;
 });

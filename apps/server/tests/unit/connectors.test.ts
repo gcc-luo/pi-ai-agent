@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
@@ -137,6 +137,21 @@ describe("connector system", () => {
     const result = await service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, async () => true);
     expect(JSON.stringify(result)).toContain("tokenConfigured");
     expect(service.listAudits(connector.id)).toHaveLength(3);
+  });
+
+  it("passes allow and risk metadata to the shared authorization boundary", async () => {
+    const connector = create();
+    await service.test(connector.id);
+    const authorize = vi.fn(async () => true);
+    const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
+
+    await service.invoke(`${connector.id}.read_data`, {}, context, authorize);
+
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: `${connector.id}.read_data`,
+      policy: "allow",
+      risk: "normal",
+    }));
   });
 
   it("does not start stdio processes until first discovery or call", () => {

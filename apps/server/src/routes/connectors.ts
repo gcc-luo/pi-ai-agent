@@ -69,14 +69,42 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     if (!authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) return reply.code(403).send({ error: "forbidden" });
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
-    return app.connectorService.searchTools(req.body.query ?? "", resolved.project.id, req.body.limit, req.params.sessionId);
+    const query = req.body.query ?? "";
+    const controller = new AbortController();
+    req.raw.once("aborted", () => controller.abort());
+    const approved = await app.authorization.authorize({
+      sessionId: resolved.session.id,
+      source: "connector",
+      toolName: "connector.search",
+      action: "search",
+      risk: "normal",
+      reason: "即将搜索当前工作区可用的连接器能力。",
+      context: { target: query.slice(0, 500) },
+      signal: controller.signal,
+    });
+    if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器搜索。" });
+    return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
   });
 
   app.post<{ Params: { sessionId: string }; Body: { tool?: string } }>("/internal/connectors/:sessionId/describe", async (req, reply) => {
     if (!authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) return reply.code(403).send({ error: "forbidden" });
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
-    try { return app.connectorService.describeTool(req.body.tool ?? "", resolved.project.id, req.params.sessionId); }
+    const toolName = req.body.tool ?? "";
+    const controller = new AbortController();
+    req.raw.once("aborted", () => controller.abort());
+    const approved = await app.authorization.authorize({
+      sessionId: resolved.session.id,
+      source: "connector",
+      toolName: "connector.describe",
+      action: "describe",
+      risk: "normal",
+      reason: "即将读取连接器能力说明。",
+      context: { target: toolName },
+      signal: controller.signal,
+    });
+    if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器能力查询。" });
+    try { return app.connectorService.describeTool(toolName, resolved.project.id, req.params.sessionId); }
     catch (error) { return errorReply(reply, error); }
   });
 
@@ -87,16 +115,16 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     const controller = new AbortController();
     req.raw.once("aborted", () => controller.abort());
     try {
-      return await app.connectorService.invoke(req.body.tool ?? "", req.body.arguments ?? {}, resolved.invocation, async () => {
-        const state = app.sessionStates.get(resolved.session.id);
-        if (!state) return false;
-        return app.pluginPermissions.request({
+      return await app.connectorService.invoke(req.body.tool ?? "", req.body.arguments ?? {}, resolved.invocation, async (authorization) => {
+        return app.authorization.authorize({
           sessionId: resolved.session.id,
-          pluginId: "connector",
-          action: req.body.tool ?? "unknown",
+          source: "connector",
+          toolName: authorization.toolName,
+          action: "call",
+          risk: authorization.risk,
+          policy: authorization.policy,
           reason: "该连接器能力可能读取或更改外部服务中的数据",
-          context: { target: req.body.tool },
-          send: state.send,
+          context: { target: authorization.toolName },
           signal: controller.signal,
         });
       });

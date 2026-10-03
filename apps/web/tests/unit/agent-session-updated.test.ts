@@ -296,6 +296,7 @@ describe("agent store session_updated event", () => {
       type: "permission_request",
       sessionId: "s1",
       requestId: "request-1",
+      source: "plugin",
       pluginId: "computer-use",
       action: "click",
       reason: "will submit a form",

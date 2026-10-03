@@ -176,7 +176,12 @@ export class ConnectorService {
     };
   }
 
-  async invoke(compoundName: string, args: Record<string, unknown>, context: ConnectorInvocationContext, approve: () => Promise<boolean>) {
+  async invoke(
+    compoundName: string,
+    args: Record<string, unknown>,
+    context: ConnectorInvocationContext,
+    authorize: (input: { toolName: string; policy: ConnectorToolPolicy; risk: "normal" | "sensitive" }) => Promise<boolean>,
+  ) {
     const started = Date.now();
     const { connector, tool } = this.resolveCompound(compoundName, context.workspaceId, context.sessionId);
     if (!connector.enabled) throw new ConnectorError("POLICY_DENIED", "连接器已禁用。");
@@ -184,10 +189,10 @@ export class ConnectorService {
     let approval = "not_required";
     try {
       if (tool.policy === "deny") throw new ConnectorError("POLICY_DENIED", "权限策略禁止调用该能力。");
-      if (tool.policy === "ask") {
-        approval = await approve() ? "approved_once" : "rejected";
-        if (approval === "rejected") throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
-      }
+      const risk = tool.riskLevel === "low" ? "normal" : "sensitive";
+      const approved = await authorize({ toolName: compoundName, policy: tool.policy, risk });
+      if (tool.policy === "ask" || !approved) approval = approved ? "approved_once" : "rejected";
+      if (!approved) throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
       let result;
       try {
         result = await this.runtime.call(connector.id, connector.config, tool.name, args);

@@ -2,12 +2,15 @@ import type { SessionAuthorizationMode } from "@pi-web-ui/shared";
 
 export interface AuthorizationInput {
   sessionId: string;
+  source?: "core_tool" | "plugin" | "connector";
+  pluginId?: string;
   toolName: string;
   action: string;
   risk: "normal" | "sensitive" | "destructive";
   policy?: "allow" | "ask" | "deny";
   reason?: string;
-  context?: { target?: string; files?: string[]; url?: string };
+  intent?: string;
+  context?: { target?: string; files?: string[]; url?: string; windowId?: string };
   signal?: AbortSignal;
 }
 

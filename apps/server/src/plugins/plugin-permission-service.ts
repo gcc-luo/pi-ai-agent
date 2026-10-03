@@ -12,7 +12,9 @@ export class PluginPermissionService {
 
   request(input: {
     sessionId: string;
-    pluginId: string;
+    source?: "core_tool" | "plugin" | "connector";
+    pluginId?: string;
+    toolName?: string;
     action: string;
     reason: string;
     intent?: string;
@@ -51,7 +53,9 @@ export class PluginPermissionService {
         type: "permission_request",
         sessionId: input.sessionId,
         requestId,
-        pluginId: input.pluginId,
+        source: input.source ?? (input.pluginId ? "plugin" : "core_tool"),
+        ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+        ...(input.toolName ? { toolName: input.toolName } : {}),
         action: input.action,
         reason: input.reason,
         intent: input.intent,

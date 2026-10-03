@@ -84,7 +84,9 @@ type ServerEventPayload =
       type: "permission_request";
       sessionId: string;
       requestId: string;
-      pluginId: string;
+      source: "core_tool" | "plugin" | "connector";
+      pluginId?: string;
+      toolName?: string;
       action: string;
       reason: string;
       intent?: string;

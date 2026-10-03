@@ -22,6 +22,30 @@ describe("PluginPermissionService", () => {
     expect(service.respond("session-a", request.requestId, true)).toBe(false);
   });
 
+  it("emits generalized permission source and tool identity", async () => {
+    const service = new PluginPermissionService();
+    const send = vi.fn();
+    const pending = service.request({
+      sessionId: "session-a",
+      source: "connector",
+      toolName: "drive.search",
+      action: "search",
+      reason: "approve each call",
+      send,
+    });
+
+    const request = send.mock.calls[0]![0];
+    expect(request).toMatchObject({
+      type: "permission_request",
+      source: "connector",
+      toolName: "drive.search",
+      action: "search",
+    });
+    expect(request).not.toHaveProperty("pluginId");
+    service.respond("session-a", request.requestId, true);
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("denies pending requests when the session is cancelled", async () => {
     const service = new PluginPermissionService();
     const pending = service.request({
