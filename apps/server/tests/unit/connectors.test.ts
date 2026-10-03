@@ -160,11 +160,11 @@ describe("connector system", () => {
     const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
 
     await service.invoke(`${connector.id}.read_data`, {}, context, async () => ({ approved: true, prompted: true }));
-    expect(service.listAudits(connector.id)[0]?.approval).toBe("approved_once");
+    expect(service.listAudits(connector.id).find((audit) => audit.toolName === "read_data")?.approval).toBe("approved_once");
 
     service.setTool(connector.id, "write_data", { policy: "ask" });
     await service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, async () => ({ approved: true, prompted: false }));
-    expect(service.listAudits(connector.id)[0]?.approval).toBe("not_required");
+    expect(service.listAudits(connector.id).find((audit) => audit.toolName === "write_data")?.approval).toBe("not_required");
   });
 
   it("does not start stdio processes until first discovery or call", () => {
