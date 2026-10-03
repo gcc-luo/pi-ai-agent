@@ -27,6 +27,7 @@ import type { ComputerSessionManager } from "../computer/computer-session-manage
 import type { PluginRepository } from "../db/repositories/plugin.js";
 import type { PluginManager } from "../plugins/plugin-manager.js";
 import type { PluginPermissionService } from "../plugins/plugin-permission-service.js";
+import type { AuthorizationService } from "../authorization/authorization-service.js";
 import type { ConnectorService } from "../connectors/connector-service.js";
 import type { NotificationRepository } from "../db/repositories/notification.js";
 import type { WeChatFileTransferService } from "../channels/wechat-file-transfer-service.js";
@@ -63,6 +64,7 @@ declare module "fastify" {
     plugins: PluginRepository;
     pluginManager: PluginManager;
     pluginPermissions: PluginPermissionService;
+    authorization: AuthorizationService;
     connectorService: ConnectorService;
     wechatFileTransfers: WeChatFileTransferService;
   }

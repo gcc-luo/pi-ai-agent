@@ -62,6 +62,7 @@ import { ComputerSessionManager } from "./computer/computer-session-manager.js";
 import { PluginManager } from "./plugins/plugin-manager.js";
 import { pluginsRoutes } from "./routes/plugins.js";
 import { PluginPermissionService } from "./plugins/plugin-permission-service.js";
+import { AuthorizationService } from "./authorization/authorization-service.js";
 import { backupsRoutes } from "./routes/backups.js";
 import path from "node:path";
 import { ConnectorRepository } from "./connectors/connector-repository.js";
@@ -164,6 +165,23 @@ export async function buildConfiguredApp(config: Config) {
   (app as any).pluginManager = pluginManager;
   const pluginPermissions = new PluginPermissionService();
   (app as any).pluginPermissions = pluginPermissions;
+  const authorization = new AuthorizationService({
+    getMode: async (sessionId) => sessions.findById(sessionId)?.authorizationMode ?? null,
+    request: async (input) => {
+      const state = sessionStates.get(input.sessionId);
+      if (!state) return false;
+      return pluginPermissions.request({
+        sessionId: input.sessionId,
+        pluginId: "core-tool",
+        action: `${input.toolName}:${input.action}`,
+        reason: input.reason ?? `工具 ${input.toolName} 需要确认`,
+        context: input.context,
+        send: state.send,
+        signal: input.signal,
+      });
+    },
+  });
+  (app as any).authorization = authorization;
   const connectorRuntime = new McpRuntimeManager(credentialVault, app.log);
   const connectorService = new ConnectorService(connectorRepository, credentialVault, connectorRuntime);
   (app as any).connectorService = connectorService;
