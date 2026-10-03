@@ -131,10 +131,10 @@ describe("connector system", () => {
     await service.test(connector.id);
     service.setTool(connector.id, "write_data", { policy: "deny" });
     const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
-    await expect(service.invoke(`${connector.id}.write_data`, {}, context, async () => true)).rejects.toMatchObject({ code: "POLICY_DENIED" });
+    await expect(service.invoke(`${connector.id}.write_data`, {}, context, async () => ({ approved: true, prompted: false }))).rejects.toMatchObject({ code: "POLICY_DENIED" });
     service.setTool(connector.id, "write_data", { policy: "ask" });
-    await expect(service.invoke(`${connector.id}.write_data`, {}, context, async () => false)).rejects.toMatchObject({ code: "USER_REJECTED" });
-    const result = await service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, async () => true);
+    await expect(service.invoke(`${connector.id}.write_data`, {}, context, async () => ({ approved: false, prompted: true }))).rejects.toMatchObject({ code: "USER_REJECTED" });
+    const result = await service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, async () => ({ approved: true, prompted: true }));
     expect(JSON.stringify(result)).toContain("tokenConfigured");
     expect(service.listAudits(connector.id)).toHaveLength(3);
   });
@@ -142,7 +142,7 @@ describe("connector system", () => {
   it("passes allow and risk metadata to the shared authorization boundary", async () => {
     const connector = create();
     await service.test(connector.id);
-    const authorize = vi.fn(async () => true);
+    const authorize = vi.fn(async () => ({ approved: true, prompted: false }));
     const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
 
     await service.invoke(`${connector.id}.read_data`, {}, context, authorize);
@@ -152,6 +152,19 @@ describe("connector system", () => {
       policy: "allow",
       risk: "normal",
     }));
+  });
+
+  it("audits approval based on whether shared authorization prompted", async () => {
+    const connector = create();
+    await service.test(connector.id);
+    const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
+
+    await service.invoke(`${connector.id}.read_data`, {}, context, async () => ({ approved: true, prompted: true }));
+    expect(service.listAudits(connector.id)[0]?.approval).toBe("approved_once");
+
+    service.setTool(connector.id, "write_data", { policy: "ask" });
+    await service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, async () => ({ approved: true, prompted: false }));
+    expect(service.listAudits(connector.id)[0]?.approval).toBe("not_required");
   });
 
   it("does not start stdio processes until first discovery or call", () => {

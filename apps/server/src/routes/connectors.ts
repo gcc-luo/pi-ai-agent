@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ConnectorToolPolicy, CreateConnectorInput } from "@pi-web-ui/shared";
 import { ConnectorError } from "../connectors/types.js";
+import { abortOnDisconnect } from "./request-abort.js";
 
 function errorReply(reply: any, error: unknown) {
   const status = error instanceof ConnectorError && error.code === "CONFIG_INVALID" ? 400 : 500;
@@ -70,20 +71,23 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
     const query = req.body.query ?? "";
-    const controller = new AbortController();
-    req.raw.once("aborted", () => controller.abort());
-    const approved = await app.authorization.authorize({
-      sessionId: resolved.session.id,
-      source: "connector",
-      toolName: "connector.search",
-      action: "search",
-      risk: "normal",
-      reason: "即将搜索当前工作区可用的连接器能力。",
-      context: { target: query.slice(0, 500) },
-      signal: controller.signal,
-    });
-    if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器搜索。" });
-    return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
+    const lifecycle = abortOnDisconnect(req.raw, reply.raw);
+    try {
+      const approved = await app.authorization.authorize({
+        sessionId: resolved.session.id,
+        source: "connector",
+        toolName: "connector.search",
+        action: "search",
+        risk: "normal",
+        reason: "即将搜索当前工作区可用的连接器能力。",
+        context: { target: query.slice(0, 500) },
+        signal: lifecycle.signal,
+      });
+      if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器搜索。" });
+      return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
+    } finally {
+      lifecycle.dispose();
+    }
   });
 
   app.post<{ Params: { sessionId: string }; Body: { tool?: string } }>("/internal/connectors/:sessionId/describe", async (req, reply) => {
@@ -91,32 +95,34 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
     const toolName = req.body.tool ?? "";
-    const controller = new AbortController();
-    req.raw.once("aborted", () => controller.abort());
-    const approved = await app.authorization.authorize({
-      sessionId: resolved.session.id,
-      source: "connector",
-      toolName: "connector.describe",
-      action: "describe",
-      risk: "normal",
-      reason: "即将读取连接器能力说明。",
-      context: { target: toolName },
-      signal: controller.signal,
-    });
-    if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器能力查询。" });
-    try { return app.connectorService.describeTool(toolName, resolved.project.id, req.params.sessionId); }
-    catch (error) { return errorReply(reply, error); }
+    const lifecycle = abortOnDisconnect(req.raw, reply.raw);
+    try {
+      const approved = await app.authorization.authorize({
+        sessionId: resolved.session.id,
+        source: "connector",
+        toolName: "connector.describe",
+        action: "describe",
+        risk: "normal",
+        reason: "即将读取连接器能力说明。",
+        context: { target: toolName },
+        signal: lifecycle.signal,
+      });
+      if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器能力查询。" });
+      try { return app.connectorService.describeTool(toolName, resolved.project.id, req.params.sessionId); }
+      catch (error) { return errorReply(reply, error); }
+    } finally {
+      lifecycle.dispose();
+    }
   });
 
   app.post<{ Params: { sessionId: string }; Body: { tool?: string; arguments?: Record<string, unknown> } }>("/internal/connectors/:sessionId/call", async (req, reply) => {
     if (!authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) return reply.code(403).send({ error: "forbidden" });
     const resolved = context(req.params.sessionId);
     if (!resolved) return reply.code(404).send({ error: "session context missing" });
-    const controller = new AbortController();
-    req.raw.once("aborted", () => controller.abort());
+    const lifecycle = abortOnDisconnect(req.raw, reply.raw);
     try {
       return await app.connectorService.invoke(req.body.tool ?? "", req.body.arguments ?? {}, resolved.invocation, async (authorization) => {
-        return app.authorization.authorize({
+        return app.authorization.authorizeWithDecision({
           sessionId: resolved.session.id,
           source: "connector",
           toolName: authorization.toolName,
@@ -125,9 +131,10 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
           policy: authorization.policy,
           reason: "该连接器能力可能读取或更改外部服务中的数据",
           context: { target: authorization.toolName },
-          signal: controller.signal,
+          signal: lifecycle.signal,
         });
       });
     } catch (error) { return errorReply(reply, error); }
+    finally { lifecycle.dispose(); }
   });
 };

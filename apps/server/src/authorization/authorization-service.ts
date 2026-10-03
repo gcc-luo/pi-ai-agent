@@ -19,11 +19,20 @@ interface AuthorizationDependencies {
   request: (input: AuthorizationInput) => Promise<boolean>;
 }
 
+export interface AuthorizationDecision {
+  approved: boolean;
+  prompted: boolean;
+}
+
 export class AuthorizationService {
   constructor(private readonly dependencies: AuthorizationDependencies) {}
 
   async authorize(input: AuthorizationInput): Promise<boolean> {
-    if (input.policy === "deny") return false;
+    return (await this.authorizeWithDecision(input)).approved;
+  }
+
+  async authorizeWithDecision(input: AuthorizationInput): Promise<AuthorizationDecision> {
+    if (input.policy === "deny") return { approved: false, prompted: false };
 
     let mode: SessionAuthorizationMode | null = null;
     try {
@@ -32,20 +41,20 @@ export class AuthorizationService {
       // A missing policy store must never suppress a confirmation required below.
     }
 
-    if (mode === "full_access") return true;
+    if (mode === "full_access") return { approved: true, prompted: false };
 
     const needsApproval = mode === "approve_each"
       || input.policy === "ask"
       || input.risk !== "normal";
 
-    if (!needsApproval) return true;
+    if (!needsApproval) return { approved: true, prompted: false };
 
-    if (mode === "risk_based" && input.policy === "allow") return true;
+    if (mode === "risk_based" && input.policy === "allow") return { approved: true, prompted: false };
 
     try {
-      return await this.dependencies.request(input);
+      return { approved: await this.dependencies.request(input), prompted: true };
     } catch {
-      return false;
+      return { approved: false, prompted: true };
     }
   }
 }

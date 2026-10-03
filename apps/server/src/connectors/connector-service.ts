@@ -180,7 +180,7 @@ export class ConnectorService {
     compoundName: string,
     args: Record<string, unknown>,
     context: ConnectorInvocationContext,
-    authorize: (input: { toolName: string; policy: ConnectorToolPolicy; risk: "normal" | "sensitive" }) => Promise<boolean>,
+    authorize: (input: { toolName: string; policy: ConnectorToolPolicy; risk: "normal" | "sensitive" }) => Promise<{ approved: boolean; prompted: boolean }>,
   ) {
     const started = Date.now();
     const { connector, tool } = this.resolveCompound(compoundName, context.workspaceId, context.sessionId);
@@ -190,9 +190,9 @@ export class ConnectorService {
     try {
       if (tool.policy === "deny") throw new ConnectorError("POLICY_DENIED", "权限策略禁止调用该能力。");
       const risk = tool.riskLevel === "low" ? "normal" : "sensitive";
-      const approved = await authorize({ toolName: compoundName, policy: tool.policy, risk });
-      if (tool.policy === "ask" || !approved) approval = approved ? "approved_once" : "rejected";
-      if (!approved) throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
+      const decision = await authorize({ toolName: compoundName, policy: tool.policy, risk });
+      if (decision.prompted) approval = decision.approved ? "approved_once" : "rejected";
+      if (!decision.approved) throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
       let result;
       try {
         result = await this.runtime.call(connector.id, connector.config, tool.name, args);

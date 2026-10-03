@@ -51,6 +51,23 @@ describe("AuthorizationService", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("reports whether the shared boundary requested confirmation", async () => {
+    const riskBased = createService({ mode: "risk_based", approved: true });
+    await expect(riskBased.service.authorizeWithDecision({
+      sessionId: "s1", toolName: "read", action: "read", risk: "normal", policy: "allow",
+    })).resolves.toEqual({ approved: true, prompted: false });
+
+    const approveEach = createService({ mode: "approve_each", approved: true });
+    await expect(approveEach.service.authorizeWithDecision({
+      sessionId: "s1", toolName: "read", action: "read", risk: "normal", policy: "allow",
+    })).resolves.toEqual({ approved: true, prompted: true });
+
+    const fullAccess = createService({ mode: "full_access" });
+    await expect(fullAccess.service.authorizeWithDecision({
+      sessionId: "s1", toolName: "write", action: "write", risk: "sensitive", policy: "ask",
+    })).resolves.toEqual({ approved: true, prompted: false });
+  });
+
   it("always rejects an explicit deny policy", async () => {
     const { service, request } = createService({ mode: "full_access" });
     await expect(service.authorize({ sessionId: "s1", toolName: "connector.call", action: "call", risk: "normal", policy: "deny" })).resolves.toBe(false);

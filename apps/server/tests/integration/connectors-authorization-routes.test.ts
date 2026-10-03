@@ -2,30 +2,49 @@ import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { AuthorizationService } from "../../src/authorization/authorization-service.js";
 import { connectorsRoutes } from "../../src/routes/connectors.js";
+import type { AuthorizationInput } from "../../src/authorization/authorization-service.js";
 
-async function fixture(mode: "risk_based" | "approve_each" | "full_access", approved = false) {
+async function fixture(mode: "risk_based" | "approve_each" | "full_access", approved = false, waitForDisconnect = false) {
   const app = Fastify();
-  const request = vi.fn(async () => approved);
+  let responseRaw: import("node:http").ServerResponse | undefined;
+  app.addHook("onRequest", (req, reply, done) => {
+    responseRaw = reply.raw;
+    done();
+  });
+  const request = vi.fn((input: AuthorizationInput) => {
+    if (waitForDisconnect && input.signal) {
+      return new Promise<boolean>((resolve) => {
+        input.signal!.addEventListener("abort", () => resolve(false), { once: true });
+      });
+    }
+    return Promise.resolve(approved);
+  });
   const service = new AuthorizationService({
     getMode: async () => mode,
     request,
   });
   const authorize = vi.fn(service.authorize.bind(service));
+  const authorizeWithDecision = vi.fn(service.authorizeWithDecision.bind(service));
   const searchTools = vi.fn(() => [{ name: "read_data" }]);
   const describeTool = vi.fn(() => ({ name: "read_data" }));
+  const invoke = vi.fn(async (_name: string, _args: Record<string, unknown>, _context: unknown, authorizeCall: (input: { toolName: string; policy: "allow" | "ask" | "deny"; risk: "normal" | "sensitive" }) => Promise<{ approved: boolean; prompted: boolean }>) =>
+    authorizeCall({ toolName: "conn.read_data", policy: "allow", risk: "normal" }));
   app.decorate("processManager", { validateConnectorToken: () => true } as never);
   app.decorate("sessions", { findById: () => ({ id: "s", projectId: "p" }) } as never);
   app.decorate("projects", { findById: () => ({ id: "p", workdir: "/tmp" }) } as never);
-  app.decorate("authorization", { authorize } as never);
-  app.decorate("connectorService", { searchTools, describeTool } as never);
+  app.decorate("authorization", { authorize, authorizeWithDecision } as never);
+  app.decorate("connectorService", { searchTools, describeTool, invoke } as never);
   await app.register(connectorsRoutes);
-  const call = (action: "search" | "describe") => app.inject({
+  const call = (action: "search" | "describe" | "call") => app.inject({
     method: "POST",
     url: `/internal/connectors/s/${action}`,
     headers: { "x-pi-connector-token": "token" },
-    payload: action === "search" ? { query: "find docs" } : { tool: "conn.read_data" },
+    payload: action === "search" ? { query: "find docs" } : action === "describe" ? { tool: "conn.read_data" } : { tool: "conn.read_data", arguments: {} },
   });
-  return { app, call, request, authorize, searchTools, describeTool };
+  return {
+    app, call, request, authorize, authorizeWithDecision, searchTools, describeTool, invoke,
+    disconnect: () => responseRaw?.emit("close"),
+  };
 }
 
 describe("connector discovery authorization", () => {
@@ -34,7 +53,8 @@ describe("connector discovery authorization", () => {
     try {
       expect((await f.call("search")).statusCode).toBe(200);
       expect((await f.call("describe")).statusCode).toBe(200);
-      expect(f.request).toHaveBeenCalledTimes(2);
+      expect((await f.call("call")).statusCode).toBe(200);
+      expect(f.request).toHaveBeenCalledTimes(3);
       expect(f.authorize).toHaveBeenNthCalledWith(1, expect.objectContaining({
         source: "connector",
         toolName: "connector.search",
@@ -43,6 +63,12 @@ describe("connector discovery authorization", () => {
       expect(f.authorize).toHaveBeenNthCalledWith(2, expect.objectContaining({
         source: "connector",
         toolName: "connector.describe",
+        risk: "normal",
+      }));
+      expect(f.authorizeWithDecision).toHaveBeenCalledWith(expect.objectContaining({
+        source: "connector",
+        toolName: "conn.read_data",
+        policy: "allow",
         risk: "normal",
       }));
     } finally {
@@ -56,7 +82,24 @@ describe("connector discovery authorization", () => {
       try {
         expect((await f.call("search")).statusCode).toBe(200);
         expect((await f.call("describe")).statusCode).toBe(200);
+        expect((await f.call("call")).statusCode).toBe(200);
         expect(f.request).not.toHaveBeenCalled();
+      } finally {
+        await f.app.close();
+      }
+    }
+  });
+
+  it("aborts pending authorization on socket close for search, describe, and call", async () => {
+    for (const action of ["search", "describe", "call"] as const) {
+      const f = await fixture("approve_each", false, true);
+      try {
+        const pending = f.call(action);
+        await vi.waitFor(() => expect(f.request).toHaveBeenCalledOnce());
+        const signal = f.request.mock.calls[0]![0].signal!;
+        f.disconnect();
+        await expect(pending).rejects.toMatchObject({ code: "LIGHT_ECONNRESET" });
+        expect(signal.aborted).toBe(true);
       } finally {
         await f.app.close();
       }
