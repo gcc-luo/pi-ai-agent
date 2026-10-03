@@ -118,10 +118,16 @@ function classifyBashCommand(command: string, depth = 0): CoreToolRiskResult | n
       return { risk: "sensitive", reason: "find 会执行嵌入命令或写入文件" };
     }
     if (SCRIPT_RUNNERS.has(executable)) {
-      const informational = INFORMATIONAL_PACKAGE_MANAGERS.has(executable)
+      const exactInfoQuery = args.length === 1 && ["--version", "--help"].includes(args[0] ?? "");
+      const informational = exactInfoQuery && (
+        INFORMATIONAL_PACKAGE_MANAGERS.has(executable)
+        || executable === "npx"
+        || executable === "bunx"
+      );
+      const extendedInfoQuery = INFORMATIONAL_PACKAGE_MANAGERS.has(executable)
         && args.length === 1
-        && ["--version", "-v", "--help", "-h", "help"].includes(args[0] ?? "");
-      if (informational) continue;
+        && ["-v", "-h", "help"].includes(args[0] ?? "");
+      if (informational || extendedInfoQuery) continue;
       return { risk: "sensitive", reason: "包管理器会执行项目脚本或外部程序" };
     }
     if (["python", "python2", "python3", "node", "deno", "ruby", "perl", "php"].includes(executable)) {

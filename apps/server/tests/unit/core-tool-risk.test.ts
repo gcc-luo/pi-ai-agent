@@ -85,9 +85,16 @@ describe("classifyCoreToolRisk", () => {
     "npm --version",
     "yarn --version",
     "bun --version",
+    "npx --version",
+    "bunx --help",
   ])("allows informational package-manager command: %s", (command) => {
     expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("normal");
   });
+
+  it.each(["npx --version --yes", "bunx --help some-package"])(
+    "requires review for package-runner commands with extra arguments: %s",
+    (command) => expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("sensitive"),
+  );
 
   it("checks each shell command segment for destructive operations", () => {
     expect(classifyCoreToolRisk({ toolName: "bash", input: { command: "echo preparing && rm -rf ./build" }, workdir }).risk).toBe("destructive");
