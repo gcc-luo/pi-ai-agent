@@ -119,6 +119,7 @@ export type MessagePart =
   | { kind: "raw"; data: Record<string, unknown> };
 
 export type SessionStatus = "active" | "idle" | "suspended" | "crashed";
+export type SessionAuthorizationMode = "approve_each" | "risk_based" | "full_access";
 
 // REST DTOs
 export interface ProjectDto {
@@ -137,6 +138,7 @@ export interface SessionDto {
   title: string | null;
   parentId: string | null;
   expertId: string | null;
+  authorizationMode: SessionAuthorizationMode;
   /** Plugins explicitly exposed to this session's Pi process. */
   selectedPluginIds: string[];
   /** @deprecated Compatibility mirror for the legacy Browser capability API. */

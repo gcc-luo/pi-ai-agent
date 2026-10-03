@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import { SessionAuthorizationMode } from "@pi-web-ui/shared";
 import { restorePiHistory } from "../agent/pi-history.js";
 import { syncPiTranscript } from "../agent/pi-transcript-sync.js";
 import { piSessionDirectory, latestPiSessionFile } from "../agent/pi-session-store.js";
@@ -27,9 +28,13 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.put<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
-    const body = (req.body ?? {}) as { title?: string; expertId?: string | null };
+    const body = (req.body ?? {}) as { title?: string; expertId?: string | null; authorizationMode?: unknown };
     const cur = app.sessions.findById(req.params.id);
     if (!cur) return reply.code(404).send({ error: "not found" });
+
+    if ("authorizationMode" in body && !isSessionAuthorizationMode(body.authorizationMode)) {
+      return reply.code(400).send({ error: "authorizationMode is invalid" });
+    }
 
     if ("title" in body) {
       const title = body.title?.trim();
@@ -47,8 +52,12 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
       app.sessions.setExpert(req.params.id, body.expertId ?? null);
     }
 
-    if (!("title" in body) && !("expertId" in body)) {
-      return reply.code(400).send({ error: "title or expertId required" });
+    if ("authorizationMode" in body) {
+      app.sessions.setAuthorizationMode(req.params.id, body.authorizationMode as SessionAuthorizationMode);
+    }
+
+    if (!("title" in body) && !("expertId" in body) && !("authorizationMode" in body)) {
+      return reply.code(400).send({ error: "title, expertId, or authorizationMode required" });
     }
     return app.sessions.findById(req.params.id);
   });
@@ -103,3 +112,7 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(204).send();
   });
 };
+
+function isSessionAuthorizationMode(value: unknown): value is SessionAuthorizationMode {
+  return value === "approve_each" || value === "risk_based" || value === "full_access";
+}

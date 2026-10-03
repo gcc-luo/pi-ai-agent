@@ -21,6 +21,16 @@ describe("SessionRepository", () => {
     const s = sessions.create({ projectId });
     expect(s.projectId).toBe(projectId);
     expect(s.status).toBe("active");
+    expect(s.authorizationMode).toBe("risk_based");
+  });
+
+  it("persists each valid authorization mode", () => {
+    const session = sessions.create({ projectId });
+
+    for (const mode of ["approve_each", "risk_based", "full_access"] as const) {
+      sessions.setAuthorizationMode(session.id, mode);
+      expect(sessions.findById(session.id)?.authorizationMode).toBe(mode);
+    }
   });
 
   it("supports a parent session (tree)", () => {

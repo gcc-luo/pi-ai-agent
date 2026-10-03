@@ -1,10 +1,11 @@
 import type Database from "better-sqlite3";
-import { SessionDto, SessionStatus } from "@pi-web-ui/shared";
+import { SessionAuthorizationMode, SessionDto, SessionStatus } from "@pi-web-ui/shared";
 import { ulid } from "../../util/ulid.js";
 
 type Row = {
   id: string; project_id: string; title: string | null; parent_id: string | null;
-  expert_id: string | null; status: SessionStatus; pi_session_ref: string | null;
+  expert_id: string | null; authorization_mode: SessionAuthorizationMode;
+  status: SessionStatus; pi_session_ref: string | null;
   browser_enabled: number;
   created_at: number; updated_at: number; last_active_at: number | null;
   unread_count: number; last_read_message_id: string | null;
@@ -14,6 +15,7 @@ type Row = {
 function toDto(r: Row): SessionDto {
   return {
     id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id, expertId: r.expert_id,
+    authorizationMode: r.authorization_mode,
     selectedPluginIds: [],
     browserEnabled: r.browser_enabled === 1,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
@@ -34,6 +36,7 @@ export class SessionRepository {
     `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, input.expertId ?? null, now, now);
     return {
       id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
+      authorizationMode: "risk_based",
       selectedPluginIds: [],
       browserEnabled: false,
       status: "active", createdAt: now, updatedAt: now, lastActiveAt: null,
@@ -83,6 +86,13 @@ export class SessionRepository {
     if (!cur) throw new Error("session not found");
     this.db.prepare("UPDATE sessions SET expert_id = ?, updated_at = ? WHERE id = ?")
       .run(expertId, Date.now(), id);
+  }
+
+  setAuthorizationMode(id: string, mode: SessionAuthorizationMode): void {
+    const cur = this.findById(id);
+    if (!cur) throw new Error("session not found");
+    this.db.prepare("UPDATE sessions SET authorization_mode = ?, updated_at = ? WHERE id = ?")
+      .run(mode, Date.now(), id);
   }
 
   setBrowserEnabled(id: string, enabled: boolean): void {

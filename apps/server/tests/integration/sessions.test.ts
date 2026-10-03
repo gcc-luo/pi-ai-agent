@@ -64,6 +64,54 @@ describe("sessions routes", () => {
     expect(res.json()[0].content).toBe("hi");
   });
 
+  it("updates a session authorization mode and returns the updated DTO", async () => {
+    const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/sessions/${created.json().id}`,
+      payload: { authorizationMode: "full_access" },
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ id: created.json().id, authorizationMode: "full_access" });
+  });
+
+  it("rejects invalid session authorization modes", async () => {
+    const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/sessions/${created.json().id}`,
+      payload: { authorizationMode: "unrestricted" },
+    });
+
+    expect(updated.statusCode).toBe(400);
+  });
+
+  it("returns 404 when updating authorization mode for a missing session", async () => {
+    const updated = await app.inject({
+      method: "PUT",
+      url: "/api/sessions/missing",
+      payload: { authorizationMode: "full_access" },
+    });
+
+    expect(updated.statusCode).toBe(404);
+  });
+
+  it("still updates titles and experts through the session endpoint", async () => {
+    const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
+
+    const updated = await app.inject({
+      method: "PUT",
+      url: `/api/sessions/${created.json().id}`,
+      payload: { title: "  New title  ", expertId: null },
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ title: "New title", expertId: null });
+  });
+
   it("marks a session read and reports the cross-project unread total", async () => {
     const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
     const sessionId = created.json().id;

@@ -595,6 +595,12 @@ const MIGRATIONS = [
     `,
     safe: true,
   },
+  {
+    name: "030_session_authorization_mode",
+    sql: `
+      ALTER TABLE sessions ADD COLUMN authorization_mode TEXT NOT NULL DEFAULT 'risk_based';
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

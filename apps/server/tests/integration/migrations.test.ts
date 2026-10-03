@@ -47,6 +47,50 @@ describe("migrations", () => {
     ]));
   });
 
+  it("backfills existing sessions with the default authorization mode", () => {
+    db.exec(`
+      CREATE TABLE _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL);
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT,
+        parent_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        pi_session_ref TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_active_at INTEGER,
+        deleted_at INTEGER,
+        expert_id TEXT,
+        browser_enabled INTEGER NOT NULL DEFAULT 0,
+        unread_count INTEGER NOT NULL DEFAULT 0,
+        last_read_message_id TEXT
+      );
+      INSERT INTO sessions (id, project_id, created_at, updated_at)
+        VALUES ('legacy-session', 'project', 1, 1);
+      INSERT INTO _migrations (name, applied_at) VALUES
+        ('001_initial', 1), ('002_models', 1), ('003_project_soft_delete', 1),
+        ('004_model_type', 1), ('005_knowledge_base', 1), ('006_kb_embedding_model', 1),
+        ('007_kb_chunk_embedding', 1), ('008_kb_fts_rebuild', 1), ('009_session_soft_delete', 1),
+        ('010_experts', 1), ('011_session_expert', 1), ('012_scheduled_tasks', 1),
+        ('013_task_session_link', 1), ('014_task_session_reuse', 1), ('015_channels', 1),
+        ('016_wechat_conversations', 1), ('017_channel_conversations', 1),
+        ('018_session_browser_capability', 1), ('019_plugin_system', 1),
+        ('020_kb_reliability_multimodal', 1), ('021_connectors', 1),
+        ('022_builtin_connectors', 1), ('023_kb_chunk_segment_uid', 1),
+        ('024_kb_chunk_segment_uid_index', 1), ('025_kb_file_active_revision', 1),
+        ('026_kb_file_active_revision_backfill', 1), ('027_agent_notifications', 1),
+        ('028_scheduled_task_capabilities', 1), ('029_scheduled_task_log_message', 1);
+    `);
+
+    runMigrations(db);
+
+    const columns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string; dflt_value: string | null }[];
+    expect(columns.find((column) => column.name === "authorization_mode")?.dflt_value).toBe("'risk_based'");
+    const session = db.prepare("SELECT authorization_mode FROM sessions WHERE id = 'legacy-session'").get() as { authorization_mode: string };
+    expect(session.authorization_mode).toBe("risk_based");
+  });
+
   it("adds the active revision pointer and multimodal segment columns", () => {
     runMigrations(db);
     const fileColumns = db.prepare("PRAGMA table_info(kb_files)").all() as { name: string }[];
@@ -60,6 +104,7 @@ describe("migrations", () => {
   it("repairs legacy databases missing knowledge-base columns", () => {
     db.exec(`
       CREATE TABLE _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL);
+      CREATE TABLE sessions (id TEXT PRIMARY KEY);
       CREATE TABLE kb_files (
         id TEXT PRIMARY KEY,
         parse_generation INTEGER NOT NULL,
