@@ -73,8 +73,20 @@ describe("classifyCoreToolRisk", () => {
     expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("destructive");
   });
 
-  it("keeps ordinary Bash commands normal", () => {
-    expect(classifyCoreToolRisk({ toolName: "bash", input: { command: "pnpm test" }, workdir }).risk).toBe("normal");
+  it.each([
+    "pnpm test",
+    "npm run build",
+  ])("requires review for package-manager script execution: %s", (command) => {
+    expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("sensitive");
+  });
+
+  it.each([
+    "pnpm --version",
+    "npm --version",
+    "yarn --version",
+    "bun --version",
+  ])("allows informational package-manager command: %s", (command) => {
+    expect(classifyCoreToolRisk({ toolName: "bash", input: { command }, workdir }).risk).toBe("normal");
   });
 
   it("checks each shell command segment for destructive operations", () => {

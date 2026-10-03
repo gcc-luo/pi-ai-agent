@@ -11,6 +11,8 @@ export interface CoreToolRiskResult {
 const SHELL_EXECUTABLES = new Set(["sh", "bash", "zsh"]);
 const MAX_NESTED_SHELL_COMMANDS = 4;
 const SAFE_SIMPLE_COMMANDS = new Set(["echo", "printf", "pwd", "true", "false"]);
+const SCRIPT_RUNNERS = new Set(["pnpm", "npm", "yarn", "bun", "npx", "bunx"]);
+const INFORMATIONAL_PACKAGE_MANAGERS = new Set(["pnpm", "npm", "yarn", "bun"]);
 
 export function classifyCoreToolRisk(input: {
   toolName: string;
@@ -115,10 +117,16 @@ function classifyBashCommand(command: string, depth = 0): CoreToolRiskResult | n
     if (executable === "find" && args.some((arg) => ["-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"].includes(arg))) {
       return { risk: "sensitive", reason: "find 会执行嵌入命令或写入文件" };
     }
-    if (["python", "python2", "python3", "node", "deno", "bun", "ruby", "perl", "php"].includes(executable)) {
+    if (SCRIPT_RUNNERS.has(executable)) {
+      const informational = INFORMATIONAL_PACKAGE_MANAGERS.has(executable)
+        && args.length === 1
+        && ["--version", "-v", "--help", "-h", "help"].includes(args[0] ?? "");
+      if (informational) continue;
+      return { risk: "sensitive", reason: "包管理器会执行项目脚本或外部程序" };
+    }
+    if (["python", "python2", "python3", "node", "deno", "ruby", "perl", "php"].includes(executable)) {
       return { risk: "sensitive", reason: "解释器执行代码的影响无法静态确认" };
     }
-    if (executable === "pnpm" && args.length === 1 && args[0] === "test") continue;
     if (SAFE_SIMPLE_COMMANDS.has(executable)) continue;
     if (executable === "git" && ["status", "diff", "log", "show", "rev-parse"].includes(args[0] ?? "")) continue;
     if (executable === "find") continue;
