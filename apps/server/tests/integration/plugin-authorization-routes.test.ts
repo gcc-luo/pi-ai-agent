@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { AuthorizationService } from "../../src/authorization/authorization-service.js";
+import type { AuthorizationInput } from "../../src/authorization/authorization-service.js";
 import { BrowserSessionManager } from "../../src/browser/browser-session-manager.js";
 import { pluginsRoutes } from "../../src/routes/plugins.js";
 
@@ -8,9 +9,22 @@ async function fixture(options: {
   mode?: "risk_based" | "approve_each" | "full_access";
   approve?: boolean;
   browserEnabled?: boolean;
+  waitForDisconnect?: boolean;
 } = {}) {
   const app = Fastify();
-  const permission = vi.fn(async () => options.approve ?? false);
+  let responseRaw: import("node:http").ServerResponse | undefined;
+  app.addHook("onRequest", (req, reply, done) => {
+    responseRaw = reply.raw;
+    done();
+  });
+  const permission = vi.fn((input: AuthorizationInput) => {
+    if (options.waitForDisconnect && input.signal) {
+      return new Promise<boolean>((resolve) => {
+        input.signal!.addEventListener("abort", () => resolve(false), { once: true });
+      });
+    }
+    return Promise.resolve(options.approve ?? false);
+  });
   const authorizationService = new AuthorizationService({
     getMode: async () => options.mode ?? "risk_based",
     request: permission,
@@ -48,7 +62,7 @@ async function fixture(options: {
     headers: { "x-pi-plugin-token": "token" },
     payload: { action: "sendFiles", args: { filePaths } },
   });
-  return { app, browser, sendWechat, permission, authorization, sendFiles };
+  return { app, browser, sendWechat, permission, authorization, sendFiles, disconnect: () => responseRaw?.emit("close") };
 }
 
 describe("shared plugin authorization boundary", () => {
@@ -117,6 +131,21 @@ describe("shared plugin authorization boundary", () => {
     try {
       const response = await f.sendWechat(["/private/home/report.pdf"]);
       expect(response.json()).toMatchObject({ denied: true });
+      expect(f.sendFiles).not.toHaveBeenCalled();
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it("cancels pending WeChat authorization when the response socket closes", async () => {
+    const f = await fixture({ mode: "risk_based", waitForDisconnect: true });
+    try {
+      const pending = f.sendWechat(["/private/home/report.pdf"]);
+      await vi.waitFor(() => expect(f.permission).toHaveBeenCalledOnce());
+      const signal = f.permission.mock.calls[0]![0].signal!;
+      f.disconnect();
+      await expect(pending).rejects.toMatchObject({ code: "LIGHT_ECONNRESET" });
+      expect(signal.aborted).toBe(true);
       expect(f.sendFiles).not.toHaveBeenCalled();
     } finally {
       await f.app.close();

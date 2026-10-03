@@ -130,12 +130,42 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
       if (!Array.isArray(filePaths) || filePaths.some((filePath) => typeof filePath !== "string")) {
         return reply.code(400).send({ error: "filePaths must be a string array" });
       }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      const disconnect = () => { if (!reply.raw.writableEnded) controller.abort(); };
+      req.raw.once("aborted", abort);
+      reply.raw.once("close", disconnect);
+      const safeFileNames = (filePaths as string[]).map((filePath) =>
+        filePath.replace(/\\/g, "/").split("/").pop() ?? "",
+      );
       try {
+        const approved = await app.authorization.authorize({
+          sessionId: session.id,
+          source: "plugin",
+          pluginId: WECHAT_FILE_TRANSFER_PLUGIN_ID,
+          toolName: "send_file_to_wechat",
+          action: "sendFiles",
+          risk: "sensitive",
+          reason: "即将通过微信发送本地文件。",
+          context: { files: safeFileNames },
+          signal: controller.signal,
+        });
+        if (!approved) {
+          return {
+            ok: false,
+            denied: true,
+            requiresConfirmation: true,
+            message: "用户未确认或确认已超时，文件未发送。",
+          };
+        }
         return await app.wechatFileTransfers.sendFiles(session.id, filePaths as string[]);
       } catch (error) {
         return reply.code(409).send({
           error: error instanceof Error ? error.message : "微信文件发送失败",
         });
+      } finally {
+        req.raw.off("aborted", abort);
+        reply.raw.off("close", disconnect);
       }
     }
     if (!app.pluginManager.activeForSession(session.id).includes(req.params.pluginId)) {
