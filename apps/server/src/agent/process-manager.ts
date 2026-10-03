@@ -320,6 +320,9 @@ export class ProcessManager extends EventEmitter {
         env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN = issuedPluginTokens.get("computer-use")!;
         env.PI_WEB_UI_COMPUTER_SESSION_ID = input.sessionId;
       }
+      if (activePluginIds.includes("wechat-file-transfer")) {
+        env.PI_WEB_UI_WECHAT_FILE_TRANSFER_TOKEN = issuedPluginTokens.get("wechat-file-transfer")!;
+      }
     } else {
       this.pluginTokens.delete(input.sessionId);
     }
@@ -408,6 +411,10 @@ export class ProcessManager extends EventEmitter {
 
   get(sessionId: string): AgentProcess | undefined {
     return this.procs.get(sessionId);
+  }
+
+  isPluginActive(sessionId: string, pluginId: string): boolean {
+    return this.procs.get(sessionId)?.activePluginIds?.includes(pluginId) ?? false;
   }
 
   connectorsEnabledForProject(projectId: string): boolean {

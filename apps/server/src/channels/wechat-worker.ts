@@ -1,12 +1,14 @@
 import {
   WeChatBot,
   type Credentials,
+  type CDNMedia,
   type IncomingMessage,
   type QrLoginCallbacks,
 } from "@wechatbot/wechatbot";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import QRCode from "qrcode";
 import { pino } from "pino";
 import type { WeChatAgentReply } from "./wechat-artifacts.js";
@@ -57,8 +59,30 @@ let loginState: WeChatLoginState = { state: "idle" };
 let startPromise: Promise<void> | null = null;
 let qrLoginPromise: Promise<void> | null = null;
 let loginAttempt = 0;
-let inboundHandler: ((input: { userId: string; text: string }) => Promise<WeChatAgentReply>) | null = null;
+export interface WeChatAgentInput {
+  userId: string;
+  messages: IncomingMessage[];
+  downloadRaw: (media: CDNMedia, aesKey?: string) => Promise<Buffer>;
+  sendFile: (fileName: string, data: Buffer) => Promise<void>;
+  sendStatus: (text: string) => Promise<void>;
+}
+
+type PendingInboundBatch = {
+  activeBot: WeChatBot;
+  messages: IncomingMessage[];
+  waiters: Array<() => void>;
+  timer: NodeJS.Timeout | null;
+  acknowledgement: Promise<void>;
+};
+
+const TEXT_AGGREGATION_MS = 500;
+const ATTACHMENT_AGGREGATION_MS = 3_000;
+const MEDIA_SEND_MAX_ATTEMPTS = 3;
+const MEDIA_SEND_RETRY_DELAY_MS = 500;
+
+let inboundHandler: ((input: WeChatAgentInput) => Promise<WeChatAgentReply>) | null = null;
 const inboundQueues = new Map<string, Promise<void>>();
+const pendingInboundBatches = new Map<string, PendingInboundBatch>();
 
 function ensureBot(): WeChatBot {
   if (bot) return bot;
@@ -75,41 +99,150 @@ function ensureBot(): WeChatBot {
 
 function enqueueInbound(activeBot: WeChatBot, msg: IncomingMessage): Promise<void> {
   const key = msg.userId;
+  let batch = pendingInboundBatches.get(key);
+  if (!batch || batch.activeBot !== activeBot) {
+    const acknowledgement = activeBot.reply(msg, "已收到，PI AI Agent 处理中").catch((error: any) => {
+      log.warn(
+        { err: error?.message ?? String(error), userId: key },
+        "wechat acknowledgement failed",
+      );
+    });
+    batch = { activeBot, messages: [], waiters: [], timer: null, acknowledgement };
+    pendingInboundBatches.set(key, batch);
+  }
+  batch.messages.push(msg);
+  const waiting = new Promise<void>((resolve) => batch!.waiters.push(resolve));
+  if (batch.timer) clearTimeout(batch.timer);
+  const delay = batch.messages.some(hasAttachments) ? ATTACHMENT_AGGREGATION_MS : TEXT_AGGREGATION_MS;
+  batch.timer = setTimeout(() => {
+    void flushInboundBatch(key, batch!);
+  }, delay);
+  return waiting;
+}
+
+function hasAttachments(message: IncomingMessage): boolean {
+  return Boolean(message.raw?.item_list?.some((item) => item.image_item || item.file_item));
+}
+
+function attachmentCount(messages: IncomingMessage[]): number {
+  return messages.reduce((count, message) => count + (message.raw?.item_list?.filter(
+    (item) => item.image_item || item.file_item,
+  ).length ?? 0), 0);
+}
+
+async function sendMediaWithRetry(
+  activeBot: WeChatBot,
+  message: IncomingMessage,
+  fileName: string,
+  data: Buffer,
+): Promise<void> {
+  for (let attempt = 1; attempt <= MEDIA_SEND_MAX_ATTEMPTS; attempt += 1) {
+    if (bot !== activeBot) throw new Error("微信频道已停止");
+    try {
+      // The SDK encrypts and uploads the buffer, then routes image extensions
+      // (for example .png or .jpg) as image messages and other files as files.
+      await activeBot.reply(message, { file: data, fileName });
+      return;
+    } catch (error) {
+      if (attempt === MEDIA_SEND_MAX_ATTEMPTS || bot !== activeBot) throw error;
+      log.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          fileName,
+          attempt,
+          nextAttempt: attempt + 1,
+        },
+        "wechat media send failed, retrying",
+      );
+      await delay(MEDIA_SEND_RETRY_DELAY_MS * attempt);
+    }
+  }
+}
+
+async function sendTextWithRetry(
+  activeBot: WeChatBot,
+  message: IncomingMessage,
+  text: string,
+): Promise<void> {
+  for (let attempt = 1; attempt <= MEDIA_SEND_MAX_ATTEMPTS; attempt += 1) {
+    if (bot !== activeBot) throw new Error("微信频道已停止");
+    try {
+      await activeBot.reply(message, text);
+      return;
+    } catch (error) {
+      if (attempt === MEDIA_SEND_MAX_ATTEMPTS || bot !== activeBot) throw error;
+      log.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          attempt,
+          nextAttempt: attempt + 1,
+        },
+        "wechat status send failed, retrying",
+      );
+      await delay(MEDIA_SEND_RETRY_DELAY_MS * attempt);
+    }
+  }
+}
+
+async function flushInboundBatch(key: string, batch: PendingInboundBatch): Promise<void> {
+  if (pendingInboundBatches.get(key) !== batch) return;
+  pendingInboundBatches.delete(key);
+  const messages = [...batch.messages].sort((left, right) => {
+    const leftTime = left.timestamp instanceof Date ? left.timestamp.getTime() : 0;
+    const rightTime = right.timestamp instanceof Date ? right.timestamp.getTime() : 0;
+    return leftTime - rightTime;
+  });
   const previous = inboundQueues.get(key) ?? Promise.resolve();
   const next = previous
     .catch(() => undefined)
     .then(() => {
-      if (bot !== activeBot) return;
-      return handleInbound(activeBot, msg);
+      if (bot !== batch.activeBot) return;
+      return batch.acknowledgement.then(() => {
+        if (bot !== batch.activeBot) return;
+        return handleInboundBatch(batch.activeBot, messages);
+      });
     });
   inboundQueues.set(key, next);
-  const clearQueue = () => {
+  const complete = () => {
     if (inboundQueues.get(key) === next) inboundQueues.delete(key);
+    for (const resolve of batch.waiters) resolve();
   };
-  void next.then(clearQueue, clearQueue);
-  return next;
+  void next.then(complete, (error) => {
+    log.error({ err: error?.message ?? String(error), userId: key }, "wechat inbound queue failed");
+    complete();
+  });
+  await next.catch(() => undefined);
 }
 
-async function handleInbound(activeBot: WeChatBot, msg: IncomingMessage): Promise<void> {
-  const text = msg.text?.trim();
-  log.debug({ from: msg.userId, text: text?.slice(0, 50) }, "wechat inbound");
-  if (!text) {
-    await activeBot.reply(msg, "目前仅支持文本消息。");
-    return;
-  }
+async function handleInboundBatch(activeBot: WeChatBot, messages: IncomingMessage[]): Promise<void> {
+  const msg = messages[messages.length - 1];
+  if (!msg) return;
+  const userId = msg.userId;
+  const text = messages.map((message) => message.text?.trim()).filter(Boolean).join("\n");
+  const count = attachmentCount(messages);
+  log.debug({ from: userId, text: text.slice(0, 50), attachments: count }, "wechat inbound");
+  if (bot !== activeBot) return;
   if (!inboundHandler) {
     await activeBot.reply(msg, "微信频道尚未配置项目，请先在 Pi 中完成频道配置。");
     return;
   }
   try {
-    const response = await inboundHandler({ userId: msg.userId, text });
+    const response = await inboundHandler({
+      userId,
+      messages,
+      downloadRaw: (media, aesKey) => activeBot.downloadRaw(media, aesKey),
+      sendFile: (fileName, data) => sendMediaWithRetry(activeBot, msg, fileName, data),
+      sendStatus: (text) => sendTextWithRetry(activeBot, msg, text),
+    });
     if (bot !== activeBot) return;
     await activeBot.reply(msg, response.text);
     const failedFiles = [...response.failedFiles];
+    const sentFiles: string[] = [];
     for (const file of response.files) {
       if (bot !== activeBot) return;
       try {
-        await activeBot.reply(msg, { file: file.data, fileName: file.fileName });
+        await sendMediaWithRetry(activeBot, msg, file.fileName, file.data);
+        sentFiles.push(file.fileName);
       } catch (error: any) {
         failedFiles.push(file.fileName);
         log.error(
@@ -117,6 +250,17 @@ async function handleInbound(activeBot: WeChatBot, msg: IncomingMessage): Promis
           "wechat artifact delivery failed",
         );
       }
+    }
+    if (sentFiles.length > 0 && bot === activeBot) {
+      const status = failedFiles.length === 0
+        ? `✅ 文件传输完成：${sentFiles.join("、")}`
+        : `✅ 部分文件传输完成：${sentFiles.join("、")}`;
+      await sendTextWithRetry(activeBot, msg, status).catch((error) => {
+        log.warn(
+          { err: error instanceof Error ? error.message : String(error), userId: msg.userId },
+          "wechat file completion status failed",
+        );
+      });
     }
     if (failedFiles.length > 0 && bot === activeBot) {
       const shown = failedFiles.slice(0, 10);
@@ -131,9 +275,11 @@ async function handleInbound(activeBot: WeChatBot, msg: IncomingMessage): Promis
       );
     }
   } catch (error: any) {
-    log.error({ err: error?.message ?? String(error), userId: msg.userId }, "wechat inbound handling failed");
+    log.error({ err: error?.message ?? String(error), userId }, "wechat inbound handling failed");
     if (bot === activeBot) {
-      await activeBot.reply(msg, "抱歉，处理消息时出现错误，请稍后重试。");
+      await activeBot.reply(msg, error instanceof Error && error.message
+        ? error.message
+        : "抱歉，处理消息时出现错误，请稍后重试。");
     }
   }
 }
@@ -220,6 +366,11 @@ function startLogin(): void {
 /** Stop and reset the bot. */
 function stop(): void {
   loginAttempt++;
+  for (const [key, batch] of pendingInboundBatches) {
+    if (batch.timer) clearTimeout(batch.timer);
+    pendingInboundBatches.delete(key);
+    for (const resolve of batch.waiters) resolve();
+  }
   if (bot) {
     try { bot.stop(); } catch { /* best-effort */ }
   }
@@ -235,7 +386,7 @@ function getStatus(): WeChatLoginState {
   return loginState;
 }
 
-function setInboundHandler(handler: ((input: { userId: string; text: string }) => Promise<WeChatAgentReply>) | null): void {
+function setInboundHandler(handler: ((input: WeChatAgentInput) => Promise<WeChatAgentReply>) | null): void {
   inboundHandler = handler;
 }
 

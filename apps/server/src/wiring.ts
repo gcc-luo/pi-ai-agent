@@ -49,6 +49,10 @@ import { channelsRoutes } from "./routes/channels.js";
 import { getRegistry, rebuildAdapters, startChannelListeners } from "./channels/registry.js";
 import { getWeChatWorker } from "./channels/wechat-worker.js";
 import { WeChatAgentService } from "./channels/wechat-agent-service.js";
+import {
+  WECHAT_FILE_TRANSFER_PLUGIN_ID,
+  WeChatFileTransferService,
+} from "./channels/wechat-file-transfer-service.js";
 import { ChannelAgentService } from "./channels/channel-agent-service.js";
 import { ChannelConversationRepository } from "./db/repositories/channel-conversation.js";
 import { BrowserSessionManager } from "./browser/browser-session-manager.js";
@@ -181,6 +185,14 @@ export async function buildConfiguredApp(config: Config) {
   if (!fs.existsSync(connectorExtensionPath)) connectorExtensionPath = connectorExtensionPath.replace(/\.js$/, ".ts");
   let contextExtensionPath = fileURLToPath(new URL("./agent/extensions/context-policy.js", import.meta.url));
   if (!fs.existsSync(contextExtensionPath)) contextExtensionPath = contextExtensionPath.replace(/\.js$/, ".ts");
+  let wechatFileTransferExtensionPath = fileURLToPath(
+    new URL("./agent/extensions/wechat-file-transfer.js", import.meta.url),
+  );
+  if (!fs.existsSync(wechatFileTransferExtensionPath)) {
+    wechatFileTransferExtensionPath = wechatFileTransferExtensionPath.replace(/\.js$/, ".ts");
+  }
+  const wechatFileTransfers = new WeChatFileTransferService();
+  (app as any).wechatFileTransfers = wechatFileTransfers;
   const processManager = new ProcessManager({
     command: config.piCommand,
     args: config.piArgs,
@@ -194,6 +206,7 @@ export async function buildConfiguredApp(config: Config) {
     pluginExtensions: {
       "browser-use": browserExtensionPath,
       "computer-use": computerExtensionPath,
+      [WECHAT_FILE_TRANSFER_PLUGIN_ID]: wechatFileTransferExtensionPath,
     },
     pluginEndpoint: `http://127.0.0.1:${config.port}/api/internal/plugins`,
     connectorExtensionPath,
@@ -201,6 +214,7 @@ export async function buildConfiguredApp(config: Config) {
     contextExtensionPath,
     hasConnectors: (projectId) => connectorRepository.list(projectId).some((connector) => connector.enabled),
     isPluginEnabled: (pluginId) => {
+      if (pluginId === WECHAT_FILE_TRANSFER_PLUGIN_ID) return true;
       const plugin = pluginManager.find(pluginId);
       return plugin?.enabled === true && plugin.status !== "unavailable";
     },
@@ -208,9 +222,9 @@ export async function buildConfiguredApp(config: Config) {
   });
   (app as any).processManager = processManager;
   const wechatAgentService = new WeChatAgentService(
-    channels, channelConversations, projects, sessions, messages, models, processManager, app.log,
+    channels, channelConversations, projects, sessions, messages, models, processManager, wechatFileTransfers, app.log,
   );
-  getWeChatWorker().setInboundHandler((input) => wechatAgentService.reply(input.userId, input.text));
+  getWeChatWorker().setInboundHandler((input) => wechatAgentService.reply(input));
   const channelAgentService = new ChannelAgentService(
     channels, channelConversations, projects, sessions, messages, models, processManager, app.log,
   );

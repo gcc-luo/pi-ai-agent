@@ -8,6 +8,7 @@ import { extractUserSearchQuery } from "../kb/query-text.js";
 import { ulid } from "../util/ulid.js";
 import { SessionEventBuffer } from "../agent/session-event-buffer.js";
 import { recordAgentTaskSettlement } from "../agent/task-notification.js";
+import { WECHAT_FILE_TRANSFER_PLUGIN_ID } from "../channels/wechat-file-transfer-service.js";
 
 const DEFAULT_TITLE_MAX = 30;
 
@@ -187,14 +188,22 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         } : undefined;
         app.log.info({ provider: modelConfig?.provider, model: modelConfig?.model, hasKey: !!modelConfig?.apiKey, baseUrl: modelConfig?.apiBaseUrl }, "model config resolved");
 
+        const selectedPluginIds = app.pluginManager?.activeForSession(session.id)
+          ?? session.selectedPluginIds
+          ?? (session.browserEnabled ? ["browser-use"] : []);
+        const wechatChannel = app.channels.list().find((channel) => channel.type === "wechat");
+        const isWechatConversation = Boolean(wechatChannel && app.channelConversations
+          .list(wechatChannel.id)
+          .some((binding) => binding.sessionId === session.id));
+        const activePluginIds = isWechatConversation
+          ? [...new Set([...selectedPluginIds, WECHAT_FILE_TRANSFER_PLUGIN_ID])]
+          : selectedPluginIds;
         const proc = await app.processManager.start({
           sessionId: session.id,
           projectId: project.id,
           workdir: project.workdir,
           modelConfig,
-          activePluginIds: app.pluginManager?.activeForSession(session.id)
-            ?? session.selectedPluginIds
-            ?? (session.browserEnabled ? ["browser-use"] : []),
+          activePluginIds,
         });
         const bridge = new RpcBridge({ stdin: proc.stdin, stdout: proc.stdout }, session.id);
         const nextState = app.sessionStates.set(

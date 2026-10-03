@@ -29,6 +29,7 @@ import type { PluginManager } from "../plugins/plugin-manager.js";
 import type { PluginPermissionService } from "../plugins/plugin-permission-service.js";
 import type { ConnectorService } from "../connectors/connector-service.js";
 import type { NotificationRepository } from "../db/repositories/notification.js";
+import type { WeChatFileTransferService } from "../channels/wechat-file-transfer-service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -63,5 +64,6 @@ declare module "fastify" {
     pluginManager: PluginManager;
     pluginPermissions: PluginPermissionService;
     connectorService: ConnectorService;
+    wechatFileTransfers: WeChatFileTransferService;
   }
 }

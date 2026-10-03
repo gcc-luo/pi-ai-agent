@@ -7,6 +7,7 @@ import {
   computerRisk,
   type ComputerAction,
 } from "../computer/computer-session-manager.js";
+import { WECHAT_FILE_TRANSFER_PLUGIN_ID } from "../channels/wechat-file-transfer-service.js";
 
 const BROWSER_ACTIONS = new Set([
   "open", "navigate", "snapshot", "click", "fill", "upload", "select", "press",
@@ -118,6 +119,25 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
     }
     const session = app.sessions.findById(req.params.sessionId);
     if (!session) return reply.code(404).send({ error: "session not found" });
+    if (req.params.pluginId === WECHAT_FILE_TRANSFER_PLUGIN_ID) {
+      if (!app.processManager.isPluginActive(session.id, WECHAT_FILE_TRANSFER_PLUGIN_ID)) {
+        return reply.code(409).send({ error: "微信文件发送工具当前不可用" });
+      }
+      if (req.body?.action !== "sendFiles") {
+        return reply.code(400).send({ error: "invalid wechat file transfer action" });
+      }
+      const filePaths = req.body?.args?.filePaths;
+      if (!Array.isArray(filePaths) || filePaths.some((filePath) => typeof filePath !== "string")) {
+        return reply.code(400).send({ error: "filePaths must be a string array" });
+      }
+      try {
+        return await app.wechatFileTransfers.sendFiles(session.id, filePaths as string[]);
+      } catch (error) {
+        return reply.code(409).send({
+          error: error instanceof Error ? error.message : "微信文件发送失败",
+        });
+      }
+    }
     if (!app.pluginManager.activeForSession(session.id).includes(req.params.pluginId)) {
       return reply.code(409).send({ error: "plugin is not enabled and selected for this session" });
     }
