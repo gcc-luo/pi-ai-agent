@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch, onUnmounted } from "vue";
 import { NInput, NButton, NSelect, NSpin, NEmpty } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
@@ -15,6 +15,19 @@ const hits = ref<KbSearchHitDto[]>([]);
 const durationMs = ref(0);
 const loading = ref(false);
 const searched = ref(false);
+const error = ref("");
+let requestId = 0;
+
+watch(() => props.kbId, () => {
+  requestId++;
+  query.value = "";
+  hits.value = [];
+  durationMs.value = 0;
+  loading.value = false;
+  searched.value = false;
+  error.value = "";
+});
+onUnmounted(() => { requestId++; });
 
 const limitOptions = [
   { label: "5", value: 5 },
@@ -27,6 +40,8 @@ const canSearch = computed(() => query.value.trim().length > 0 && !loading.value
 
 async function handleSearch() {
   if (!canSearch.value) return;
+  const request = ++requestId;
+  error.value = "";
   loading.value = true;
   searched.value = true;
   hits.value = [];
@@ -34,13 +49,15 @@ async function handleSearch() {
 
   try {
     const result = await api.searchKb(query.value.trim(), [props.kbId], undefined, limit.value);
+    if (request !== requestId) return;
     hits.value = result.hits;
     durationMs.value = result.durationMs;
-  } catch (e: any) {
-    console.error("KB search failed:", e);
+  } catch (e: unknown) {
+    if (request !== requestId) return;
+    error.value = e instanceof Error ? e.message : t("kb.search.failed");
     hits.value = [];
   } finally {
-    loading.value = false;
+    if (request === requestId) loading.value = false;
   }
 }
 
@@ -81,6 +98,11 @@ function highlightSnippet(snippet: string): string {
       <div v-if="loading" class="search-state">
         <NSpin size="medium" />
       </div>
+      <div v-else-if="error" class="search-state search-error" role="alert">
+        <p>{{ t('kb.search.failed') }}</p>
+        <p class="search-error-detail">{{ error }}</p>
+        <NButton size="small" :disabled="!canSearch" @click="handleSearch">{{ t('kb.search.retry') }}</NButton>
+      </div>
       <div v-else-if="searched && !hits.length" class="search-state">
         <NEmpty :description="t('kb.search.noResults')" />
       </div>
@@ -92,7 +114,7 @@ function highlightSnippet(snippet: string): string {
           {{ t('kb.search.returnCount') }}: {{ hits.length }} · {{ durationMs }}ms
         </div>
         <div class="search-results">
-          <div v-for="(hit, i) in hits" :key="i" class="search-result">
+          <div v-for="hit in hits" :key="hit.chunkId" class="search-result">
             <div class="result-header">
               <span class="result-kb">{{ hit.kbName }}</span>
               <span class="result-sep">/</span>
@@ -145,6 +167,16 @@ function highlightSnippet(snippet: string): string {
   align-items: center;
   justify-content: center;
   padding: 60px 0;
+}
+.search-error {
+  flex-direction: column;
+  gap: 8px;
+  color: var(--rose);
+}
+.search-error p { margin: 0; }
+.search-error-detail {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .search-state.hint {
   padding: 40px 0;
@@ -219,7 +251,7 @@ function highlightSnippet(snippet: string): string {
   color: var(--text-secondary);
   word-break: break-word;
 }
-.result-snippet :deep(.search-hl) {
+.result-snippet :deep(mark) {
   background: var(--amber-dim, rgba(229, 168, 18, 0.2));
   color: var(--text-primary);
   border-radius: 2px;

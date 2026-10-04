@@ -22,8 +22,11 @@ export const useKbFileStore = defineStore("kb-file", {
     loading: false,
     /** 上次 loadForKb 的 kbId，用于检测 KB 切换并重置过滤 */
     _lastKbId: null as string | null,
+    _loadRequest: 0,
+    _pageRequests: {} as Record<string, number>,
+    _searchableRequests: {} as Record<string, number>,
     /** 按 kbId 存储轮询定时器 ID，内部字段 */
-    _pollTimers: {} as Record<string, ReturnType<typeof setInterval>>,
+    _pollTimers: {} as Record<string, ReturnType<typeof setTimeout>>,
   }),
   getters: {
     files: (state) => (kbId: string) => state.pages[kbId]?.items ?? [],
@@ -52,6 +55,7 @@ export const useKbFileStore = defineStore("kb-file", {
     /** KB 切换时重置过滤条件 */
     _resetFiltersIfKbChanged(kbId: string) {
       if (this._lastKbId !== kbId) {
+        if (this._lastKbId) this.stopPolling(this._lastKbId);
         this.page = 1;
         this.search = "";
         this.status = null;
@@ -62,23 +66,31 @@ export const useKbFileStore = defineStore("kb-file", {
 
     /** 内部：用当前过滤状态拉取指定 KB 的当前页 */
     async _fetchPage(kbId: string) {
-      this.pages[kbId] = await api.listKbFiles(kbId, {
+      const request = (this._pageRequests[kbId] ?? 0) + 1;
+      this._pageRequests[kbId] = request;
+      const result = await api.listKbFiles(kbId, {
         page: this.page,
         pageSize: this.pageSize,
         search: this.search || undefined,
         status: this.status ?? undefined,
         ext: this.ext ?? undefined,
       });
+      if (this._pageRequests[kbId] !== request) return false;
+      this.pages[kbId] = result;
+      return true;
     },
 
     async loadForKb(kbId: string) {
       this._resetFiltersIfKbChanged(kbId);
+      this.stopPolling(kbId);
+      const request = ++this._loadRequest;
       this.loading = true;
       try {
-        await this._fetchPage(kbId);
+        if (!await this._fetchPage(kbId)) return;
       } finally {
-        this.loading = false;
+        if (request === this._loadRequest) this.loading = false;
       }
+      if (request !== this._loadRequest) return;
       this.refreshKbSummary(kbId);
       if (this.hasActive(kbId)) {
         this.startPolling(kbId);
@@ -89,7 +101,10 @@ export const useKbFileStore = defineStore("kb-file", {
 
     /** 加载 KB 内全部 ready+enabled 文件（对话侧 picker/banner 用，不分页） */
     async loadSearchableFiles(kbId: string) {
-      this.searchableCache[kbId] = await api.listSearchableKbFiles(kbId);
+      const request = (this._searchableRequests[kbId] ?? 0) + 1;
+      this._searchableRequests[kbId] = request;
+      const files = await api.listSearchableKbFiles(kbId);
+      if (this._searchableRequests[kbId] === request) this.searchableCache[kbId] = files;
     },
 
     async loadPage(kbId: string, page: number) {
@@ -148,6 +163,11 @@ export const useKbFileStore = defineStore("kb-file", {
 
     async remove(fileId: string, kbId: string) {
       await api.deleteKbFile(fileId);
+      this._pageRequests[kbId] = (this._pageRequests[kbId] ?? 0) + 1;
+      this._searchableRequests[kbId] = (this._searchableRequests[kbId] ?? 0) + 1;
+      if (this.searchableCache[kbId]) {
+        this.searchableCache[kbId] = this.searchableCache[kbId].filter((f) => f.id !== fileId);
+      }
       const page = this.pages[kbId];
       if (page) {
         page.items = page.items.filter((f) => f.id !== fileId);
@@ -175,18 +195,27 @@ export const useKbFileStore = defineStore("kb-file", {
     },
 
     updateInCache(file: KbFileDto) {
+      this._pageRequests[file.kbId] = (this._pageRequests[file.kbId] ?? 0) + 1;
+      this._searchableRequests[file.kbId] = (this._searchableRequests[file.kbId] ?? 0) + 1;
+      const searchable = this.searchableCache[file.kbId];
+      if (searchable) {
+        const remaining = searchable.filter((f) => f.id !== file.id);
+        this.searchableCache[file.kbId] = file.enabled && file.status === "ready"
+          ? [...remaining, file].sort((a, b) => b.createdAt - a.createdAt)
+          : remaining;
+      }
       const page = this.pages[file.kbId];
       if (!page) return;
       const idx = page.items.findIndex((f) => f.id === file.id);
       if (idx >= 0) page.items[idx] = file;
+      if (file.status === "pending" || file.status === "parsing") page.hasActive = true;
     },
 
     /** 局部更新缓存中某个文件的字段（用于乐观更新） */
     patchInCache(fileId: string, kbId: string, patch: Partial<KbFileDto>) {
-      const page = this.pages[kbId];
-      if (!page) return;
-      const file = page.items.find((f) => f.id === fileId);
-      if (file) Object.assign(file, patch);
+      const file = this.pages[kbId]?.items.find((f) => f.id === fileId)
+        ?? this.searchableCache[kbId]?.find((f) => f.id === fileId);
+      if (file) this.updateInCache({ ...file, ...patch });
     },
 
     // ─── 智能轮询：解析中自动刷新当前页 ───
@@ -199,31 +228,32 @@ export const useKbFileStore = defineStore("kb-file", {
     /** 开始轮询指定 KB 的当前页（幂等） */
     startPolling(kbId: string) {
       if (this._pollTimers[kbId]) return; // 已在轮询
-      this._pollTimers[kbId] = setInterval(async () => {
+      const timer = setTimeout(async () => {
+        let failed = false;
         try {
-          await this._fetchPage(kbId);
-          // 同步刷新 searchable 缓存（对话侧 picker 可能正在用）
-          if (this.searchableCache[kbId]) {
-            this.searchableCache[kbId] = await api.listSearchableKbFiles(kbId);
-          }
+          if (!await this._fetchPage(kbId)) return;
+          if (this._pollTimers[kbId] !== timer) return;
+          if (this.searchableCache[kbId]) await this.loadSearchableFiles(kbId);
+          await this.refreshKbSummary(kbId);
         } catch {
-          // 网络异常忽略，下次轮询再试
-        }
-        // 同步刷新头部统计：解析完成后 failedFileCount/fileCount 会立刻反映
-        this.refreshKbSummary(kbId);
-        if (!this.hasActive(kbId)) {
-          this.stopPolling(kbId);
+          failed = true;
+          // 网络恢复后继续刷新；本次请求完成前不发起下一轮。
+        } finally {
+          if (this._pollTimers[kbId] === timer) {
+            delete this._pollTimers[kbId];
+            if (failed || this.hasActive(kbId)) this.startPolling(kbId);
+          }
         }
       }, POLL_INTERVAL_MS);
+      this._pollTimers[kbId] = timer;
     },
 
-    /** 停止轮询指定 KB */
+    /** 停止轮询并使在途列表响应失效 */
     stopPolling(kbId: string) {
       const timer = this._pollTimers[kbId];
-      if (timer) {
-        clearInterval(timer);
-        delete this._pollTimers[kbId];
-      }
+      if (timer) clearTimeout(timer);
+      delete this._pollTimers[kbId];
+      this._pageRequests[kbId] = (this._pageRequests[kbId] ?? 0) + 1;
     },
 
     /** 停止所有轮询（组件卸载时调用） */

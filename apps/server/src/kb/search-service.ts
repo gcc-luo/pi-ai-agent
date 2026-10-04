@@ -1,3 +1,4 @@
+import { buildHighlightSnippet, buildInstrSnippet } from "./search-snippet.js";
 import type Database from "better-sqlite3";
 import { KbSearchHitDto } from "@pi-web-ui/shared";
 import { decodeEmbedding, cosineSimilarity, EmbeddingModelConfig, getEmbedding } from "./embedding-client.js";
@@ -439,66 +440,6 @@ function isShortCjkQuery(query: string): boolean {
   return /[㐀-鿿]/.test(trimmed);
 }
 
-/**
- * Build a snippet by highlighting query words in the ORIGINAL content.
- * This replaces FTS5's snippet() which produces wrong offsets when the
- * FTS index is pre-tokenized (CJK chars separated by spaces) but the
- * external content table stores the original unmodified text.
- *
- * Strategy: find the first occurrence of any query word, extract a window
- * around it, and wrap all query words in <mark> tags within that window.
- */
-function buildHighlightSnippet(content: string, queryWords: string[]): string {
-  if (!queryWords.length) return content.slice(0, 200);
-
-  // Find the earliest occurrence of any query word
-  let bestIdx = Infinity;
-  let bestWord = "";
-  for (const w of queryWords) {
-    const idx = content.indexOf(w);
-    if (idx >= 0 && idx < bestIdx) {
-      bestIdx = idx;
-      bestWord = w;
-    }
-  }
-
-  if (bestIdx === Infinity) {
-    // No word found in content (shouldn't happen if FTS matched)
-    return content.slice(0, 200);
-  }
-
-  // Extract a window around the first match (~200 chars)
-  const windowSize = 200;
-  const start = Math.max(0, bestIdx - Math.floor(windowSize * 0.3));
-  const end = Math.min(content.length, start + windowSize);
-  const adjustedStart = start > 0 ? start : 0;
-  let snippet = content.slice(adjustedStart, end);
-
-  // Highlight ALL query words found in the snippet (longest first to avoid partial matches)
-  const sortedWords = [...queryWords].sort((a, b) => b.length - a.length);
-  for (const w of sortedWords) {
-    // Escape regex special chars in the word
-    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    snippet = snippet.replace(new RegExp(escaped, "g"), `<mark>${w}</mark>`);
-  }
-
-  const prefix = adjustedStart > 0 ? "…" : "";
-  const suffix = end < content.length ? "…" : "";
-  return `${prefix}${snippet}${suffix}`;
-}
-
-/** Build a simple snippet by highlighting the keyword in the content (instr fallback). */
-function buildInstrSnippet(content: string, keyword: string): string {
-  const idx = content.indexOf(keyword);
-  if (idx < 0) return content.slice(0, 200);
-  const start = Math.max(0, idx - 40);
-  const end = Math.min(content.length, idx + keyword.length + 40);
-  const prefix = start > 0 ? "…" : "";
-  const suffix = end < content.length ? "…" : "";
-  const before = content.slice(start, idx);
-  const after = content.slice(idx + keyword.length, end);
-  return `${prefix}${before}<mark>${keyword}</mark>${after}${suffix}`;
-}
 
 function rowToHit(row: any): KbSearchHitDto {
   return {
