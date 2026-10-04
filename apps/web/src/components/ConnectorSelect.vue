@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { matchesResourceSearch } from "../utils/resource-search.js";
 import { computed, onMounted, ref, watch } from "vue";
 import { NPopover, NSwitch } from "naive-ui";
 import type { ConnectorDto } from "@pi-web-ui/shared";
+import { useI18n } from "../i18n/index.js";
 import { useConnectorStore } from "../stores/connector.js";
 
 const props = defineProps<{
@@ -9,6 +11,7 @@ const props = defineProps<{
   disabled?: boolean;
   draft?: boolean;
   inline?: boolean;
+  searchQuery?: string;
   modelValue?: string[];
 }>();
 const emit = defineEmits<{
@@ -17,6 +20,7 @@ const emit = defineEmits<{
   (event: "selected", value: ConnectorDto): void;
 }>();
 const store = useConnectorStore();
+const { t } = useI18n();
 const show = ref(false);
 const available = computed(() => store.connectors.filter((item) => item.scopeType === "user" || item.scopeId === props.projectId));
 const selectedIds = computed(() => props.modelValue ?? []);
@@ -47,6 +51,7 @@ async function toggleConnector(item: ConnectorDto, enabled: boolean) {
   const updated = await store.update(item.id, { enabled: true });
   if (updated.enabled) emit("selected", updated);
 }
+const filteredConnectors = computed(() => available.value.filter((item) => matchesResourceSearch(props.searchQuery, item.name, item.description)));
 </script>
 <template>
   <NPopover v-if="!props.inline" v-model:show="show" trigger="click" placement="top-start" :width="300">
@@ -60,12 +65,12 @@ async function toggleConnector(item: ConnectorDto, enabled: boolean) {
         <span class="tool-btn-label">连接器</span>
       </button>
     </template>
-    <div class="picker"><strong>连接器</strong><p v-if="!available.length">暂无连接器</p><div v-for="item in available" :key="item.id" class="row"><span>{{ item.icon }}</span><span class="name">{{ item.name }}</span><NSwitch size="small" :value="draft ? selectedIds.includes(item.id) : item.enabled" @update:value="toggleConnector(item, $event)" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
+    <div class="picker"><strong>连接器</strong><p v-if="!filteredConnectors.length">{{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'chat.noConnectors') }}</p><div v-for="item in filteredConnectors" :key="item.id" class="row"><span>{{ item.icon }}</span><span class="name">{{ item.name }}</span><NSwitch size="small" :value="draft ? selectedIds.includes(item.id) : item.enabled" @update:value="toggleConnector(item, $event)" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
   </NPopover>
   <div v-else class="picker">
     <strong>连接器</strong>
-    <p v-if="!available.length">暂无连接器</p>
-    <div v-for="item in available" :key="item.id" class="row">
+    <p v-if="!filteredConnectors.length">{{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'chat.noConnectors') }}</p>
+    <div v-for="item in filteredConnectors" :key="item.id" class="row">
       <span>{{ item.icon }}</span>
       <span class="name">{{ item.name }}</span>
       <NSwitch

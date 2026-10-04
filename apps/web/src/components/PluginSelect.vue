@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { matchesResourceSearch } from "../utils/resource-search.js";
 import { computed, watch, ref } from "vue";
 import { NPopover } from "naive-ui";
 import type { PluginDto } from "@pi-web-ui/shared";
@@ -10,6 +11,7 @@ const props = defineProps<{
   disabled?: boolean;
   draft?: boolean;
   inline?: boolean;
+  searchQuery?: string;
   modelValue?: string[];
 }>();
 const emit = defineEmits<{
@@ -80,6 +82,7 @@ async function clearPlugins() {
   if (saving.value || selectedIds.value.length === 0) return;
   await update([]);
 }
+const filteredPlugins = computed(() => availablePlugins.value.filter((item) => matchesResourceSearch(props.searchQuery, item.name, pluginDescription(item))));
 </script>
 
 <template>
@@ -114,12 +117,12 @@ async function clearPlugins() {
         </div>
         <p class="plugin-picker-hint">{{ t('plugins.sessionHint') }}</p>
 
-        <div v-if="!availablePlugins.length" class="plugin-picker-empty">
-          {{ t('plugins.noneAvailable') }}
+        <div v-if="!filteredPlugins.length" class="plugin-picker-empty">
+          {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'plugins.noneAvailable') }}
         </div>
         <div v-else class="plugin-picker-list">
           <button
-            v-for="plugin in availablePlugins"
+            v-for="plugin in filteredPlugins"
             :key="plugin.id"
             class="plugin-picker-item"
             :class="{ selected: isSelected(plugin.id) }"
@@ -149,12 +152,12 @@ async function clearPlugins() {
         >{{ t('plugins.clear') }}</button>
       </div>
       <p class="plugin-picker-hint">{{ t('plugins.sessionHint') }}</p>
-      <div v-if="!availablePlugins.length" class="plugin-picker-empty">
-        {{ t('plugins.noneAvailable') }}
+      <div v-if="!filteredPlugins.length" class="plugin-picker-empty">
+        {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'plugins.noneAvailable') }}
       </div>
       <div v-else class="plugin-picker-list">
         <button
-          v-for="plugin in availablePlugins"
+          v-for="plugin in filteredPlugins"
           :key="plugin.id"
           class="plugin-picker-item"
           :class="{ selected: isSelected(plugin.id) }"

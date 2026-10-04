@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { matchesResourceSearch } from "../utils/resource-search.js";
 import { ref, computed, onMounted, watch } from "vue";
 import { NPopover, NCheckbox } from "naive-ui";
 import { useKbStore } from "../stores/kb.js";
@@ -10,6 +11,7 @@ import type { KbDto } from "@pi-web-ui/shared";
 const props = defineProps<{
   sessionId: string;
   inline?: boolean;
+  searchQuery?: string;
 }>();
 
 const emit = defineEmits<{
@@ -72,6 +74,7 @@ function toggleExpand(kbId: string) {
 function getSearchableFiles(kbId: string) {
   return kbFileStore.searchableFiles(kbId);
 }
+const filteredKbs = computed(() => enabledKbs.value.filter((item) => matchesResourceSearch(props.searchQuery, item.name, item.description)));
 </script>
 
 <template>
@@ -93,12 +96,12 @@ function getSearchableFiles(kbId: string) {
         <span class="kb-picker-hint">{{ t('kb.chat.picker.max', { max: 10 }) }}</span>
       </div>
 
-      <div v-if="!enabledKbs.length" class="kb-picker-empty">
-        {{ t('kb.chat.picker.empty') }}
+      <div v-if="!filteredKbs.length" class="kb-picker-empty">
+        {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'kb.chat.picker.empty') }}
       </div>
 
       <div v-else class="kb-picker-list">
-        <div v-for="kb in enabledKbs" :key="kb.id" class="kb-picker-item">
+        <div v-for="kb in filteredKbs" :key="kb.id" class="kb-picker-item">
           <div class="kb-item-row">
             <NCheckbox
               :checked="selectedKbIds.has(kb.id)"
@@ -137,11 +140,11 @@ function getSearchableFiles(kbId: string) {
       <span class="kb-picker-title">{{ t('kb.chat.picker.title') }}</span>
       <span class="kb-picker-hint">{{ t('kb.chat.picker.max', { max: 10 }) }}</span>
     </div>
-    <div v-if="!enabledKbs.length" class="kb-picker-empty">
-      {{ t('kb.chat.picker.empty') }}
+    <div v-if="!filteredKbs.length" class="kb-picker-empty">
+      {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'kb.chat.picker.empty') }}
     </div>
     <div v-else class="kb-picker-list">
-      <div v-for="kb in enabledKbs" :key="kb.id" class="kb-picker-item">
+      <div v-for="kb in filteredKbs" :key="kb.id" class="kb-picker-item">
         <div class="kb-item-row">
           <NCheckbox
             :checked="selectedKbIds.has(kb.id)"

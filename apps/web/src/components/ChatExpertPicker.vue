@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { matchesResourceSearch } from "../utils/resource-search.js";
 import { computed, onMounted, ref, watch } from "vue";
 import { NPopover } from "naive-ui";
 import { useExpertStore } from "../stores/expert.js";
@@ -10,6 +11,7 @@ const props = defineProps<{
   sessionId?: string;
   draft?: boolean;
   inline?: boolean;
+  searchQuery?: string;
   modelValue?: string | null;
 }>();
 const emit = defineEmits<{
@@ -76,6 +78,7 @@ async function clearExpert() {
     saving.value = false;
   }
 }
+const filteredExperts = computed(() => expertStore.experts.filter((item) => matchesResourceSearch(props.searchQuery, item.name, item.description)));
 </script>
 
 <template>
@@ -107,12 +110,12 @@ async function clearExpert() {
         >{{ t('expert.chat.clear') }}</button>
       </div>
       <p class="expert-picker-hint">{{ t('expert.chat.hint') }}</p>
-      <div v-if="!expertStore.experts.length" class="expert-picker-empty">
-        {{ t('expert.empty') }}
+      <div v-if="!filteredExperts.length" class="expert-picker-empty">
+        {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'expert.empty') }}
       </div>
       <div v-else class="expert-picker-list">
         <button
-          v-for="expert in expertStore.experts"
+          v-for="expert in filteredExperts"
           :key="expert.id"
           class="expert-picker-item"
           :class="{ selected: expert.id === selectedExpertId }"
@@ -142,12 +145,12 @@ async function clearExpert() {
       >{{ t('expert.chat.clear') }}</button>
     </div>
     <p class="expert-picker-hint">{{ t('expert.chat.hint') }}</p>
-    <div v-if="!expertStore.experts.length" class="expert-picker-empty">
-      {{ t('expert.empty') }}
+    <div v-if="!filteredExperts.length" class="expert-picker-empty">
+      {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'expert.empty') }}
     </div>
     <div v-else class="expert-picker-list">
       <button
-        v-for="expert in expertStore.experts"
+        v-for="expert in filteredExperts"
         :key="expert.id"
         class="expert-picker-item"
         :class="{ selected: expert.id === selectedExpertId }"

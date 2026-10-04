@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { matchesResourceSearch } from "../utils/resource-search.js";
+import { computed, ref, onMounted } from "vue";
 import { NPopover } from "naive-ui";
 import { useSkillStore } from "../stores/skill.js";
 import ConfirmDialog from "./ConfirmDialog.vue";
@@ -9,7 +10,7 @@ const emit = defineEmits<{
   (e: "select", name: string): void;
   (e: "import"): void;
 }>();
-const props = defineProps<{ inline?: boolean }>();
+const props = defineProps<{ inline?: boolean; searchQuery?: string }>();
 
 const skillStore = useSkillStore();
 const { t } = useI18n();
@@ -39,6 +40,7 @@ async function confirmUninstall() {
     uninstallTarget.value = null;
   }
 }
+const filteredSkills = computed(() => skillStore.skills.filter((item) => matchesResourceSearch(props.searchQuery, item.name, item.description)));
 </script>
 
 <template>
@@ -59,13 +61,13 @@ async function confirmUninstall() {
           <span class="skill-picker-hint">{{ skillStore.skills.length }}</span>
         </div>
 
-        <div v-if="!skillStore.skills.length" class="skill-picker-empty">
-          {{ t('skill.empty') }}
+        <div v-if="!filteredSkills.length" class="skill-picker-empty">
+          {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'skill.empty') }}
         </div>
 
         <div v-else class="skill-picker-list">
           <div
-            v-for="s in skillStore.skills"
+            v-for="s in filteredSkills"
             :key="s.name"
             class="skill-item"
             data-test="skill-item"
@@ -102,13 +104,13 @@ async function confirmUninstall() {
         <span class="skill-picker-hint">{{ skillStore.skills.length }}</span>
       </div>
 
-      <div v-if="!skillStore.skills.length" class="skill-picker-empty">
-        {{ t('skill.empty') }}
+      <div v-if="!filteredSkills.length" class="skill-picker-empty">
+        {{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'skill.empty') }}
       </div>
 
       <div v-else class="skill-picker-list">
         <div
-          v-for="s in skillStore.skills"
+          v-for="s in filteredSkills"
           :key="s.name"
           class="skill-item"
           data-test="skill-item"

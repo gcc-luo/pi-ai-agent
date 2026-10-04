@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import SkillSelect from "./SkillSelect.vue";
 import PluginSelect from "./PluginSelect.vue";
 import ConnectorSelect from "./ConnectorSelect.vue";
@@ -36,6 +36,11 @@ const emit = defineEmits<{
 type MenuCategory = "files" | "skills" | "connectors" | "plugins" | "experts" | "knowledge";
 const { t } = useI18n();
 const activeCategory = ref<MenuCategory>("files");
+const searchQuery = ref("");
+watch(activeCategory, () => { searchQuery.value = ""; });
+const searchPlaceholder = computed(() => t("chat.resourceSearch", {
+  category: menuCategories.value.find((category) => category.key === activeCategory.value)?.label ?? "",
+}));
 const menuCategories = computed(() => [
   { key: "files" as const, label: t("chat.fileCategory") },
   { key: "skills" as const, label: t("chat.addSkills") },
@@ -90,6 +95,14 @@ function selectConnector(connector: ConnectorDto) {
       </button>
     </nav>
     <div class="capability-menu-detail">
+      <div v-if="activeCategory !== 'files'" class="capability-menu-search">
+        <svg width="14" height="14" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <circle cx="7.5" cy="7.5" r="4.5" stroke="currentColor" stroke-width="1.4" />
+          <path d="m11 11 4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
+        <input v-model="searchQuery" type="search" :placeholder="searchPlaceholder" :aria-label="searchPlaceholder" autocomplete="off" @keydown.enter.stop.prevent />
+        <button v-if="searchQuery" type="button" :aria-label="t('chat.clearResourceSearch')" @click="searchQuery = ''">×</button>
+      </div>
       <div v-show="activeCategory === 'files'" class="capability-menu-file-options">
         <div class="capability-menu-section-title">{{ t('chat.fileCategory') }}</div>
         <button type="button" class="capability-menu-resource" @click="emit('pick-files')">
@@ -98,11 +111,11 @@ function selectConnector(connector: ConnectorDto) {
         </button>
       </div>
       <div v-show="activeCategory === 'skills'" class="capability-menu-resource-list">
-        <SkillSelect :inline="true" @select="selectSkill" @import="emit('import-skill')" />
+        <SkillSelect :inline="true" :search-query="searchQuery" @select="selectSkill" @import="emit('import-skill')" />
       </div>
       <div v-show="activeCategory === 'connectors'" class="capability-menu-resource-list">
         <ConnectorSelect
-          :inline="true"
+          :inline="true" :search-query="searchQuery"
           :project-id="projectId"
           :draft="props.mode === 'draft'"
           :model-value="connectorIds"
@@ -114,7 +127,7 @@ function selectConnector(connector: ConnectorDto) {
       </div>
       <div v-show="activeCategory === 'plugins'" class="capability-menu-resource-list">
         <PluginSelect
-          :inline="true"
+          :inline="true" :search-query="searchQuery"
           :session-id="sessionId"
           :draft="props.mode === 'draft'"
           :model-value="pluginIds"
@@ -125,7 +138,7 @@ function selectConnector(connector: ConnectorDto) {
       </div>
       <div v-show="activeCategory === 'experts'" class="capability-menu-resource-list">
         <ChatExpertPicker
-          :inline="true"
+          :inline="true" :search-query="searchQuery"
           :session-id="sessionId"
           :draft="props.mode === 'draft'"
           :model-value="expertId"
@@ -134,7 +147,7 @@ function selectConnector(connector: ConnectorDto) {
         />
       </div>
       <div v-if="props.mode === 'session' && sessionId" v-show="activeCategory === 'knowledge'" class="capability-menu-resource-list">
-        <ChatKbPicker :inline="true" :session-id="sessionId" @selected="selectKnowledgeBase" />
+        <ChatKbPicker :inline="true" :search-query="searchQuery" :session-id="sessionId" @selected="selectKnowledgeBase" />
       </div>
     </div>
   </div>
@@ -237,6 +250,41 @@ function selectConnector(connector: ConnectorDto) {
   max-height: none;
   overflow: auto;
   padding: 10px;
+}
+
+.capability-menu-search {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+.capability-menu-search:focus-within { border-color: var(--accent); }
+.capability-menu-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+.capability-menu-search input::-webkit-search-cancel-button { display: none; }
+.capability-menu-search button {
+  border: 0;
+  padding: 0 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
 }
 
 .capability-menu-section-title {
