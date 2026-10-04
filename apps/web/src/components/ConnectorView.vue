@@ -181,8 +181,8 @@ function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "er
         <div v-if="visibleOfficial.length" class="grid">
           <article v-for="item in visibleOfficial" :key="item.key" class="card" @click="openBuiltin(item)">
             <div class="icon">{{ item.icon }}</div>
-            <div class="card-main"><h2>{{ item.name }}</h2><p>{{ item.description }}</p><span v-if="item.connected" class="status connected"><i />已连接</span><span v-else class="category">{{ item.category }}</span></div>
-            <template v-if="item.connected"><NSwitch :value="store.connectors.find(c => c.id === item.instanceId)?.enabled ?? true" @click.stop @update:value="item.instanceId && toggle(store.connectors.find(c => c.id === item.instanceId)!, $event)" /></template>
+            <div class="card-main"><h2 :title="item.name">{{ item.name }}</h2><p :title="item.description">{{ item.description }}</p><span v-if="item.connected" class="status connected"><i />已连接</span><span v-else class="category">{{ item.category }}</span></div>
+            <template v-if="item.connected"><NSwitch class="card-switch" :value="store.connectors.find(c => c.id === item.instanceId)?.enabled ?? true" @click.stop @update:value="item.instanceId && toggle(store.connectors.find(c => c.id === item.instanceId)!, $event)" /></template>
             <button v-else class="add-button" :aria-label="`连接${item.name}`" @click.stop="openBuiltin(item)">+</button>
           </article>
         </div>
@@ -190,8 +190,8 @@ function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "er
         <div v-if="visible.length" class="grid">
           <article v-for="item in visible" :key="item.id" class="card" @click="openDetail(item)">
             <div class="icon">{{ item.icon }}</div>
-            <div class="card-main"><h2>{{ item.name }}</h2><p>{{ item.description || '通过外部服务扩展 Agent 能力' }}</p><span class="status" :class="item.status"><i />{{ statusText(item) }}</span></div>
-            <NSwitch :value="item.enabled" @click.stop @update:value="toggle(item, $event)" />
+            <div class="card-main"><h2 :title="item.name">{{ item.name }}</h2><p :title="item.description || '通过外部服务扩展 Agent 能力'">{{ item.description || '通过外部服务扩展 Agent 能力' }}</p><span class="status" :class="item.status"><i />{{ statusText(item) }}</span></div>
+            <NSwitch class="card-switch" :value="item.enabled" @click.stop @update:value="toggle(item, $event)" />
           </article>
         </div>
         </template>
@@ -253,4 +253,64 @@ function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "er
 
 <style scoped>
 .connector-view{flex:1;min-width:0;overflow:auto;background:var(--bg-surface)}.view-header{display:flex;justify-content:space-between;align-items:flex-start;padding:32px 48px 24px;border-bottom:1px solid var(--border-color)}.view-header h1{margin:0 0 4px;font-size:24px;color:var(--text-primary)}.view-header p,.card p,.detail-description,.muted,.builtin-head p{margin:0;color:var(--text-secondary);font-size:13px}.toolbar{display:flex;align-items:center;gap:20px;padding:20px 48px 0}.search{max-width:420px}.filters{display:flex;padding:3px;background:var(--background-panel);border:1px solid var(--border-color);border-radius:9px}.filters button,.segmented button{border:0;background:transparent;color:var(--text-secondary);padding:6px 14px;border-radius:6px;cursor:pointer}.filters button.active,.segmented button.active{color:var(--primary-color);background:var(--background-selected)}.body{padding:20px 48px 48px}.section-title{margin:2px 0 12px;font-size:13px;color:var(--text-secondary);font-weight:600}.custom-title{margin-top:28px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}.card{display:flex;gap:14px;align-items:flex-start;padding:20px;border:1px solid var(--border-color);border-radius:12px;background:var(--background-panel);cursor:pointer;transition:.15s}.card:hover{border-color:var(--primary-color);box-shadow:var(--shadow-md)}.icon{display:grid;place-items:center;width:42px;height:42px;border-radius:10px;background:var(--background-selected);font-size:22px;flex-shrink:0}.icon.large{width:48px;height:48px;font-size:25px}.card-main{flex:1;min-width:0}.card h2{margin:0 0 5px;font-size:16px;color:var(--text-primary)}.card p{min-height:36px}.category{display:inline-block;margin-top:10px;color:var(--text-muted);font-size:12px}.add-button{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--primary-color);border-radius:50%;background:transparent;color:var(--primary-color);font-size:21px;cursor:pointer}.status{display:inline-flex;align-items:center;gap:6px;margin-top:10px;color:var(--text-secondary);font-size:12px}.status i{width:7px;height:7px;border-radius:50%;background:currentColor}.status.connected{color:var(--green)}.status.error{color:var(--rose)}.status.auth_required,.status.connecting,.status.degraded{color:var(--amber)}.form{display:grid;gap:16px}.form label,.token-field{display:grid;gap:7px;color:var(--text-primary);font-size:13px}.segmented{display:flex;align-self:start;padding:3px;border:1px solid var(--border-color);border-radius:9px}.advanced-toggle{justify-self:start;border:0;background:none;color:var(--primary-color);cursor:pointer;padding:0}.advanced{display:grid;gap:14px;padding:14px;border:1px solid var(--border-color);border-radius:10px}.modal-actions,.detail-status,.detail-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px}.detail-status{justify-content:space-between}.detail-description{margin:12px 0}.error{padding:10px 12px;border:1px solid color-mix(in srgb,var(--rose) 40%,transparent);border-radius:8px;background:var(--rose-dim);color:var(--rose);font-size:13px}.error small{display:block;margin-top:4px}.tools{margin-top:22px}.tools h3{display:flex;gap:8px;margin:0 0 10px;font-size:15px}.tools h3 span{color:var(--text-muted);font-weight:400}.tool-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--border-color)}.tool-main{display:grid;gap:3px;flex:1;min-width:0}.tool-main strong{font-size:13px}.tool-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)}.policy{width:92px}.danger-zone{margin-top:24px;padding-top:16px;border-top:1px solid var(--border-color)}.danger-zone button{border:0;background:none;color:var(--rose);cursor:pointer;padding:0}.builtin-head{display:flex;align-items:center;gap:13px}.builtin-head strong{display:block;margin-bottom:4px;font-size:16px}.authorization{margin:18px 0;padding:15px;border-radius:10px;background:var(--background-selected)}.authorization h3{margin:0 0 9px;font-size:14px}.authorization ul{display:grid;gap:6px;margin:0;padding:0;list-style:none;color:var(--text-secondary);font-size:13px}.authorization p,.account-note{margin:10px 0 0;color:var(--text-secondary);font-size:12px}.auth-link{display:inline-block;margin:2px 0 16px;color:var(--primary-color);text-decoration:none}
+.body {
+  container-type: inline-size;
+}
+
+.grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.card {
+  min-width: 0;
+  min-height: 96px;
+  gap: 10px;
+  padding: 14px;
+}
+
+.card .icon:not(.large) {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+
+.card h2,
+.card p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card h2 {
+  font-size: 14px;
+}
+
+.card p {
+  min-height: 0;
+  font-size: 12px;
+}
+
+.card .status,
+.card .category {
+  margin-top: 7px;
+  font-size: 11px;
+}
+
+.card-switch,
+.card .add-button {
+  flex-shrink: 0;
+}
+
+@container (max-width: 1100px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container (max-width: 760px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@container (max-width: 500px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}
 </style>
