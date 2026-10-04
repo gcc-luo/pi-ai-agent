@@ -10,6 +10,9 @@ import ComposerPromptEditor from "./ComposerPromptEditor.vue";
 import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
 import { useKbStore } from "../stores/kb.js";
+import { usePluginStore } from "../stores/plugin.js";
+import { useConnectorStore } from "../stores/connector.js";
+import { removeComposerSelection } from "../utils/composer-selection.js";
 import ChatCapabilityToolbar from "./ChatCapabilityToolbar.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
@@ -44,6 +47,8 @@ const { t } = useI18n();
 const skillStore = useSkillStore();
 const kbBindingStore = useKbBindingStore();
 const kbStore = useKbStore();
+const pluginStore = usePluginStore();
+const connectorStore = useConnectorStore();
 const showImportSkill = ref(false);
 const input = ref("");
 const selectedSkills = ref<string[]>([]);
@@ -188,13 +193,26 @@ function readImageFile(file: File, label = file.name) {
   reader.readAsDataURL(file);
 }
 
-function onRemoveComposerToken(token: ComposerResourceToken) {
+async function onRemoveComposerToken(token: ComposerResourceToken) {
   if (token.kind === "file") {
     attachedFiles.value = attachedFiles.value.filter((file) => file.id !== token.resourceId);
   } else if (token.kind === "image") {
     attachedImages.value = attachedImages.value.filter((image) => image.id !== token.resourceId);
   } else if (token.kind === "skill") {
     selectedSkills.value = selectedSkills.value.filter((name) => name !== token.resourceId);
+  } else {
+    try {
+      await removeComposerSelection(token, props.sessionId, {
+        plugins: pluginStore,
+        sessions: sessionStore,
+        kbBindings: kbBindingStore,
+        connectors: connectorStore,
+      });
+    } catch (error) {
+      // The chip has already been removed by the editor. Restore it if persistence fails.
+      promptEditorRef.value?.insertToken(token);
+      console.error("Failed to remove composer resource:", error);
+    }
   }
 }
 
