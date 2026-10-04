@@ -9,9 +9,13 @@ const props = defineProps<{
   sessionId?: string;
   disabled?: boolean;
   draft?: boolean;
+  inline?: boolean;
   modelValue?: string[];
 }>();
-const emit = defineEmits<{ (e: "update:modelValue", value: string[]): void }>();
+const emit = defineEmits<{
+  (e: "update:modelValue", value: string[]): void;
+  (e: "selected", value: PluginDto): void;
+}>();
 
 const plugins = usePluginStore();
 const { t } = useI18n();
@@ -61,10 +65,15 @@ async function update(value: string[]) {
 
 async function togglePlugin(pluginId: string) {
   if (saving.value) return;
-  const next = isSelected(pluginId)
+  const wasSelected = isSelected(pluginId);
+  const next = wasSelected
     ? selectedIds.value.filter((id) => id !== pluginId)
     : [...selectedIds.value, pluginId];
   await update(next);
+  if (!wasSelected && isSelected(pluginId)) {
+    const plugin = plugins.plugins.find((item) => item.id === pluginId);
+    if (plugin) emit("selected", plugin);
+  }
 }
 
 async function clearPlugins() {
@@ -75,7 +84,7 @@ async function clearPlugins() {
 
 <template>
   <div class="plugin-select" :title="plugins.error || t('plugins.sessionHint')">
-    <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="340">
+    <NPopover v-if="!props.inline" v-model:show="showPopover" placement="top-start" trigger="click" :width="340">
       <template #trigger>
         <button
           class="plugin-picker-trigger"
@@ -129,8 +138,42 @@ async function clearPlugins() {
       </div>
     </NPopover>
 
+    <div v-else class="plugin-picker-body">
+      <div class="plugin-picker-header">
+        <span class="plugin-picker-title">{{ t('plugins.select') }}</span>
+        <button
+          v-if="selectedIds.length"
+          class="plugin-clear"
+          :disabled="saving"
+          @click="clearPlugins"
+        >{{ t('plugins.clear') }}</button>
+      </div>
+      <p class="plugin-picker-hint">{{ t('plugins.sessionHint') }}</p>
+      <div v-if="!availablePlugins.length" class="plugin-picker-empty">
+        {{ t('plugins.noneAvailable') }}
+      </div>
+      <div v-else class="plugin-picker-list">
+        <button
+          v-for="plugin in availablePlugins"
+          :key="plugin.id"
+          class="plugin-picker-item"
+          :class="{ selected: isSelected(plugin.id) }"
+          :disabled="saving || plugin.status === 'unavailable'"
+          @click="togglePlugin(plugin.id)"
+        >
+          <span class="plugin-item-copy">
+            <span class="plugin-item-name">{{ plugin.icon }} {{ plugin.name }}</span>
+            <span class="plugin-item-description">{{ pluginDescription(plugin) }}</span>
+          </span>
+          <svg v-if="isSelected(plugin.id)" class="plugin-selected-mark" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M2.5 7.2l2.8 2.8 6.2-6.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <span
-      v-if="primarySelectedPlugin"
+      v-if="!props.inline && primarySelectedPlugin"
       class="active-plugin-chip"
       :title="selectedPlugins.map((plugin) => plugin.name).join(', ')"
     >

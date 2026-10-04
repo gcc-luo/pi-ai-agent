@@ -3,6 +3,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import ChatPanel from "../../src/components/ChatPanel.vue";
+import { getComposerPlainText } from "../../src/utils/composer-tokens.js";
 
 describe("ChatPanel skill insertion", () => {
   beforeEach(() => {
@@ -17,18 +18,12 @@ describe("ChatPanel skill insertion", () => {
       global: {
         stubs: {
           NModal: { template: '<div><slot/></div>' },
-          NInput: {
-            inheritAttrs: false,
-            template: '<div v-bind="$attrs"><textarea :value="value" @input="$emit(\'update:value\', $event.target.value)" @keydown="$emit(\'keydown\', $event)"></textarea></div>',
-            props: ["value", "type"],
-          },
           SkillSelect: {
             emits: ["select", "import"],
-            data: () => ({ open: false }),
+            props: ["inline"],
             template: `<div>
-              <button data-test="skill-toggle" @click="open = true">skills</button>
-              <button v-if="open" data-test="skill-item" @click="$emit('select', 'demo-skill')">demo</button>
-              <button v-if="open" data-test="skill-import-btn" @click="$emit('import')">import</button>
+              <button data-test="skill-item" @click="$emit('select', 'demo-skill')">demo</button>
+              <button data-test="skill-import-btn" @click="$emit('import')">import</button>
             </div>`,
           },
           ChatExpertPicker: true,
@@ -44,11 +39,20 @@ describe("ChatPanel skill insertion", () => {
   }
 
   async function openSkillDropdown(w: ReturnType<typeof mountPanel>) {
-    await w.find("[data-test='skill-toggle']").trigger("click");
+    await w.find(".composer-add-trigger").trigger("click");
+    await nextTick();
+    const skillCategory = w.findAll(".capability-menu-category").find((item) => item.text().includes("技能"));
+    expect(skillCategory).toBeDefined();
+    await skillCategory?.trigger("click");
     await nextTick();
   }
 
-  it("shows the selected skill as a composer chip", async () => {
+  async function selectDemoSkill(w: ReturnType<typeof mountPanel>) {
+    await w.find("[data-test='skill-item']").trigger("click");
+    await nextTick();
+  }
+
+  it("shows the selected skill as an inline composer token", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify([
       { name: "demo-skill", description: "d", path: "/d/SKILL.md" },
     ]), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -57,12 +61,11 @@ describe("ChatPanel skill insertion", () => {
     await flushPromises();
     await nextTick();
     await openSkillDropdown(w);
-    await w.find("[data-test='skill-item']").trigger("click");
-    await nextTick();
-    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
+    await selectDemoSkill(w);
+    expect(w.find(".composer-resource-token-label").text()).toBe("demo-skill");
   });
 
-  it("keeps the message text separate from selected skills", async () => {
+  it("keeps the message text separate from the skill token", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify([
       { name: "demo-skill", description: "d", path: "/d/SKILL.md" },
     ]), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -70,13 +73,13 @@ describe("ChatPanel skill insertion", () => {
     const w = mountPanel();
     await nextTick();
     await nextTick();
-    const textarea = w.find("textarea");
-    await textarea.setValue("existing text");
+    const editor = w.get('[data-test="composer-prompt-editor"]');
+    editor.element.textContent = "existing text";
+    await editor.trigger("input");
     await openSkillDropdown(w);
-    await w.find("[data-test='skill-item']").trigger("click");
-    await nextTick();
-    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text");
-    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
+    await selectDemoSkill(w);
+    expect(getComposerPlainText(editor.element as HTMLElement).trimEnd()).toBe("existing text");
+    expect(editor.find(".composer-resource-token-label").text()).toBe("demo-skill");
   });
 
   it("preserves whitespace in the message text when selecting a skill", async () => {
@@ -87,13 +90,18 @@ describe("ChatPanel skill insertion", () => {
     const w = mountPanel();
     await nextTick();
     await nextTick();
-    const textarea = w.find("textarea");
-    await textarea.setValue("existing text\n");
+    const editor = w.get('[data-test="composer-prompt-editor"]');
+    editor.element.textContent = "existing text\n";
+    const range = document.createRange();
+    range.setStart(editor.element.firstChild!, editor.element.textContent!.length);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    await editor.trigger("input");
     await openSkillDropdown(w);
-    await w.find("[data-test='skill-item']").trigger("click");
-    await nextTick();
-    expect((w.find("textarea").element as HTMLTextAreaElement).value).toBe("existing text\n");
-    expect(w.find(".skill-chip .chip-name").text()).toBe("demo-skill");
+    await selectDemoSkill(w);
+    expect(getComposerPlainText(editor.element as HTMLElement)).toBe("existing text\n ");
+    expect(editor.find(".composer-resource-token-label").text()).toBe("demo-skill");
   });
 
   it("opens ImportSkillDialog when import is emitted", async () => {

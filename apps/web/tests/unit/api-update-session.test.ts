@@ -38,4 +38,27 @@ describe("api.updateSession", () => {
     expect(calls[0]![0]).toBe("/api/sessions/s1");
     expect(JSON.parse(calls[0]![1].body as string)).toEqual({ expertId: "e1" });
   });
+
+  it.each(["approve_each", "risk_based", "full_access"] as const)(
+    "PUTs the %s authorization mode to the current session",
+    async (authorizationMode) => {
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        id: "s1", projectId: "p1", title: null, parentId: null,
+        authorizationMode, selectedPluginIds: [], browserEnabled: false,
+        status: "active", createdAt: 0, updatedAt: 0, lastActiveAt: null,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const session = await api.updateSessionAuthorizationMode("s1", authorizationMode);
+
+      expect(session.authorizationMode).toBe(authorizationMode);
+      const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+      expect(calls[0]![0]).toBe("/api/sessions/s1");
+      expect(calls[0]![1].method).toBe("PUT");
+      expect(JSON.parse(calls[0]![1].body as string)).toEqual({ authorizationMode });
+    },
+  );
 });

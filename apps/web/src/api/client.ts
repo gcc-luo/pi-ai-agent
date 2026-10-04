@@ -1,5 +1,6 @@
 ﻿import type {
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
+  SessionAuthorizationMode,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
   KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
   ScheduledTaskDto, ScheduledTaskCapabilities, TaskLogDto, TaskType,
@@ -99,6 +100,8 @@ export const api = {
     request<SessionDto>("PUT", `/sessions/${id}`, { title }),
   updateSessionExpert: (id: string, expertId: string | null) =>
     request<SessionDto>("PUT", `/sessions/${id}`, { expertId }),
+  updateSessionAuthorizationMode: (id: string, authorizationMode: SessionAuthorizationMode) =>
+    request<SessionDto>("PUT", `/sessions/${id}`, { authorizationMode }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   listMessages: (sessionId: string) => request<MessageDto[]>("GET", `/sessions/${sessionId}/messages`),
   markSessionRead: (sessionId: string, messageId?: string) =>

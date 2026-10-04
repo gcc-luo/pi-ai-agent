@@ -9,10 +9,12 @@ import type { KbDto } from "@pi-web-ui/shared";
 
 const props = defineProps<{
   sessionId: string;
+  inline?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "updated"): void;
+  (e: "selected", value: KbDto): void;
 }>();
 
 const kbStore = useKbStore();
@@ -57,6 +59,7 @@ async function toggleKb(kb: KbDto) {
     await kbBindingStore.save(props.sessionId, newBindings);
     // Pre-load files for expansion
     await kbFileStore.loadSearchableFiles(kb.id);
+    emit("selected", kb);
   }
   emit("updated");
 }
@@ -72,7 +75,7 @@ function getSearchableFiles(kbId: string) {
 </script>
 
 <template>
-  <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="300">
+  <NPopover v-if="!props.inline" v-model:show="showPopover" placement="top-start" trigger="click" :width="300">
     <template #trigger>
       <button class="kb-picker-trigger" :class="{ active: selectedKbIds.size > 0 }">
         <svg width="13" height="13" viewBox="0 0 18 18" fill="none">
@@ -129,6 +132,46 @@ function getSearchableFiles(kbId: string) {
       </div>
     </div>
   </NPopover>
+  <div v-else class="kb-picker-body">
+    <div class="kb-picker-header">
+      <span class="kb-picker-title">{{ t('kb.chat.picker.title') }}</span>
+      <span class="kb-picker-hint">{{ t('kb.chat.picker.max', { max: 10 }) }}</span>
+    </div>
+    <div v-if="!enabledKbs.length" class="kb-picker-empty">
+      {{ t('kb.chat.picker.empty') }}
+    </div>
+    <div v-else class="kb-picker-list">
+      <div v-for="kb in enabledKbs" :key="kb.id" class="kb-picker-item">
+        <div class="kb-item-row">
+          <NCheckbox
+            :checked="selectedKbIds.has(kb.id)"
+            @update:checked="toggleKb(kb)"
+            :disabled="!selectedKbIds.has(kb.id) && selectedKbIds.size >= 10"
+          />
+          <button class="kb-item-name" @click="toggleExpand(kb.id)">
+            <span class="kb-name-text">{{ kb.name }}</span>
+            <span class="kb-file-count">{{ t('kb.chat.picker.fileCount', { n: kb.searchableFileCount }) }}</span>
+            <svg
+              class="kb-expand-icon"
+              :class="{ open: expandedKbId === kb.id }"
+              width="10" height="10" viewBox="0 0 10 10" fill="none"
+            >
+              <path d="M3 4l2 2 2-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div v-if="expandedKbId === kb.id" class="kb-item-files">
+          <div v-for="file in getSearchableFiles(kb.id)" :key="file.id" class="kb-file-row">
+            <span class="kb-file-name">{{ file.name }}</span>
+            <span class="kb-file-ext">.{{ file.ext }}</span>
+          </div>
+          <div v-if="!getSearchableFiles(kb.id).length" class="kb-no-files">
+            {{ t('kb.chat.picker.noFiles') }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>

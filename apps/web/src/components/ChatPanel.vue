@@ -1,10 +1,12 @@
 ﻿<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { NInput, NSelect } from "naive-ui";
+import { NSelect } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
+import { useSessionStore } from "../stores/session.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
+import ComposerPromptEditor from "./ComposerPromptEditor.vue";
 import { useSkillStore } from "../stores/skill.js";
 import { useKbBindingStore } from "../stores/kb-binding.js";
 import { useKbStore } from "../stores/kb.js";
@@ -16,12 +18,14 @@ import type {
   MessagePart,
   ArtifactItem,
   ArtifactValidation,
+  SessionAuthorizationMode,
 } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
 import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
 import { summarizeTokenUsage } from "../utils/token-usage.js";
+import { type ComposerResourceSelection, type ComposerResourceToken } from "../utils/composer-tokens.js";
 import TokenUsage from "./TokenUsage.vue";
 import {
   annotateChatRuns,
@@ -35,6 +39,7 @@ import AgentActivity from "./AgentActivity.vue";
 const props = defineProps<{ sessionId: string; projectId: string }>();
 const emit = defineEmits<{ (e: "select-file", path: string): void; (e: "manage-connectors"): void }>();
 const agent = useAgentStore();
+const sessionStore = useSessionStore();
 const { t } = useI18n();
 const skillStore = useSkillStore();
 const kbBindingStore = useKbBindingStore();
@@ -44,8 +49,31 @@ const input = ref("");
 const selectedSkills = ref<string[]>([]);
 const messagesEl = ref<HTMLElement | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
+const composerAddMenuOpen = ref(false);
+const promptEditorRef = ref<{
+  insertToken: (token: ComposerResourceToken) => void;
+  saveSelection: () => void;
+  focus: () => void;
+  clear: () => void;
+  setText: (value: string) => void;
+} | null>(null);
+let composerTokenSequence = 0;
+
+function nextComposerTokenId(kind: string): string {
+  composerTokenSequence += 1;
+  return `${kind}-${Date.now()}-${composerTokenSequence}`;
+}
+
+function addComposerResource(selection: ComposerResourceSelection) {
+  promptEditorRef.value?.insertToken({
+    ...selection,
+    id: nextComposerTokenId(selection.kind),
+  });
+  composerAddMenuOpen.value = false;
+}
 
 interface AttachedFile {
+  id: string;
   name: string;
   ext: string;
   content: string;
@@ -65,6 +93,7 @@ const TEXT_EXTS_ACCEPT = Array.from(TEXT_EXTS).map((e) => `.${e}`).join(",");
 
 // ─── Image attachment ───
 interface AttachedImage {
+  id: string;
   name: string;
   mediaType: string;
   data: string;      // base64 (no data: URI prefix)
@@ -84,6 +113,7 @@ const IMAGE_EXTS_ACCEPT = Array.from(IMAGE_EXTS).map((e) => `.${e}`).join(",");
 const ALL_EXTS_ACCEPT = `${TEXT_EXTS_ACCEPT},${IMAGE_EXTS_ACCEPT}`;
 
 function triggerFilePick() {
+  composerAddMenuOpen.value = false;
   fileInputEl.value?.click();
 }
 
@@ -93,6 +123,7 @@ function onFilePicked(e: Event) {
   if (!files) return;
   for (const file of Array.from(files)) {
     const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+    const label = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
 
     // Image file path
     if (IMAGE_EXTS.has(ext)) {
@@ -104,7 +135,7 @@ function onFilePicked(e: Event) {
         alert(t("chat.imageTooLarge") + `: ${file.name}`);
         continue;
       }
-      readImageFile(file);
+      readImageFile(file, label);
       continue;
     }
 
@@ -118,12 +149,14 @@ function onFilePicked(e: Event) {
       continue;
     }
     const reader = new FileReader();
+    const id = nextComposerTokenId("file");
     reader.onload = () => {
       const content = typeof reader.result === "string" ? reader.result : "";
       attachedFiles.value = [
         ...attachedFiles.value,
-        { name: file.name, ext, content, size: file.size },
+        { id, name: label, ext, content, size: file.size },
       ];
+      addComposerResource({ resourceId: id, kind: "file", label, icon: "📄", value: "" });
     };
     reader.onerror = () => {
       console.error("Failed to read file:", file.name, reader.error);
@@ -134,7 +167,7 @@ function onFilePicked(e: Event) {
   target.value = "";
 }
 
-function readImageFile(file: File) {
+function readImageFile(file: File, label = file.name) {
   const reader = new FileReader();
   reader.onload = () => {
     const dataUrl = typeof reader.result === "string" ? reader.result : "";
@@ -142,10 +175,12 @@ function readImageFile(file: File) {
     if (commaIdx < 0) return;
     const base64Data = dataUrl.slice(commaIdx + 1);
     const mediaType = IMAGE_MEDIA_TYPES[(file.name.split(".").pop() ?? "").toLowerCase()] ?? "image/png";
+    const id = nextComposerTokenId("image");
     attachedImages.value = [
       ...attachedImages.value,
-      { name: file.name, mediaType, data: base64Data, size: file.size, previewUrl: dataUrl },
+      { id, name: label, mediaType, data: base64Data, size: file.size, previewUrl: dataUrl },
     ];
+    addComposerResource({ resourceId: id, kind: "image", label, icon: "🖼️", value: "" });
   };
   reader.onerror = () => {
     console.error("Failed to read image:", file.name, reader.error);
@@ -153,12 +188,14 @@ function readImageFile(file: File) {
   reader.readAsDataURL(file);
 }
 
-function removeAttachedFile(idx: number) {
-  attachedFiles.value = attachedFiles.value.filter((_, i) => i !== idx);
-}
-
-function removeAttachedImage(idx: number) {
-  attachedImages.value = attachedImages.value.filter((_, i) => i !== idx);
+function onRemoveComposerToken(token: ComposerResourceToken) {
+  if (token.kind === "file") {
+    attachedFiles.value = attachedFiles.value.filter((file) => file.id !== token.resourceId);
+  } else if (token.kind === "image") {
+    attachedImages.value = attachedImages.value.filter((image) => image.id !== token.resourceId);
+  } else if (token.kind === "skill") {
+    selectedSkills.value = selectedSkills.value.filter((name) => name !== token.resourceId);
+  }
 }
 
 function handlePaste(e: ClipboardEvent) {
@@ -188,12 +225,6 @@ function openImagePreview(part: { name: string; mediaType: string; data: string 
 }
 function closeImagePreview() {
   previewImage.value = null;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // Track kb_search states per user message — keyed by user message id
@@ -226,6 +257,24 @@ watch(
 
 const messages = computed(() => agent.messagesFor(props.sessionId));
 const pendingPermission = computed(() => agent.pendingPermissions[props.sessionId] ?? null);
+const sessionAuthorizationMode = computed(() => {
+  const session = sessionStore.sessions.find((candidate) => candidate.id === props.sessionId)
+    ?? (sessionStore.current?.id === props.sessionId ? sessionStore.current : null);
+  return session?.authorizationMode ?? "risk_based";
+});
+const authorizationModeMenuOpen = ref(false);
+const authorizationModeUpdating = ref(false);
+const authorizationModeTrigger = ref<HTMLButtonElement | null>(null);
+const authorizationModeMenu = ref<HTMLDivElement | null>(null);
+const authorizationModeOptions = computed(() => ([
+  "approve_each",
+  "risk_based",
+  "full_access",
+] as SessionAuthorizationMode[]).map((mode) => ({
+  mode,
+  label: t(`chat.authorizationMode.${mode}`),
+  description: t(`chat.authorizationMode.${mode}Description`),
+})));
 
 // Pi can finish one assistant message to execute a tool and then start another
 // model turn. Use the run lifecycle so the control remains in its stop state
@@ -277,6 +326,63 @@ function toggleRun(runId: string | null, canToggle: boolean) {
 }
 
 const compaction = computed(() => agent.compactionFor(props.sessionId));
+
+watch(() => props.sessionId, () => {
+  authorizationModeMenuOpen.value = false;
+});
+
+function toggleAuthorizationModeMenu() {
+  if (authorizationModeUpdating.value) return;
+  authorizationModeMenuOpen.value = !authorizationModeMenuOpen.value;
+  if (authorizationModeMenuOpen.value) {
+    nextTick(() => {
+      const selected = authorizationModeMenu.value?.querySelector<HTMLButtonElement>("[aria-checked='true']");
+      selected?.focus();
+    });
+  }
+}
+
+function handleAuthorizationModeMenuKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    authorizationModeMenuOpen.value = false;
+    authorizationModeTrigger.value?.focus();
+    return;
+  }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const options = Array.from(authorizationModeMenu.value?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+  if (!options.length) return;
+  event.preventDefault();
+  const current = options.indexOf(document.activeElement as HTMLButtonElement);
+  const step = event.key === "ArrowDown" ? 1 : -1;
+  const next = current < 0 ? (step > 0 ? 0 : options.length - 1) : (current + step + options.length) % options.length;
+  options[next]?.focus();
+}
+
+async function chooseAuthorizationMode(mode: SessionAuthorizationMode) {
+  if (authorizationModeUpdating.value || mode === sessionAuthorizationMode.value) {
+    authorizationModeMenuOpen.value = false;
+    return;
+  }
+  authorizationModeUpdating.value = true;
+  authorizationModeMenuOpen.value = false;
+  try {
+    await sessionStore.setAuthorizationMode(props.sessionId, mode);
+  } catch (error) {
+    agent.errors = [...agent.errors, {
+      sessionId: props.sessionId,
+      code: "authorization_mode_update_failed",
+      message: error instanceof Error ? error.message : t("chat.authorizationMode.updateFailed"),
+    }];
+  } finally {
+    authorizationModeUpdating.value = false;
+    nextTick(() => authorizationModeTrigger.value?.focus());
+  }
+}
+
+function boundedPermissionText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
 
 function compactTokenCount(value?: number): string {
   if (value == null) return "";
@@ -480,8 +586,16 @@ async function revealNotificationMessage(messageId?: string) {
 }
 
 function closeOutlineOnOutsideClick(event: MouseEvent) {
-  if (!showOutline.value) return;
   const target = event.target;
+  if (composerAddMenuOpen.value && target instanceof Element && !target.closest(".composer-input-wrap")) {
+    composerAddMenuOpen.value = false;
+  }
+  if (
+    authorizationModeMenuOpen.value
+    && target instanceof Element
+    && !target.closest(".authorization-mode-control")
+  ) authorizationModeMenuOpen.value = false;
+  if (!showOutline.value) return;
   if (target instanceof Element && target.closest(".outline-panel, .outline-entry")) return;
   showOutline.value = false;
 }
@@ -513,6 +627,7 @@ function editFailedMessage(m: { id: string; role: string; parts: MessagePart[] }
   attachedImages.value = m.parts
     .filter((part): part is Extract<MessagePart, { kind: "image" }> => part.kind === "image")
     .map((part) => ({
+      id: nextComposerTokenId("image"),
       name: part.name,
       mediaType: part.mediaType,
       data: part.data,
@@ -521,7 +636,19 @@ function editFailedMessage(m: { id: string; role: string; parts: MessagePart[] }
     }));
   agent.dismissPromptErrors(props.sessionId);
   agent.removeLocalMessage(props.sessionId, m.id);
-  nextTick(() => document.querySelector<HTMLTextAreaElement>(".composer-input textarea")?.focus());
+  nextTick(() => {
+    promptEditorRef.value?.setText(input.value);
+    for (const file of attachedFiles.value) {
+      addComposerResource({ resourceId: file.id, kind: "file", label: file.name, icon: "📄", value: "" });
+    }
+    for (const name of selectedSkills.value) {
+      addComposerResource({ resourceId: name, kind: "skill", label: name, icon: "✳", value: "" });
+    }
+    for (const image of attachedImages.value) {
+      addComposerResource({ resourceId: image.id, kind: "image", label: image.name, icon: "🖼️", value: "" });
+    }
+    promptEditorRef.value?.focus();
+  });
 }
 
 async function copyMessage(m: { id: string; role: string; parts: MessagePart[] }) {
@@ -620,7 +747,7 @@ function toolArtifacts(result: unknown): ArtifactItem[] {
       typeof record.path === "string"
       && typeof record.name === "string"
       && typeof record.mimeType === "string"
-      && (record.path.startsWith("browser/") || record.path.startsWith("computer/"))
+      && (record.path.startsWith("browser/") || record.path.startsWith("computer/") || record.source === "agent_browser")
     ) {
       found.push({
         path: record.path,
@@ -657,6 +784,7 @@ function send() {
     : undefined;
   agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`, imageAttachments);
   input.value = "";
+  promptEditorRef.value?.clear();
   selectedSkills.value = [];
   attachedFiles.value = [];
   attachedImages.value = [];
@@ -666,15 +794,19 @@ function send() {
 function onSkillSelect(name: string) {
   if (!selectedSkills.value.includes(name)) {
     selectedSkills.value = [...selectedSkills.value, name];
+    addComposerResource({ resourceId: name, kind: "skill", label: name, icon: "✳", value: "" });
   }
-  nextTick(() => {
-    const el = document.querySelector<HTMLTextAreaElement>(".composer-input textarea");
-    el?.focus();
-  });
+  composerAddMenuOpen.value = false;
 }
 
-function removeSkill(name: string) {
-  selectedSkills.value = selectedSkills.value.filter((n) => n !== name);
+function importSkill() {
+  composerAddMenuOpen.value = false;
+  showImportSkill.value = true;
+}
+
+function manageConnectors() {
+  composerAddMenuOpen.value = false;
+  emit("manage-connectors");
 }
 
 const isComposing = ref(false);
@@ -903,23 +1035,32 @@ const permissionMessage = computed(() => {
   const pending = pendingPermission.value;
   if (!pending) return "";
   const intent = pending.intent
-    ? `\n${t("plugins.permissionIntent", { intent: pending.intent })}`
+    ? `\n${t("plugins.permissionIntent", { intent: boundedPermissionText(pending.intent, 180) })}`
     : "";
   const url = pending.context?.url
-    ? `\n${t("plugins.permissionUrl", { url: pending.context.url })}`
+    ? `\n${t("plugins.permissionUrl", { url: boundedPermissionText(pending.context.url, 300) })}`
     : "";
   const target = pending.context?.target
-    ? `\n${t("plugins.permissionTarget", { target: pending.context.target })}`
+    ? `\n${t("plugins.permissionTarget", { target: boundedPermissionText(pending.context.target, 180) })}`
     : "";
   const windowId = pending.context?.windowId
-    ? `\n${t("plugins.permissionWindow", { windowId: pending.context.windowId })}`
+    ? `\n${t("plugins.permissionWindow", { windowId: boundedPermissionText(pending.context.windowId, 100) })}`
     : "";
   const files = pending.context?.files?.length
-    ? `\n${t("plugins.permissionFiles", { files: pending.context.files.join(", ") })}`
+    ? `\n${t("plugins.permissionFiles", {
+      files: pending.context.files.slice(0, 8).map((file) => boundedPermissionText(file, 160)).join(", "),
+    })}`
     : "";
-  return `${pending.reason}\n${t("plugins.permissionAction", {
-    plugin: pending.pluginId ?? pending.toolName ?? pending.source,
-    action: pending.action,
+  const isCoreTool = pending.source === "core_tool" && Boolean(pending.toolName);
+  const tool = isCoreTool
+    ? t(`plugins.permissionCoreTool.${pending.toolName}`)
+    : pending.pluginId ?? pending.toolName ?? pending.source;
+  const action = isCoreTool
+    ? t(`plugins.permissionCoreAction.${pending.toolName}`)
+    : pending.action;
+  return `${boundedPermissionText(pending.reason, 400)}\n${t("plugins.permissionAction", {
+    tool: boundedPermissionText(tool, 100),
+    action: boundedPermissionText(action, 240),
   })}${intent}${url}${target}${windowId}${files}`;
 });
 
@@ -1194,45 +1335,6 @@ defineExpose({ revealNotificationMessage });
         <span class="tip-banner-label">{{ pendingTipLabel }}</span>
         <span class="tip-banner-hint">{{ t('chat.tipAutoAttached') }}</span>
       </div>
-      <div v-if="selectedSkills.length" class="skill-chips">
-        <span v-for="name in selectedSkills" :key="name" class="skill-chip">
-          <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
-            <path d="M6 1.2l4.2 2.4v4.8L6 10.8 1.8 8.4V3.6z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-            <circle cx="6" cy="6" r="1.4" fill="currentColor" />
-          </svg>
-          <span class="chip-name">{{ name }}</span>
-          <button class="chip-remove" :title="t('skill.uninstall')" @click="removeSkill(name)">
-            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            </svg>
-          </button>
-        </span>
-      </div>
-      <div v-if="attachedFiles.length" class="file-chips">
-        <span v-for="(f, i) in attachedFiles" :key="f.name + i" class="file-chip">
-          <svg class="chip-icon" width="11" height="11" viewBox="0 0 12 12" fill="none">
-            <path d="M3 1.5h4L9 3.5v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-8a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-            <path d="M7 1.5v2h2" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" />
-          </svg>
-          <span class="chip-name">{{ f.name }}</span>
-          <span class="chip-meta">{{ formatFileSize(f.size) }}</span>
-          <button class="chip-remove" :title="t('kb.file.delete')" @click="removeAttachedFile(i)">
-            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            </svg>
-          </button>
-        </span>
-      </div>
-      <div v-if="attachedImages.length" class="image-previews">
-        <span v-for="(img, i) in attachedImages" :key="img.name + i" class="image-preview-chip">
-          <img :src="img.previewUrl" :alt="img.name" class="image-preview-thumb" />
-          <button class="chip-remove" :title="t('kb.file.delete')" @click="removeAttachedImage(i)">
-            <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-              <path d="M2 2l5 5M7 2l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            </svg>
-          </button>
-        </span>
-      </div>
       <input
         ref="fileInputEl"
         type="file"
@@ -1241,86 +1343,155 @@ defineExpose({ revealNotificationMessage });
         :accept="ALL_EXTS_ACCEPT"
         @change="onFilePicked"
       />
-      <!-- Toolbar: upload + skill + expert + KB -->
-      <div class="composer-toolbar">
-        <button class="tool-btn" :title="t('chat.upload')" @click="triggerFilePick">
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path d="M7 9.5V2M4 4.5L7 1.5l3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M2 9v2.5a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-          </svg>
-          <span class="tool-btn-label">{{ t('chat.upload') }}</span>
-        </button>
-        <ChatCapabilityToolbar
-          mode="session"
-          :session-id="sessionId"
-          :project-id="projectId"
-          :disabled="isBusy"
-          @select-skill="onSkillSelect"
-          @import-skill="showImportSkill = true"
-          @manage-connectors="emit('manage-connectors')"
-        />
-        <span
-          v-if="compaction"
-          class="compaction-status"
-          :class="compaction.phase"
-          :title="compaction.error || t('chat.compactionHint')"
-        >
-          <span v-if="compaction.phase === 'started'" class="compaction-spinner"></span>
-          <span v-else class="compaction-icon">↻</span>
-          {{ compactionLabel }}
-        </span>
-      </div>
-      <!-- Input with embedded send button -->
       <div class="composer-input-wrap">
-        <NInput
-          v-model:value="input"
-          type="textarea"
-          :rows="3"
-          :autosize="{ minRows: 3, maxRows: 5 }"
+        <ComposerPromptEditor
+          ref="promptEditorRef"
           :placeholder="t('chat.placeholder')"
+          @update="input = $event"
           @keydown="handleKeySend"
           @compositionstart="isComposing = true"
           @compositionend="isComposing = false"
           @paste="handlePaste"
-          class="composer-input"
+          @remove-token="onRemoveComposerToken"
         />
-        <div class="composer-actions">
-          <NSelect
-            v-if="agent.models.length"
-            :value="agent.currentModel"
-            :options="modelSelectOptions"
-            size="small"
-            :placeholder="t('model.selectForChat')"
-            class="composer-model-select"
-            @update:value="agent.switchModel($event, sessionId)"
-          />
-          <button
-            v-if="isBusy"
-            class="send-btn stop embedded"
-            @click="agent.interrupt(props.sessionId)"
-            :title="t('chat.stop')"
-            :aria-label="t('chat.stop')"
+        <div class="composer-footer">
+          <div class="composer-add-and-auth">
+            <button
+              type="button"
+              class="composer-add-trigger"
+              :aria-label="t('chat.addMenu')"
+              :aria-expanded="composerAddMenuOpen"
+              aria-haspopup="dialog"
+              aria-controls="composer-add-menu"
+              @mousedown="promptEditorRef?.saveSelection()"
+              @click="composerAddMenuOpen = !composerAddMenuOpen"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M9 3.5v11M3.5 9h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+              </svg>
+            </button>
+            <div class="authorization-mode-control">
+              <button
+                ref="authorizationModeTrigger"
+                type="button"
+                class="authorization-mode-trigger"
+                :class="{ 'full-access': sessionAuthorizationMode === 'full_access' }"
+                :aria-label="t('chat.authorizationMode.control')"
+                :aria-expanded="authorizationModeMenuOpen"
+                aria-haspopup="menu"
+                :aria-controls="`authorization-mode-menu-${sessionId}`"
+                :disabled="authorizationModeUpdating"
+                @click="toggleAuthorizationModeMenu"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 1.5 13 3.4v4.1c0 3.1-2 5.5-5 7-3-1.5-5-3.9-5-7V3.4L8 1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  <path v-if="sessionAuthorizationMode === 'full_access'" d="m5.5 7.8 1.7 1.7 3.4-3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>{{ t(`chat.authorizationMode.${sessionAuthorizationMode}`) }}</span>
+                <svg class="authorization-mode-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                  <path d="m2 3.5 3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div
+                v-if="authorizationModeMenuOpen"
+                :id="`authorization-mode-menu-${sessionId}`"
+                ref="authorizationModeMenu"
+                class="authorization-mode-menu"
+                role="menu"
+                :aria-label="t('chat.authorizationMode.control')"
+                @keydown="handleAuthorizationModeMenuKeydown"
+              >
+                <button
+                  v-for="option in authorizationModeOptions"
+                  :key="option.mode"
+                  type="button"
+                  class="authorization-mode-option"
+                  :class="{ selected: sessionAuthorizationMode === option.mode, emphasized: option.mode === 'full_access' }"
+                  role="menuitemradio"
+                  :aria-checked="sessionAuthorizationMode === option.mode"
+                  @click="chooseAuthorizationMode(option.mode)"
+                >
+                  <span class="authorization-mode-option-copy">
+                    <span class="authorization-mode-option-label">{{ option.label }}</span>
+                    <span class="authorization-mode-option-description">{{ option.description }}</span>
+                  </span>
+                  <svg v-if="sessionAuthorizationMode === option.mode" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="m3.5 8.3 2.7 2.7 6.3-6.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            v-if="composerAddMenuOpen"
+            id="composer-add-menu"
+            class="composer-add-popover"
+            role="dialog"
+            :aria-label="t('chat.addMenu')"
+            @mousedown="promptEditorRef?.saveSelection()"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            v-else
-            class="send-btn embedded"
-            :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
-            @click="send"
-            :title="t('chat.send')"
-            :aria-label="t('chat.send')"
-          >
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M2 9l14-7-7 14V9H2z"
-                fill="currentColor"
-              />
-            </svg>
-            <span class="send-label">{{ t('chat.send') }}</span>
-          </button>
+            <div class="composer-add-heading">{{ t('chat.addMenu') }}</div>
+            <ChatCapabilityToolbar
+              :menu-layout="true"
+              mode="session"
+              :session-id="sessionId"
+              :project-id="projectId"
+              :disabled="isBusy"
+              @select-skill="onSkillSelect"
+              @resource-selected="addComposerResource"
+              @pick-files="triggerFilePick"
+              @import-skill="importSkill"
+              @manage-connectors="manageConnectors"
+            />
+          </div>
+          <div class="composer-actions">
+            <span
+              v-if="compaction"
+              class="compaction-status"
+              :class="compaction.phase"
+              :title="compaction.error || t('chat.compactionHint')"
+            >
+              <span v-if="compaction.phase === 'started'" class="compaction-spinner"></span>
+              <span v-else class="compaction-icon">↻</span>
+              {{ compactionLabel }}
+            </span>
+            <NSelect
+              v-if="agent.models.length"
+              :value="agent.currentModel"
+              :options="modelSelectOptions"
+              size="small"
+              :placeholder="t('model.selectForChat')"
+              class="composer-model-select"
+              @update:value="agent.switchModel($event, sessionId)"
+            />
+            <button
+              v-if="isBusy"
+              class="send-btn stop embedded"
+              @click="agent.interrupt(props.sessionId)"
+              :title="t('chat.stop')"
+              :aria-label="t('chat.stop')"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              v-else
+              class="send-btn embedded"
+              :disabled="!input.trim() && !selectedSkills.length && !attachedFiles.length && !attachedImages.length"
+              @click="send"
+              :title="t('chat.send')"
+              :aria-label="t('chat.send')"
+            >
+              <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M2 9l14-7-7 14V9H2z"
+                  fill="currentColor"
+                />
+              </svg>
+              <span class="send-label">{{ t('chat.send') }}</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="composer-token-usage">
@@ -1334,7 +1505,7 @@ defineExpose({ revealNotificationMessage });
       @close="showImportSkill = false"
     />
     <ConfirmDialog
-      data-test="plugin-permission-dialog"
+      data-test="tool-permission-dialog"
       :show="Boolean(pendingPermission)"
       :title="t('plugins.permissionTitle')"
       :message="permissionMessage"
@@ -1354,7 +1525,7 @@ defineExpose({ revealNotificationMessage });
 
 <style scoped>
 .chat-panel {
-  --chat-content-gutter: clamp(96px, 15vw, 280px);
+  --chat-content-gutter: clamp(16px, 15%, 280px);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -2076,7 +2247,6 @@ defineExpose({ revealNotificationMessage });
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   color: var(--text-muted);
   font-size: 10px;
   white-space: nowrap;
@@ -2121,20 +2291,6 @@ defineExpose({ revealNotificationMessage });
   font-size: 10px;
   line-height: 1.4;
 }
-
-.composer-toolbar {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-}
-
-.composer-toolbar > * {
-  flex-shrink: 0;
-}
-
 
 .tool-btn {
   display: flex;
@@ -2228,7 +2384,17 @@ defineExpose({ revealNotificationMessage });
 .composer-input-wrap {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  min-width: 0;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  background: var(--bg-surface);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.composer-input-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-default));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .composer-token-usage {
@@ -2238,27 +2404,219 @@ defineExpose({ revealNotificationMessage });
   padding: 0 2px;
 }
 
-.composer-input {
-  flex: 1;
-}
-.composer-input :deep(.n-input) {
-  background: var(--bg-surface);
-  /* reserve space on the right so embedded actions don't cover text */
-  padding-right: 240px;
-}
-.composer-input :deep(.n-input__textarea-el) {
-  background: transparent;
-  padding-right: 8px;
+.composer-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 7px;
 }
 
-/* Actions container — model select + send button at bottom-right of the input */
-.composer-actions {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
+.composer-add-and-auth {
   display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.composer-add-trigger {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.composer-add-trigger:hover,
+.composer-add-trigger[aria-expanded="true"],
+.composer-add-trigger:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.composer-add-popover {
+  box-sizing: border-box;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  max-height: min(60vh, 520px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(16px);
+}
+
+.composer-add-heading {
+  flex: 0 0 auto;
+  padding: 12px 16px 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.composer-add-popover :deep(.capability-menu) {
+  flex: 0 0 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.composer-add-popover :deep(.capability-menu-categories) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.composer-add-popover :deep(.capability-menu-detail) {
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.composer-actions {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
+}
+
+.authorization-mode-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  z-index: 3;
+}
+
+.authorization-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 166px;
+  height: 30px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.authorization-mode-trigger:hover:not(:disabled),
+.authorization-mode-trigger[aria-expanded="true"],
+.authorization-mode-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default));
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.authorization-mode-trigger.full-access {
+  border-color: transparent;
+  color: var(--orange, #f28b45);
+  background: transparent;
+}
+
+.authorization-mode-trigger.full-access:hover:not(:disabled),
+.authorization-mode-trigger.full-access[aria-expanded="true"],
+.authorization-mode-trigger.full-access:focus-visible {
+  border-color: color-mix(in srgb, var(--orange, #f28b45) 45%, var(--border-default));
+  background: color-mix(in srgb, var(--orange, #f28b45) 10%, var(--bg-surface));
+}
+
+.authorization-mode-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.authorization-mode-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.authorization-mode-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.authorization-mode-menu {
+  position: absolute;
+  left: 0;
+  bottom: 38px;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(16px);
+}
+
+.authorization-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.authorization-mode-option:hover,
+.authorization-mode-option:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.authorization-mode-option.selected {
+  background: var(--accent-dim);
+}
+
+.authorization-mode-option.emphasized .authorization-mode-option-label,
+.authorization-mode-option.emphasized > svg {
+  color: var(--orange, #f28b45);
+}
+
+.authorization-mode-option-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.authorization-mode-option-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.authorization-mode-option-description {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .composer-model-select {

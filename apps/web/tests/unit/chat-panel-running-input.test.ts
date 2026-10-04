@@ -58,10 +58,6 @@ describe("ChatPanel running input", () => {
       props: { sessionId: "s1", projectId: "p1" },
       global: {
         stubs: {
-          Input: {
-            template: '<textarea :value="value" @input="$emit(\'update:value\', $event.target.value)" @keydown="$emit(\'keydown\', $event)"></textarea>',
-            props: ["value"],
-          },
           SkillSelect: true,
           PluginSelect: true,
           ChatExpertPicker: true,
@@ -73,13 +69,14 @@ describe("ChatPanel running input", () => {
       },
     });
 
-    const textarea = wrapper.get("textarea");
-    await textarea.setValue("下一条草稿");
-    await textarea.trigger("keydown", { key: "Enter", shiftKey: false });
+    const editor = wrapper.get('[data-test="composer-prompt-editor"]');
+    editor.element.textContent = "下一条草稿";
+    await editor.trigger("input");
+    await editor.trigger("keydown", { key: "Enter", shiftKey: false });
 
     expect(interrupt).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-    expect((textarea.element as HTMLTextAreaElement).value).toBe("下一条草稿");
+    expect(editor.text()).toBe("下一条草稿");
     expect(wrapper.get(".composer-busy-hint").text()).toContain("先编辑下一条消息");
 
     await wrapper.get(".send-btn.stop").trigger("click");

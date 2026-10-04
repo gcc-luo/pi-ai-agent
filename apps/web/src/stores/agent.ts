@@ -375,10 +375,7 @@ export const useAgentStore = defineStore("agent", {
         return;
       }
       if (e.type === "session_updated") {
-        const sessionStore = useSessionStore();
-        const idx = sessionStore.sessions.findIndex((s) => s.id === e.session.id);
-        if (idx >= 0) sessionStore.sessions.splice(idx, 1, e.session);
-        if (sessionStore.current?.id === e.session.id) sessionStore.current = e.session;
+        useSessionStore().applySession(e.session);
         return;
       }
       if (e.type === "model_changed") {

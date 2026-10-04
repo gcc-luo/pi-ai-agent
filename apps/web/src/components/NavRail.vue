@@ -5,6 +5,7 @@ import { useI18n } from "../i18n/index.js";
 import { useTrashStore } from "../stores/trash.js";
 import SettingsDialog from "./SettingsDialog.vue";
 import UpdateDialog from "./UpdateDialog.vue";
+import CapabilityCategoryIcon from "./CapabilityCategoryIcon.vue";
 import { useUpdateStore } from "../stores/update.js";
 import { isTauri } from "../utils/platform.js";
 
@@ -87,9 +88,7 @@ watch(() => updateStore.status, (newStatus) => {
         :class="{ active: activeNav === 'skill-store' }"
         @click="$emit('navigate', 'skill-store')"
       >
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M3 6l1.5-2.5h9L15 6M3 6v8a1 1 0 001 1h10a1 1 0 001-1V6M3 6h12M7 10h4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>
+        <CapabilityCategoryIcon class="nav-icon" name="skills" />
         <span class="nav-label">{{ t('nav.skillStore') }}</span>
       </button>
 
@@ -98,19 +97,12 @@ watch(() => updateStore.status, (newStatus) => {
         :class="{ active: activeNav === 'plugins' }"
         @click="$emit('navigate', 'plugins')"
       >
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M6.2 3.2V1.8M11.8 3.2V1.8M5 6h8v4.2a4 4 0 01-4 4H8a3 3 0 01-3-3V6z" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M9 14.2V16M4 6h10" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
-        </svg>
+        <CapabilityCategoryIcon class="nav-icon" name="plugins" />
         <span class="nav-label">{{ t('nav.plugins') }}</span>
       </button>
 
       <button class="nav-item" :class="{ active: activeNav === 'connectors' }" @click="$emit('navigate', 'connectors')">
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="m7.1 10.9-1.3 1.3a2.5 2.5 0 0 1-3.5-3.5l2-2a2.5 2.5 0 0 1 3.5 0" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
-          <path d="m10.9 7.1 1.3-1.3a2.5 2.5 0 0 1 3.5 3.5l-2 2a2.5 2.5 0 0 1-3.5 0" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
-          <path d="m6.5 11.5 5-5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
-        </svg>
+        <CapabilityCategoryIcon class="nav-icon" name="connectors" />
         <span class="nav-label">{{ t('nav.connectors') }}</span>
       </button>
 
@@ -119,10 +111,7 @@ watch(() => updateStore.status, (newStatus) => {
         :class="{ active: activeNav === 'knowledge-base' }"
         @click="$emit('navigate', 'knowledge-base')"
       >
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <path d="M3 3h4a2 2 0 012 2v10a1.5 1.5 0 00-1.5-1.5H3V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-          <path d="M15 3h-4a2 2 0 00-2 2v10a1.5 1.5 0 011.5-1.5H15V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
-        </svg>
+        <CapabilityCategoryIcon class="nav-icon" name="knowledge" />
         <span class="nav-label">{{ t('nav.knowledgeBase') }}</span>
       </button>
 
@@ -131,10 +120,7 @@ watch(() => updateStore.status, (newStatus) => {
         :class="{ active: activeNav === 'experts' }"
         @click="$emit('navigate', 'experts')"
       >
-        <svg class="nav-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-          <circle cx="9" cy="6" r="3" stroke="currentColor" stroke-width="1.4"/>
-          <path d="M3 16c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-        </svg>
+        <CapabilityCategoryIcon class="nav-icon" name="experts" />
         <span class="nav-label">{{ t('nav.experts') }}</span>
       </button>
 

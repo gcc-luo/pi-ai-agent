@@ -45,12 +45,24 @@ describe("ChatPanel plugin selection", () => {
         stubs: {
           Modal: { template: "<div><slot /></div>" },
           Input: { template: "<textarea />" },
+          NPopover: {
+            props: ["show"],
+            emits: ["update:show"],
+            template: `<div>
+              <span @click="$emit('update:show', !show)"><slot name="trigger" /></span>
+              <div v-if="show"><slot /></div>
+            </div>`,
+          },
         },
       },
     });
     await flushPromises();
+    await wrapper.get(".composer-add-trigger").trigger("click");
+    await flushPromises();
+    await wrapper.findAll(".capability-menu-category").at(3)!.trigger("click");
+    await flushPromises();
 
-    expect(wrapper.find("[data-test='session-plugin-select']").exists()).toBe(true);
+    expect(wrapper.find(".plugin-picker-item").text()).toContain("Browser Use");
     const pluginStore = usePluginStore();
     await pluginStore.setSessionPlugins("s1", ["browser-use"]);
     await flushPromises();

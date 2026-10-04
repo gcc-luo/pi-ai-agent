@@ -9,6 +9,7 @@ const emit = defineEmits<{
   (e: "select", name: string): void;
   (e: "import"): void;
 }>();
+const props = defineProps<{ inline?: boolean }>();
 
 const skillStore = useSkillStore();
 const { t } = useI18n();
@@ -42,7 +43,7 @@ async function confirmUninstall() {
 
 <template>
   <div class="skill-select">
-    <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="320">
+    <NPopover v-if="!props.inline" v-model:show="showPopover" placement="top-start" trigger="click" :width="320">
       <template #trigger>
         <button class="skill-trigger" :class="{ active: skillStore.skills.length }" :title="t('skill.dropdown')">
           <svg width="12" height="12" viewBox="0 0 18 18" fill="none">
@@ -94,6 +95,48 @@ async function confirmUninstall() {
         </div>
       </div>
     </NPopover>
+
+    <div v-else class="skill-picker-body">
+      <div class="skill-picker-header">
+        <span class="skill-picker-title">{{ t('skill.dropdown') }}</span>
+        <span class="skill-picker-hint">{{ skillStore.skills.length }}</span>
+      </div>
+
+      <div v-if="!skillStore.skills.length" class="skill-picker-empty">
+        {{ t('skill.empty') }}
+      </div>
+
+      <div v-else class="skill-picker-list">
+        <div
+          v-for="s in skillStore.skills"
+          :key="s.name"
+          class="skill-item"
+          data-test="skill-item"
+          @click="selectSkill(s.name)"
+        >
+          <div class="skill-info">
+            <div class="skill-name">{{ s.name }}</div>
+            <div class="skill-desc">{{ s.description }}</div>
+          </div>
+          <button
+            class="uninstall-btn"
+            data-test="uninstall-btn"
+            :title="t('skill.uninstall')"
+            @click.stop="requestUninstall(s.name)"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M3 3v7a1 1 0 001 1h4a1 1 0 001-1V3M2 3h8M5 3V2h2v1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-footer">
+        <button class="import-btn" data-test="skill-import-btn" @click="emit('import')">
+          + {{ t('skill.import') }}
+        </button>
+      </div>
+    </div>
 
     <ConfirmDialog
       :show="uninstallTarget !== null"

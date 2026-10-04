@@ -14,6 +14,39 @@ describe("ChatPanel assistant presentation", () => {
     expect(source).toContain("v-if=\"!m.statusOnly && m.showMessageActions && !m.streaming\"");
   });
 
+  it("groups file and capability selection under one composer add menu", async () => {
+    const source = await readFile(componentPath, "utf8");
+    expect(source.includes('class="composer-add-trigger"')).toBe(true);
+    expect(source.includes('position: absolute;')).toBe(true);
+    expect(source.includes('bottom: calc(100% + 8px);')).toBe(true);
+    expect(source.includes("<ChatCapabilityToolbar")).toBe(true);
+    expect(source.includes(':menu-layout="true"')).toBe(true);
+    expect(source.includes('class="composer-toolbar"')).toBe(false);
+  });
+
+  it("anchors model selection and send controls to the right side of the composer", async () => {
+    const source = await readFile(componentPath, "utf8");
+    const actionsStart = source.indexOf('<div class="composer-actions">');
+    const compactionIndex = source.indexOf('class="compaction-status"');
+    const modelIndex = source.indexOf('class="composer-model-select"');
+    const sendIndex = source.indexOf('class="send-btn embedded"');
+    const actionsStyles = source.slice(source.indexOf(".composer-actions {"));
+
+    expect(actionsStart).toBeGreaterThan(-1);
+    expect(compactionIndex).toBeGreaterThan(actionsStart);
+    expect(modelIndex).toBeGreaterThan(actionsStart);
+    expect(sendIndex).toBeGreaterThan(modelIndex);
+    expect(actionsStyles).toContain("margin-left: auto;");
+  });
+
+  it("uses a caret-aware prompt editor for inline selected-resource chips", async () => {
+    const source = await readFile(componentPath, "utf8");
+
+    expect(source.includes('import ComposerPromptEditor from "./ComposerPromptEditor.vue"')).toBe(true);
+    expect(source.includes("<ComposerPromptEditor")).toBe(true);
+    expect(source.includes("addComposerResource")).toBe(true);
+  });
+
   it("does not force the conversation to scroll when toggling agent history", async () => {
     const source = await readFile(componentPath, "utf8");
     const toggleStart = source.indexOf("function toggleRun(");

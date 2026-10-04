@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { api } from "../api/client.js";
-import type { SessionDto, MessageDto } from "@pi-web-ui/shared";
+import type { SessionDto, SessionAuthorizationMode, MessageDto } from "@pi-web-ui/shared";
 
 export const useSessionStore = defineStore("sessions", {
   state: () => ({
@@ -34,6 +34,23 @@ export const useSessionStore = defineStore("sessions", {
       if (idx >= 0) this.sessions.splice(idx, 1, updated);
       if (this.current?.id === id) this.current = updated;
       return updated;
+    },
+    async setAuthorizationMode(id: string, authorizationMode: SessionAuthorizationMode) {
+      const previous = this.sessions.find((session) => session.id === id)
+        ?? (this.current?.id === id ? this.current : null);
+      if (previous) this.applySession({ ...previous, authorizationMode });
+      try {
+        const updated = await api.updateSessionAuthorizationMode(id, authorizationMode);
+        this.applySession(updated);
+        return updated;
+      } catch (error) {
+        const current = this.sessions.find((session) => session.id === id)
+          ?? (this.current?.id === id ? this.current : null);
+        if (previous && current?.authorizationMode === authorizationMode) {
+          this.applySession(previous);
+        }
+        throw error;
+      }
     },
     async remove(id: string) {
       await api.deleteSession(id);

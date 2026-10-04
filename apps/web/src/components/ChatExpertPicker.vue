@@ -9,9 +9,13 @@ import type { ExpertDto } from "@pi-web-ui/shared";
 const props = defineProps<{
   sessionId?: string;
   draft?: boolean;
+  inline?: boolean;
   modelValue?: string | null;
 }>();
-const emit = defineEmits<{ (event: "update:modelValue", value: string | null): void }>();
+const emit = defineEmits<{
+  (event: "update:modelValue", value: string | null): void;
+  (event: "selected", value: ExpertDto): void;
+}>();
 
 const expertStore = useExpertStore();
 const sessionStore = useSessionStore();
@@ -41,6 +45,7 @@ async function selectExpert(expert: ExpertDto) {
   if (saving.value || expert.id === selectedExpertId.value) return;
   if (props.draft) {
     emit("update:modelValue", expert.id);
+    emit("selected", expert);
     showPopover.value = false;
     return;
   }
@@ -48,6 +53,7 @@ async function selectExpert(expert: ExpertDto) {
   saving.value = true;
   try {
     await sessionStore.setExpert(props.sessionId, expert.id);
+    emit("selected", expert);
     showPopover.value = false;
   } finally {
     saving.value = false;
@@ -73,7 +79,7 @@ async function clearExpert() {
 </script>
 
 <template>
-  <NPopover v-model:show="showPopover" placement="top-start" trigger="click" :width="340">
+  <NPopover v-if="!props.inline" v-model:show="showPopover" placement="top-start" trigger="click" :width="340">
     <template #trigger>
       <button
         class="expert-picker-trigger"
@@ -125,7 +131,41 @@ async function clearExpert() {
       </div>
     </div>
   </NPopover>
-  <span v-if="selectedExpert" class="active-expert-chip" :title="t('expert.chat.active', { name: selectedExpert.name })">
+  <div v-else class="expert-picker-body">
+    <div class="expert-picker-header">
+      <span class="expert-picker-title">{{ t('expert.chat.pick') }}</span>
+      <button
+        v-if="selectedExpert"
+        class="expert-clear"
+        :disabled="saving"
+        @click="clearExpert"
+      >{{ t('expert.chat.clear') }}</button>
+    </div>
+    <p class="expert-picker-hint">{{ t('expert.chat.hint') }}</p>
+    <div v-if="!expertStore.experts.length" class="expert-picker-empty">
+      {{ t('expert.empty') }}
+    </div>
+    <div v-else class="expert-picker-list">
+      <button
+        v-for="expert in expertStore.experts"
+        :key="expert.id"
+        class="expert-picker-item"
+        :class="{ selected: expert.id === selectedExpertId }"
+        :disabled="saving"
+        @click="selectExpert(expert)"
+      >
+        <span class="expert-item-icon">{{ expert.icon }}</span>
+        <span class="expert-item-copy">
+          <span class="expert-item-name">{{ expert.name }}</span>
+          <span class="expert-item-description">{{ expert.description }}</span>
+        </span>
+        <svg v-if="expert.id === selectedExpertId" class="expert-selected-mark" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="M2.5 7.2l2.8 2.8 6.2-6.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+  </div>
+  <span v-if="!props.inline && selectedExpert" class="active-expert-chip" :title="t('expert.chat.active', { name: selectedExpert.name })">
     <span>{{ selectedExpert.icon }}</span>{{ selectedExpert.name }}
     <button class="active-expert-clear" :disabled="saving" :title="t('expert.chat.clear')" @click="clearExpert">×</button>
   </span>
