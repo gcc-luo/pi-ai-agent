@@ -290,8 +290,8 @@ export async function runComputerAction(
     }
     if (action === "focus_window") {
       const requestedId = typeof args.windowId === "string" ? args.windowId.trim() : "";
-      const active = await bindableActiveWindow();
       if (!requestedId) {
+        const active = await bindableActiveWindow();
         return {
           ok: true,
           windowId: active.id,
@@ -300,16 +300,15 @@ export async function runComputerAction(
         };
       }
       const id = requiredString(requestedId, "windowId");
-      if (active.id === id) {
+      const target = await resolveWindow(id);
+      if (windowId(await getActiveWindow()) === id) {
         return {
           ok: true,
           windowId: id,
-          title: active.title,
+          title: target.record.title,
           activation: "already_active",
         };
       }
-      const target = await resolveWindow(id);
-
       let focusUnavailable = false;
       try {
         // macOS 直接尝试聚焦，避免额外依赖可能不可用的窗口恢复能力。
@@ -396,6 +395,7 @@ export async function runComputerAction(
         : await mouse.getPosition();
       await assertScreenPoint(point);
       await assertInputTarget(expectedWindowId, point);
+      if (delta === 0) return { ok: true, delta };
       if (hasX) await mouse.setPosition(point);
       const steps = Math.max(1, Math.round(Math.abs(delta) / 120));
       if (delta >= 0) await mouse.scrollUp(steps);
