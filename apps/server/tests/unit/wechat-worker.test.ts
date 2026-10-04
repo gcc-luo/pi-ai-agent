@@ -33,6 +33,7 @@ import { getWeChatWorker } from "../../src/channels/wechat-worker.js";
 describe("WeChat worker artifact delivery", () => {
   beforeEach(() => {
     sdk.reply.mockReset();
+    sdk.reply.mockResolvedValue(undefined);
     sdk.handler = null;
     getWeChatWorker().stop();
   });
@@ -53,14 +54,17 @@ describe("WeChat worker artifact delivery", () => {
     await sdk.handler?.(message);
 
     expect(sdk.reply.mock.calls).toEqual([
+      [message, "已收到，PI AI Agent 处理中"],
       [message, "文件已生成。"],
       [message, { file: Buffer.from("one"), fileName: "one.txt" }],
       [message, { file: Buffer.from("two"), fileName: "two.pdf" }],
+      [message, "✅ 文件传输完成：one.txt、two.pdf"],
     ]);
   });
 
   it("continues sending files and reports individual upload failures", async () => {
     sdk.reply
+      .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("upload failed"))
       .mockResolvedValue(undefined);
@@ -78,15 +82,15 @@ describe("WeChat worker artifact delivery", () => {
     const message = { userId: "wxid-user", text: "生成文件" };
     await sdk.handler?.(message);
 
-    expect(sdk.reply).toHaveBeenCalledTimes(4);
+    expect(sdk.reply).toHaveBeenCalledTimes(7);
     expect(sdk.reply).toHaveBeenNthCalledWith(
-      3,
+      5,
       message,
       { file: Buffer.from("good"), fileName: "good.pdf" },
     );
     expect(sdk.reply).toHaveBeenLastCalledWith(
       message,
-      "以下文件发送失败：missing.docx、bad.pdf",
+      "以下文件发送失败：missing.docx",
     );
   });
 
@@ -103,6 +107,7 @@ describe("WeChat worker artifact delivery", () => {
     await sdk.handler?.(message);
 
     expect(sdk.reply.mock.calls).toEqual([
+      [message, "已收到，PI AI Agent 处理中"],
       [message, "文件已生成。"],
       [message, "有 2 项产物声明无法解析，相关文件未发送。"],
     ]);
@@ -138,17 +143,21 @@ describe("WeChat worker artifact delivery", () => {
     const firstMessage = { userId: "same-user", text: "first" };
     const secondMessage = { userId: "same-user", text: "second" };
     const first = sdk.handler?.(firstMessage);
-    const second = sdk.handler?.(secondMessage);
-    await vi.waitFor(() => expect(sdk.reply).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(sdk.reply).toHaveBeenCalledTimes(3));
 
     expect(inbound).toHaveBeenCalledTimes(1);
+    const second = sdk.handler?.(secondMessage);
+    await vi.waitFor(() => expect(sdk.reply).toHaveBeenCalledTimes(4));
     releaseFirstUpload();
     await Promise.all([first, second]);
 
     expect(inbound).toHaveBeenCalledTimes(2);
     expect(sdk.reply.mock.calls).toEqual([
+      [firstMessage, "已收到，PI AI Agent 处理中"],
       [firstMessage, "first"],
       [firstMessage, { file: Buffer.from("first"), fileName: "first.pdf" }],
+      [secondMessage, "已收到，PI AI Agent 处理中"],
+      [firstMessage, "✅ 文件传输完成：first.pdf"],
       [secondMessage, "second"],
     ]);
   });

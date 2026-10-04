@@ -63,6 +63,34 @@ describe("ProcessManager", () => {
     ], expect.objectContaining({ cwd: "/tmp" }));
   });
 
+  it("loads the core authorization hook for every session and revokes its token on stop", async () => {
+    const securedManager = new ProcessManager({
+      spawn: spawner as any,
+      killProcessTree: (child) => child.kill(),
+      command: "pi",
+      args: ["--rpc"],
+      sessionRootDir,
+      authorizationExtensionPath: "authorization-gate.ts",
+      authorizationEndpoint: "http://127.0.0.1:8080/api/internal/authorization",
+      validateWorkdir: false,
+      logger: logger as any,
+    });
+    await securedManager.start({ sessionId: "secured", projectId: "p1", workdir: "/tmp" });
+
+    const [, args, options] = spawner.mock.calls[0]!;
+    const env = (options as { env: Record<string, string | undefined> }).env;
+    const token = env.PI_WEB_UI_AUTHORIZATION_TOKEN;
+    expect(args).toEqual(expect.arrayContaining(["--extension", "authorization-gate.ts"]));
+    expect(env.PI_WEB_UI_AUTHORIZATION_ENDPOINT).toBe("http://127.0.0.1:8080/api/internal/authorization");
+    expect(env.PI_WEB_UI_AUTHORIZATION_SESSION_ID).toBe("secured");
+    expect(token).toBeTruthy();
+    expect(securedManager.validateAuthorizationToken("secured", token)).toBe(true);
+
+    securedManager.stop("secured");
+    expect(securedManager.validateAuthorizationToken("secured", token)).toBe(false);
+    await securedManager.shutdown();
+  });
+
   it("reports a missing project workdir before spawning the agent", async () => {
     const validatingManager = new ProcessManager({
       spawn: spawner as any,

@@ -22,6 +22,28 @@ describe("classifyCoreToolRisk", () => {
     });
   });
 
+  it("classifies all local search and listing tools against the project boundary", () => {
+    withExistingProject((project) => {
+      for (const toolName of ["grep", "find", "ls"]) {
+        expect(classifyCoreToolRisk({ toolName, input: { path: "src" }, workdir: project }).risk).toBe("normal");
+        expect(classifyCoreToolRisk({ toolName, input: { path: "../private" }, workdir: project }).risk).toBe("sensitive");
+        expect(classifyCoreToolRisk({ toolName, input: {}, workdir: project }).risk).toBe("normal");
+      }
+    });
+  });
+
+  it.each(["~/.ssh/id_rsa", "file:///etc/passwd", "@/etc/passwd"])(
+    "classifies Pi-normalized external path %s as sensitive for every file tool",
+    (filePath) => {
+      withExistingProject((project) => {
+        for (const toolName of ["read", "write", "edit", "grep", "find", "ls"]) {
+          expect(classifyCoreToolRisk({ toolName, input: { path: filePath }, workdir: project }).risk)
+            .toBe("sensitive");
+        }
+      });
+    },
+  );
+
   it("classifies writes and edits inside the project as normal and outside as sensitive", () => {
     withExistingProject((project) => {
       for (const toolName of ["write", "edit"]) {

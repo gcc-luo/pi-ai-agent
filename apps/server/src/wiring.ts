@@ -71,6 +71,7 @@ import { McpRuntimeManager } from "./connectors/mcp-runtime.js";
 import { ConnectorService } from "./connectors/connector-service.js";
 import { connectorsRoutes } from "./routes/connectors.js";
 import { releaseRoutes } from "./routes/releases.js";
+import { authorizationRoutes } from "./routes/authorization.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -157,7 +158,7 @@ export async function buildConfiguredApp(config: Config) {
   (app as any).kbParseWorker = kbParseWorker;
   app.addHook("onReady", async () => kbParseWorker.start());
   app.addHook("onClose", async () => kbParseWorker.stop());
-  const browserManager = new BrowserSessionManager({ logger: app.log });
+  const browserManager = new BrowserSessionManager({ logger: app.log, sessionRoot: config.piSessionRootDir });
   (app as any).browserManager = browserManager;
   const computerManager = new ComputerSessionManager(app.log);
   (app as any).computerManager = computerManager;
@@ -206,6 +207,8 @@ export async function buildConfiguredApp(config: Config) {
   if (!fs.existsSync(connectorExtensionPath)) connectorExtensionPath = connectorExtensionPath.replace(/\.js$/, ".ts");
   let contextExtensionPath = fileURLToPath(new URL("./agent/extensions/context-policy.js", import.meta.url));
   if (!fs.existsSync(contextExtensionPath)) contextExtensionPath = contextExtensionPath.replace(/\.js$/, ".ts");
+  let authorizationExtensionPath = fileURLToPath(new URL("./agent/extensions/authorization-gate.js", import.meta.url));
+  if (!fs.existsSync(authorizationExtensionPath)) authorizationExtensionPath = authorizationExtensionPath.replace(/\.js$/, ".ts");
   let wechatFileTransferExtensionPath = fileURLToPath(
     new URL("./agent/extensions/wechat-file-transfer.js", import.meta.url),
   );
@@ -233,6 +236,8 @@ export async function buildConfiguredApp(config: Config) {
     connectorExtensionPath,
     connectorEndpoint: `http://127.0.0.1:${config.port}/api`,
     contextExtensionPath,
+    authorizationExtensionPath,
+    authorizationEndpoint: `http://127.0.0.1:${config.port}/api/internal/authorization`,
     hasConnectors: (projectId) => connectorRepository.list(projectId).some((connector) => connector.enabled),
     isPluginEnabled: (pluginId) => {
       if (pluginId === WECHAT_FILE_TRANSFER_PLUGIN_ID) return true;
@@ -304,6 +309,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(browserRoutes, { prefix: "/api" });
   await app.register(pluginsRoutes, { prefix: "/api" });
+  await app.register(authorizationRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
   await app.register(expertsRoutes, { prefix: "/api/experts" });
   await app.register(channelsRoutes, { prefix: "/api/channels" });

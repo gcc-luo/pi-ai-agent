@@ -9,15 +9,24 @@ async function fixture(options: {
   mode?: "risk_based" | "approve_each" | "full_access";
   approve?: boolean;
   browserEnabled?: boolean;
+  computerEnabled?: boolean;
   waitForDisconnect?: boolean;
+  waitForApproval?: boolean;
 } = {}) {
   const app = Fastify();
   let responseRaw: import("node:http").ServerResponse | undefined;
+  let pluginTokenActive = true;
+  let wechatActive = true;
+  let computerEnabled = options.computerEnabled ?? true;
+  let approvePending: ((approved: boolean) => void) | undefined;
   app.addHook("onRequest", (req, reply, done) => {
     responseRaw = reply.raw;
     done();
   });
   const permission = vi.fn((input: AuthorizationInput) => {
+    if (options.waitForApproval) {
+      return new Promise<boolean>((resolve) => { approvePending = resolve; });
+    }
     if (options.waitForDisconnect && input.signal) {
       return new Promise<boolean>((resolve) => {
         input.signal!.addEventListener("abort", () => resolve(false), { once: true });
@@ -36,17 +45,22 @@ async function fixture(options: {
   app.decorate("projects", { findById: () => ({ workdir: "/tmp" }) } as never);
   app.decorate("plugins", { appendAudit, update: vi.fn(), selectedForSession: () => [] } as never);
   app.decorate("pluginManager", {
-    activeForSession: () => options.browserEnabled === false ? [] : ["browser-use"],
+    activeForSession: () => [
+      ...(options.browserEnabled === false ? [] : ["browser-use"]),
+      ...(computerEnabled ? ["computer-use"] : []),
+    ],
     find: () => null,
   } as never);
   app.decorate("processManager", {
-    validatePluginToken: () => true,
-    isPluginActive: () => true,
+    validatePluginToken: () => pluginTokenActive,
+    isPluginActive: (_sessionId: string, pluginId: string) => pluginId !== "wechat-file-transfer" || wechatActive,
   } as never);
   app.decorate("pluginPermissions", { request: permission } as never);
   app.decorate("authorization", { authorize: authorization } as never);
   app.decorate("sessionStates", new Map([["s", { send: vi.fn() }]]) as never);
   app.decorate("browserManager", new BrowserSessionManager({ logger: app.log, sessionRoot: "/tmp/pi-auth-route-tests" }) as never);
+  const executeComputer = vi.fn(async () => ({ ok: true }));
+  app.decorate("computerManager", { sessionStatus: () => null, execute: executeComputer } as never);
   app.decorate("wechatFileTransfers", { sendFiles } as never);
   await app.register(pluginsRoutes);
 
@@ -62,7 +76,19 @@ async function fixture(options: {
     headers: { "x-pi-plugin-token": "token" },
     payload: { action: "sendFiles", args: { filePaths } },
   });
-  return { app, browser, sendWechat, permission, authorization, sendFiles, disconnect: () => responseRaw?.emit("close") };
+  const clickComputer = () => app.inject({
+    method: "POST",
+    url: "/internal/plugins/s/computer-use/action",
+    headers: { "x-pi-plugin-token": "token" },
+    payload: { action: "click", args: { x: 10, y: 20 } },
+  });
+  return {
+    app, browser, sendWechat, clickComputer, permission, authorization, sendFiles, executeComputer,
+    disconnect: () => responseRaw?.emit("close"),
+    revokeWechat: () => { pluginTokenActive = false; wechatActive = false; },
+    revokeComputer: () => { pluginTokenActive = false; computerEnabled = false; },
+    approvePending: (approved: boolean) => approvePending?.(approved),
+  };
 }
 
 describe("shared plugin authorization boundary", () => {
@@ -101,10 +127,26 @@ describe("shared plugin authorization boundary", () => {
   });
 
   it("does not make disabled plugins available in full_access", async () => {
-    const f = await fixture({ mode: "full_access", browserEnabled: false });
+    for (const mode of ["approve_each", "risk_based", "full_access"] as const) {
+      const f = await fixture({ mode, browserEnabled: false });
+      try {
+        expect((await f.browser("agent_browser", { args: ["snapshot"] })).statusCode).toBe(409);
+        expect(f.authorization).not.toHaveBeenCalled();
+      } finally {
+        await f.app.close();
+      }
+    }
+  });
+
+  it("skips computer and WeChat confirmations in full_access", async () => {
+    const f = await fixture({ mode: "full_access" });
     try {
-      expect((await f.browser("agent_browser", { args: ["snapshot"] })).statusCode).toBe(409);
-      expect(f.authorization).not.toHaveBeenCalled();
+      expect((await f.clickComputer()).json()).toEqual({ ok: true });
+      expect((await f.sendWechat(["/private/home/report.pdf"])).json()).toEqual({ ok: true });
+      expect(f.authorization).toHaveBeenCalledTimes(2);
+      expect(f.permission).not.toHaveBeenCalled();
+      expect(f.executeComputer).toHaveBeenCalledOnce();
+      expect(f.sendFiles).toHaveBeenCalledOnce();
     } finally {
       await f.app.close();
     }
@@ -149,6 +191,47 @@ describe("shared plugin authorization boundary", () => {
       expect(f.sendFiles).not.toHaveBeenCalled();
     } finally {
       await f.app.close();
+    }
+  });
+
+  it("does not send WeChat files after plugin authority is revoked during approval", async () => {
+    const f = await fixture({ mode: "risk_based", waitForApproval: true });
+    try {
+      const pending = f.sendWechat(["/private/home/report.pdf"]);
+      await vi.waitFor(() => expect(f.permission).toHaveBeenCalledOnce());
+      f.revokeWechat();
+      f.approvePending(true);
+      expect((await pending).statusCode).toBe(403);
+      expect(f.sendFiles).not.toHaveBeenCalled();
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it("does not execute computer actions after plugin authority is revoked during approval", async () => {
+    const f = await fixture({ mode: "risk_based", waitForApproval: true });
+    try {
+      const pending = f.clickComputer();
+      await vi.waitFor(() => expect(f.permission).toHaveBeenCalledOnce());
+      f.revokeComputer();
+      f.approvePending(true);
+      expect((await pending).json()).toMatchObject({ denied: true });
+      expect(f.executeComputer).not.toHaveBeenCalled();
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it("requires confirmation for browser navigation to non-web URL schemes", async () => {
+    for (const target of ["file:///tmp/private", "javascript:alert(1)", "data:text/html,hi", "custom:resource"]) {
+      const f = await fixture({ mode: "risk_based", approve: true });
+      try {
+        const response = await f.browser("agent_browser", { args: ["open", target] });
+        expect(response.json()).toEqual({ approved: true });
+        expect(f.permission).toHaveBeenCalledOnce();
+      } finally {
+        await f.app.close();
+      }
     }
   });
 });

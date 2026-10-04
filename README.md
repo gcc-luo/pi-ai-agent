@@ -35,11 +35,11 @@ PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/
 
 ### 环境要求
 
-- Node.js 20 或更高版本
+- Node.js 24 或更高版本
 - pnpm 9.6.0（仓库通过 `packageManager` 固定版本）
 - Rust stable（仅构建桌面端时需要）
 
-桌面端安装包需要 Node.js 22.19 或更高版本，因为打包过程会生成内置服务端运行时。
+桌面端安装包需要 Node.js 24 或更高版本，因为打包过程会生成内置服务端运行时。
 
 ### 安装依赖
 
@@ -94,10 +94,9 @@ pnpm --filter @pi-web-ui/web dev
 
 浏览器前端通过 Vite 将 `/api` 和 `/ws` 请求代理到本地服务端。
 
-Browser Use 默认只允许公网和 `localhost`，会阻止局域网、链路本地及云元数据地址。
-确需访问可信内网时可设置 `PI_BROWSER_ALLOW_PRIVATE_NETWORK=true`。Playwright 自带
-Chromium 缺失时会尝试使用系统 Chrome 或 Edge；均不可用时可执行
-`pnpm --filter @pi-web-ui/server browser:install`。
+Browser Use 使用 Pi 原生 `agent_browser` 扩展，默认按对话隔离浏览器。
+优先使用系统 Chrome；没有浏览器时执行 `pnpm --filter @pi-web-ui/server browser:install`。
+迁移后的权限和网络行为见 [浏览器集成](docs/browser-native.md)。
 
 ## 构建与发布
 
@@ -228,3 +227,7 @@ pnpm typecheck
 ## 许可证
 
 本项目采用 MIT License。第三方依赖的许可证以各自项目声明为准。
+
+### 浏览器自动化
+
+Browser Use 直接加载 `pi-agent-browser-native`，安装、会话与权限说明见 [浏览器集成](docs/browser-native.md)。无系统 Chrome 时运行 `pnpm --filter @pi-web-ui/server browser:install`。

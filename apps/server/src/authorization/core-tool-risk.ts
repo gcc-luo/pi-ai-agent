@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type CoreToolRisk = "normal" | "sensitive" | "destructive";
 
@@ -13,6 +15,9 @@ const MAX_NESTED_SHELL_COMMANDS = 4;
 const SAFE_SIMPLE_COMMANDS = new Set(["echo", "printf", "pwd", "true", "false"]);
 const SCRIPT_RUNNERS = new Set(["pnpm", "npm", "yarn", "bun", "npx", "bunx"]);
 const INFORMATIONAL_PACKAGE_MANAGERS = new Set(["pnpm", "npm", "yarn", "bun"]);
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit", "grep", "find", "ls"]);
+const DEFAULT_TO_CWD_FILE_TOOLS = new Set(["grep", "find", "ls"]);
+const PI_UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
 export function classifyCoreToolRisk(input: {
   toolName: string;
@@ -20,8 +25,11 @@ export function classifyCoreToolRisk(input: {
   workdir: string;
 }): CoreToolRiskResult {
   const toolName = input.toolName.toLowerCase();
-  if (["read", "write", "edit"].includes(toolName)) {
+  if (FILE_TOOL_NAMES.has(toolName)) {
     const candidate = input.input.path ?? input.input.filePath ?? input.input.file_path;
+    if (candidate === undefined && DEFAULT_TO_CWD_FILE_TOOLS.has(toolName)) {
+      return { risk: "normal", reason: "项目工作目录内的文件操作" };
+    }
     if (typeof candidate !== "string" || !candidate.trim()) {
       return { risk: "sensitive", reason: "无法确定文件路径，需要确认" };
     }
@@ -44,7 +52,9 @@ export function classifyCoreToolRisk(input: {
 function isPathWithinWorkdir(target: string, workdir: string): boolean | null {
   try {
     const realWorkdir = fs.realpathSync(workdir);
-    const absoluteTarget = path.resolve(workdir, target);
+    const normalizedTarget = normalizePiToolPath(target);
+    if (normalizedTarget === null) return null;
+    const absoluteTarget = path.resolve(workdir, normalizedTarget);
     const realTarget = resolveThroughExistingAncestor(absoluteTarget);
     if (!realTarget) return null;
     const relative = path.relative(realWorkdir, realTarget);
@@ -52,6 +62,35 @@ function isPathWithinWorkdir(target: string, workdir: string): boolean | null {
   } catch {
     return null;
   }
+}
+
+// Pi's built-in file tools normalize these forms before resolving a path.
+// Mirror that behavior so the authorization boundary evaluates the same target
+// the tool will open, including a file URL that cannot be decoded safely.
+function normalizePiToolPath(target: string): string | null {
+  let normalized = target.replace(PI_UNICODE_SPACES, " ");
+  if (normalized.startsWith("@")) normalized = normalized.slice(1);
+
+  if (process.platform === "win32" && normalized.startsWith("/") && !normalized.startsWith("//") && !normalized.includes("\\")) {
+    const match = normalized.match(/^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i);
+    if (match) {
+      const suffix = match[2]?.replaceAll("/", "\\");
+      normalized = `${match[1]?.toUpperCase()}:\\${suffix ?? ""}`;
+    }
+  }
+
+  if (normalized === "~") return os.homedir();
+  if (normalized.startsWith("~/") || (process.platform === "win32" && normalized.startsWith("~\\"))) {
+    normalized = path.join(os.homedir(), normalized.slice(2));
+  }
+  if (/^file:\/\//.test(normalized)) {
+    try {
+      normalized = fileURLToPath(normalized);
+    } catch {
+      return null;
+    }
+  }
+  return normalized;
 }
 
 function resolveThroughExistingAncestor(absoluteTarget: string): string | null {

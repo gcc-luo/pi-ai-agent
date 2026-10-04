@@ -26,7 +26,7 @@ export function deriveDefaultTitle(content: string): string | null {
 // shell command — we scan for common file-modifying subcommands.
 const FILE_TOOLS = new Set([
   "write", "edit", "write_file", "edit_file", "create_file", "delete_file",
-  "mkdir", "mv", "rm", "touch", "browser_screenshot", "browser_click",
+  "mkdir", "mv", "rm", "touch", "browser_screenshot", "browser_click", "agent_browser",
   "computer_screenshot",
 ]);
 

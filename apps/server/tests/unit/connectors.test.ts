@@ -167,6 +167,30 @@ describe("connector system", () => {
     expect(service.listAudits(connector.id).find((audit) => audit.toolName === "write_data")?.approval).toBe("not_required");
   });
 
+  it.each([
+    ["connector disable", async (connectorId: string) => { await service.update(connectorId, { enabled: false }); }, "POLICY_DENIED"],
+    ["connector config change", async (connectorId: string) => {
+      const config = repository.find(connectorId)!.config;
+      repository.update(connectorId, { config: { ...config, args: [...(config.args ?? []), "--changed-after-approval"] } });
+    }, "POLICY_DENIED"],
+    ["tool disable", async (connectorId: string) => { service.setTool(connectorId, "write_data", { enabled: false }); }, "TOOL_DISABLED"],
+    ["policy deny", async (connectorId: string) => { service.setTool(connectorId, "write_data", { policy: "deny" }); }, "POLICY_DENIED"],
+  ])("rechecks %s after authorization resolves", async (_change, mutate, expectedCode) => {
+    const connector = create();
+    await service.test(connector.id);
+    const context = { sessionId: "s1", workspaceId: "workspace-a", source: "desktop" as const, cwd: directory };
+    let approve!: (decision: { approved: boolean; prompted: boolean }) => void;
+    const approval = new Promise<{ approved: boolean; prompted: boolean }>((resolve) => { approve = resolve; });
+    const pending = service.invoke(`${connector.id}.write_data`, { value: "ok" }, context, () => approval);
+
+    expect(service.listAudits(connector.id)).toHaveLength(0);
+    await mutate(connector.id);
+    approve({ approved: true, prompted: true });
+
+    await expect(pending).rejects.toMatchObject({ code: expectedCode });
+    expect(service.listAudits(connector.id)[0]?.status).toBe("error");
+  });
+
   it("does not start stdio processes until first discovery or call", () => {
     const connector = create();
     expect(connector.status).toBe("disconnected");

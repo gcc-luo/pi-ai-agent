@@ -72,6 +72,13 @@ export async function buildApp(config: Config, deps?: AppDeps): Promise<FastifyI
   if (config.authToken) {
     app.addHook("onRequest", async (req, reply) => {
       if (req.url === "/healthz") return;
+      // Pi cannot receive the deployment-wide UI token. This one internal
+      // endpoint is exempt because its route validates a random per-session
+      // authorization token before handling any request.
+      if (
+        req.method === "POST"
+        && /^\/api\/internal\/authorization\/[^/]+\/check$/.test(req.url.split("?", 1)[0] ?? "")
+      ) return;
       const authorization = req.headers.authorization;
       const bearer = typeof authorization === "string" && authorization.startsWith("Bearer ")
         ? authorization.slice("Bearer ".length)

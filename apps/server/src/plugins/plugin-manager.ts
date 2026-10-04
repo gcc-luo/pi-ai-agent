@@ -1,4 +1,5 @@
 import type { PluginDto, PluginStatus } from "@pi-web-ui/shared";
+import { BROWSER_EXTENSION_VERSION } from "../browser/browser-runtime.js";
 import type { BrowserSessionManager } from "../browser/browser-session-manager.js";
 import type { ComputerSessionManager } from "../computer/computer-session-manager.js";
 import type { PluginRepository } from "../db/repositories/plugin.js";
@@ -28,18 +29,13 @@ const MANIFESTS: PluginManifest[] = [
     id: BROWSER_PLUGIN_ID,
     name: "Browser Use",
     icon: "🌐",
-    version: "1.0.0",
-    description: "通过 Playwright 操作网页、浏览器标签页与本地 Web 项目。",
+    version: BROWSER_EXTENSION_VERSION,
+    description: "通过 Pi 原生 agent_browser 扩展操作网页、复用登录环境并生成截图和下载。",
     source: "Pi Web UI",
     builtin: true,
     official: true,
     defaultEnabled: true,
-    tools: [
-      "browser_open", "browser_navigate", "browser_snapshot", "browser_click",
-      "browser_fill", "browser_upload", "browser_select", "browser_press", "browser_hover",
-      "browser_scroll", "browser_wait", "browser_tabs", "browser_screenshot",
-      "browser_console_errors", "browser_network_errors", "browser_close",
-    ],
+    tools: ["agent_browser", "agent_browser_web_search"],
     skills: ["优先使用页面快照和语义定位；页面变化后重新获取快照。"],
     capabilities: ["网页导航", "语义交互", "标签页管理", "截图与下载", "页面诊断"],
     permissions: [

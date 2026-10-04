@@ -4,14 +4,24 @@ import { AuthorizationService } from "../../src/authorization/authorization-serv
 import { connectorsRoutes } from "../../src/routes/connectors.js";
 import type { AuthorizationInput } from "../../src/authorization/authorization-service.js";
 
-async function fixture(mode: "risk_based" | "approve_each" | "full_access", approved = false, waitForDisconnect = false) {
+async function fixture(
+  mode: "risk_based" | "approve_each" | "full_access",
+  approved = false,
+  waitForDisconnect = false,
+  waitForApproval = false,
+) {
   const app = Fastify();
   let responseRaw: import("node:http").ServerResponse | undefined;
+  let tokenActive = true;
+  let approvePending: ((approved: boolean) => void) | undefined;
   app.addHook("onRequest", (req, reply, done) => {
     responseRaw = reply.raw;
     done();
   });
   const request = vi.fn((input: AuthorizationInput) => {
+    if (waitForApproval) {
+      return new Promise<boolean>((resolve) => { approvePending = resolve; });
+    }
     if (waitForDisconnect && input.signal) {
       return new Promise<boolean>((resolve) => {
         input.signal!.addEventListener("abort", () => resolve(false), { once: true });
@@ -29,7 +39,7 @@ async function fixture(mode: "risk_based" | "approve_each" | "full_access", appr
   const describeTool = vi.fn(() => ({ name: "read_data" }));
   const invoke = vi.fn(async (_name: string, _args: Record<string, unknown>, _context: unknown, authorizeCall: (input: { toolName: string; policy: "allow" | "ask" | "deny"; risk: "normal" | "sensitive" }) => Promise<{ approved: boolean; prompted: boolean }>) =>
     authorizeCall({ toolName: "conn.read_data", policy: "allow", risk: "normal" }));
-  app.decorate("processManager", { validateConnectorToken: () => true } as never);
+  app.decorate("processManager", { validateConnectorToken: () => tokenActive } as never);
   app.decorate("sessions", { findById: () => ({ id: "s", projectId: "p" }) } as never);
   app.decorate("projects", { findById: () => ({ id: "p", workdir: "/tmp" }) } as never);
   app.decorate("authorization", { authorize, authorizeWithDecision } as never);
@@ -44,6 +54,8 @@ async function fixture(mode: "risk_based" | "approve_each" | "full_access", appr
   return {
     app, call, request, authorize, authorizeWithDecision, searchTools, describeTool, invoke,
     disconnect: () => responseRaw?.emit("close"),
+    revokeToken: () => { tokenActive = false; },
+    approvePending: (decision: boolean) => approvePending?.(decision),
   };
 }
 
@@ -103,6 +115,19 @@ describe("connector discovery authorization", () => {
       } finally {
         await f.app.close();
       }
+    }
+  });
+
+  it("does not invoke a connector after its token is revoked during approval", async () => {
+    const f = await fixture("approve_each", false, false, true);
+    try {
+      const pending = f.call("call");
+      await vi.waitFor(() => expect(f.request).toHaveBeenCalledOnce());
+      f.revokeToken();
+      f.approvePending(true);
+      expect((await pending).json()).toMatchObject({ approved: false });
+    } finally {
+      await f.app.close();
     }
   });
 });

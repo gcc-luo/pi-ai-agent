@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { FastifyBaseLogger } from "fastify";
 import { ServerEvent } from "@pi-web-ui/shared";
 import { AgentProcess, SpawnOptions } from "./types.js";
+import { browserEnvironment } from "../browser/browser-runtime.js";
 import { preparePiSession } from "./pi-session-store.js";
 
 type Spawner = (cmd: string, args: string[], opts: NodeSpawnOptions) => ChildProcess;
@@ -28,6 +29,8 @@ export interface ProcessManagerOptions {
   pluginEndpoint?: string;
   connectorExtensionPath?: string;
   connectorEndpoint?: string;
+  authorizationExtensionPath?: string;
+  authorizationEndpoint?: string;
   contextExtensionPath?: string;
   hasConnectors?: (projectId: string) => boolean;
   isPluginEnabled?: (pluginId: string) => boolean;
@@ -158,9 +161,12 @@ export class ProcessManager extends EventEmitter {
   private pluginEndpoint?: string;
   private connectorExtensionPath?: string;
   private connectorEndpoint?: string;
+  private authorizationExtensionPath?: string;
+  private authorizationEndpoint?: string;
   private contextExtensionPath?: string;
   private hasConnectors: (projectId: string) => boolean;
   private connectorTokens = new Map<string, string>();
+  private authorizationTokens = new Map<string, string>();
   private pluginTokens = new Map<string, Map<string, string>>();
   private isPluginEnabled: (pluginId: string) => boolean;
   private validateWorkdir: boolean;
@@ -207,6 +213,8 @@ export class ProcessManager extends EventEmitter {
     this.pluginEndpoint = opts.pluginEndpoint ?? opts.browserEndpoint;
     this.connectorExtensionPath = opts.connectorExtensionPath;
     this.connectorEndpoint = opts.connectorEndpoint ?? opts.pluginEndpoint ?? opts.browserEndpoint;
+    this.authorizationExtensionPath = opts.authorizationExtensionPath;
+    this.authorizationEndpoint = opts.authorizationEndpoint;
     this.contextExtensionPath = opts.contextExtensionPath;
     this.hasConnectors = opts.hasConnectors ?? (() => true);
     this.isPluginEnabled = opts.isPluginEnabled ?? (() => true);
@@ -256,6 +264,7 @@ export class ProcessManager extends EventEmitter {
 
     const extraArgs: string[] = [];
     if (this.contextExtensionPath) extraArgs.push("--extension", this.contextExtensionPath);
+    if (this.authorizationExtensionPath) extraArgs.push("--extension", this.authorizationExtensionPath);
     if (cfg?.apiBaseUrl && provider && provider !== "anthropic" && model) {
       extraArgs.push("--extension", createCustomModelExtension({ provider, model, apiBaseUrl: cfg.apiBaseUrl, modelType: cfg.modelType }));
     }
@@ -269,6 +278,18 @@ export class ProcessManager extends EventEmitter {
     const piSession = preparePiSession(this.sessionRootDir, input.sessionId);
 
     const env: Record<string, string | undefined> = { ...cleanSpawnEnv(process.env), PI_RPC: "1" };
+    if (this.authorizationExtensionPath && this.authorizationEndpoint) {
+      const authorizationToken = crypto.randomBytes(32).toString("hex");
+      this.authorizationTokens.set(input.sessionId, authorizationToken);
+      env.PI_WEB_UI_AUTHORIZATION_ENDPOINT = this.authorizationEndpoint;
+      env.PI_WEB_UI_AUTHORIZATION_TOKEN = authorizationToken;
+      env.PI_WEB_UI_AUTHORIZATION_SESSION_ID = input.sessionId;
+    } else {
+      this.authorizationTokens.delete(input.sessionId);
+      delete env.PI_WEB_UI_AUTHORIZATION_ENDPOINT;
+      delete env.PI_WEB_UI_AUTHORIZATION_TOKEN;
+      delete env.PI_WEB_UI_AUTHORIZATION_SESSION_ID;
+    }
     if (connectorsEnabled && this.connectorEndpoint) {
       const connectorToken = crypto.randomBytes(32).toString("hex");
       this.connectorTokens.set(input.sessionId, connectorToken);
@@ -309,6 +330,9 @@ export class ProcessManager extends EventEmitter {
       // Compatibility for the existing Browser Use extension protocol.
       if (activePluginIds.includes("browser-use")) {
         const browserToken = issuedPluginTokens.get("browser-use")!;
+        // Ignore ambient upstream session/profile settings; each chat owns its default browser.
+        for (const key of Object.keys(env)) if (key.startsWith("AGENT_BROWSER_")) delete env[key];
+        Object.assign(env, browserEnvironment(this.sessionRootDir, input.sessionId));
         env.PI_WEB_UI_BROWSER_PLUGIN_ENDPOINT = this.pluginEndpoint;
         env.PI_WEB_UI_BROWSER_PLUGIN_TOKEN = browserToken;
         env.PI_WEB_UI_BROWSER_SESSION_ID = input.sessionId;
@@ -331,18 +355,26 @@ export class ProcessManager extends EventEmitter {
     const args = [...this.args, ...extraArgs, ...piSession.args];
     this.log.info({ command: this.command, args, envKeys }, "spawning agent process");
 
-    const child = this.spawn(this.command, args, {
-      cwd: input.workdir,
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-      // Windows resolves bare commands and .cmd/.bat shims through cmd.exe.
-      // The bundled node.exe is an absolute path and must bypass cmd.exe so
-      // installation directories containing spaces remain a single argument.
-      shell: shouldUseWindowsShell(this.command),
-      // Give the agent and every command it starts one process group on POSIX,
-      // allowing session shutdown to terminate the complete descendant tree.
-      detached: process.platform !== "win32",
-    });
+    let child: ChildProcess;
+    try {
+      child = this.spawn(this.command, args, {
+        cwd: input.workdir,
+        stdio: ["pipe", "pipe", "pipe"],
+        env,
+        // Windows resolves bare commands and .cmd/.bat shims through cmd.exe.
+        // The bundled node.exe is an absolute path and must bypass cmd.exe so
+        // installation directories containing spaces remain a single argument.
+        shell: shouldUseWindowsShell(this.command),
+        // Give the agent and every command it starts one process group on POSIX,
+        // allowing session shutdown to terminate the complete descendant tree.
+        detached: process.platform !== "win32",
+      });
+    } catch (error) {
+      this.authorizationTokens.delete(input.sessionId);
+      this.pluginTokens.delete(input.sessionId);
+      this.connectorTokens.delete(input.sessionId);
+      throw error;
+    }
 
     let stopRequested = false;
     const proc: AgentProcess = new EventEmitter() as unknown as AgentProcess;
@@ -391,6 +423,7 @@ export class ProcessManager extends EventEmitter {
         this.pluginTokens.delete(input.sessionId);
       }
       this.connectorTokens.delete(input.sessionId);
+      this.authorizationTokens.delete(input.sessionId);
       (proc as unknown as EventEmitter).emit("exit", code);
     };
     child.on("exit", reportExit);
@@ -422,11 +455,13 @@ export class ProcessManager extends EventEmitter {
   }
 
   stop(sessionId: string): void {
+    this.authorizationTokens.delete(sessionId);
     const p = this.procs.get(sessionId);
     if (p) p.kill();
   }
 
   async stopAndWait(sessionId: string, timeoutMs = 2_000): Promise<boolean> {
+    this.authorizationTokens.delete(sessionId);
     const proc = this.procs.get(sessionId);
     if (!proc || proc.status === "suspended" || proc.status === "crashed") return true;
     return new Promise<boolean>((resolve) => {
@@ -461,13 +496,24 @@ export class ProcessManager extends EventEmitter {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
   }
 
+  validateAuthorizationToken(sessionId: string, token: string | undefined): boolean {
+    if (!token) return false;
+    const expected = this.authorizationTokens.get(sessionId);
+    if (!expected || expected.length !== token.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+  }
+
   revokePluginToken(sessionId: string): void {
     this.pluginTokens.delete(sessionId);
     this.connectorTokens.delete(sessionId);
+    this.authorizationTokens.delete(sessionId);
   }
 
   revokePluginTokens(sessionIds: Iterable<string>): void {
-    for (const sessionId of sessionIds) this.pluginTokens.delete(sessionId);
+    for (const sessionId of sessionIds) {
+      this.pluginTokens.delete(sessionId);
+      this.authorizationTokens.delete(sessionId);
+    }
   }
 
   async shutdown(): Promise<void> {
@@ -475,5 +521,6 @@ export class ProcessManager extends EventEmitter {
     this.procs.clear();
     this.pluginTokens.clear();
     this.connectorTokens.clear();
+    this.authorizationTokens.clear();
   }
 }

@@ -72,6 +72,8 @@ describe("ws agent", () => {
       notifications: new NotificationRepository(db),
       models: new ModelRepository(db),
       processManager, sessionStates: new SessionStateStore(),
+      channels: { list: () => [] },
+      channelConversations: { list: () => [] },
       kbBindings: { listBySession: () => [] },
       experts: { findById: () => null },
     });

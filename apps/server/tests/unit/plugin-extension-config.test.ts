@@ -25,7 +25,7 @@ describe("built-in plugin extension configuration", () => {
     process.env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN = "computer-token";
     process.env.PI_WEB_UI_COMPUTER_SESSION_ID = "session-a";
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
-      JSON.stringify({ ok: true }),
+      JSON.stringify({ ok: true, approved: false }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
     vi.stubGlobal("fetch", fetchMock);
@@ -39,7 +39,7 @@ describe("built-in plugin extension configuration", () => {
     const tools = new Map(result.extensions.flatMap((extension) => [...extension.tools]));
     const signal = new AbortController().signal;
 
-    await tools.get("browser_open")!.definition.execute(
+    await tools.get("agent_browser")!.definition.execute(
       "browser-call", {}, signal, undefined, {} as never,
     );
     await tools.get("computer_get_cursor_position")!.definition.execute(

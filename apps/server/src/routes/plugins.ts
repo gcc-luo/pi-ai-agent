@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { browserCallNeedsConfirmation } from "../browser/browser-permissions.js";
 import {
   BROWSER_PLUGIN_ID,
   COMPUTER_PLUGIN_ID,
@@ -8,12 +9,6 @@ import {
   type ComputerAction,
 } from "../computer/computer-session-manager.js";
 import { WECHAT_FILE_TRANSFER_PLUGIN_ID } from "../channels/wechat-file-transfer-service.js";
-
-const BROWSER_ACTIONS = new Set([
-  "open", "navigate", "snapshot", "click", "fill", "upload", "select", "press",
-  "hover", "scroll", "wait", "tabs", "screenshot", "console_errors",
-  "network_errors", "close",
-]);
 
 const COMPUTER_ACTIONS = new Set<ComputerAction>([
   "screenshot", "list_windows", "focus_window", "click", "double_click",
@@ -158,6 +153,13 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
             message: "用户未确认或确认已超时，文件未发送。",
           };
         }
+        if (
+          controller.signal.aborted
+          || !app.processManager.validatePluginToken(session.id, WECHAT_FILE_TRANSFER_PLUGIN_ID, token)
+          || !app.processManager.isPluginActive(session.id, WECHAT_FILE_TRANSFER_PLUGIN_ID)
+        ) {
+          return reply.code(403).send({ error: "微信文件发送授权已撤销，文件未发送。" });
+        }
         return await app.wechatFileTransfers.sendFiles(session.id, filePaths as string[]);
       } catch (error) {
         return reply.code(409).send({
@@ -182,81 +184,53 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.raw.once("aborted", abort);
+    const disconnect = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.once("close", disconnect);
     let auditRisk: "normal" | "sensitive" | "destructive" = "normal";
     let auditApproved = false;
     let auditDetails: Record<string, unknown> = {};
     try {
       if (req.params.pluginId === BROWSER_PLUGIN_ID) {
-        if (!BROWSER_ACTIONS.has(action)) return reply.code(400).send({ error: "invalid browser action" });
-        let result = await app.browserManager.execute({
+        if (action === "complete") {
+          const risk = app.browserManager.report(session.id, String(args.toolCallId), { isError: args.isError === true, details: args.details as Record<string, unknown> });
+          if (!risk) return reply.code(409).send({ error: "browser call was not authorized or already completed" });
+          app.plugins.appendAudit({ pluginId: BROWSER_PLUGIN_ID, sessionId: session.id,
+            action: "agent_browser", risk, approved: true, success: args.isError !== true,
+            details: { toolCallId: args.toolCallId, phase: "complete" } });
+          return { ok: true };
+        }
+        if (action !== "authorize") return reply.code(410).send({ error: "旧浏览器执行 API 已移除，请通过 agent_browser 扩展操作。" });
+        if (typeof args.toolCallId !== "string" || !args.toolCallId || !["agent_browser", "agent_browser_web_search"].includes(String(args.toolName))) {
+          return reply.code(400).send({ error: "invalid native browser call" });
+        }
+        const params = args.params;
+        if (!params || typeof params !== "object" || Array.isArray(params)) return reply.code(400).send({ error: "params must be an object" });
+        const needsConfirmation = args.toolName !== "agent_browser_web_search" && browserCallNeedsConfirmation(params as Record<string, unknown>);
+        const review = JSON.stringify(params);
+        if (needsConfirmation && review.length > 12000) return reply.code(400).send({ error: "浏览器调用过长，无法完整展示确认内容，请拆分为较小调用。" });
+        auditRisk = needsConfirmation ? "sensitive" : "normal";
+        let approved = await app.authorization.authorize({
           sessionId: session.id,
-          workdir: project.workdir,
-          action: action as Parameters<typeof app.browserManager.execute>[0]["action"],
-          args,
+          source: "plugin",
+          pluginId: BROWSER_PLUGIN_ID,
+          toolName: String(args.toolName),
+          action: "agent_browser",
+          risk: auditRisk,
+          reason: needsConfirmation
+            ? "该浏览器调用包含交互、脚本或会话配置，确认将执行本次完整调用。"
+            : "该浏览器调用将访问网页内容。",
+          context: { target: review },
           signal: controller.signal,
         });
-        const requiresConfirmation = result.requiresConfirmation === true;
-        auditRisk = requiresConfirmation ? "sensitive" : "normal";
-        let approved = !requiresConfirmation;
+        approved = approved && !controller.signal.aborted
+          && app.processManager.validatePluginToken(session.id, BROWSER_PLUGIN_ID, token)
+          && app.pluginManager.activeForSession(session.id).includes(BROWSER_PLUGIN_ID);
         auditApproved = approved;
-        auditDetails = {
-          requiresConfirmation,
-          riskReason: result.riskReason,
-          url: result.url,
-          target: result.target,
-          files: result.files,
-        };
-        if (requiresConfirmation) {
-          const state = app.sessionStates.get(session.id);
-          approved = state
-            ? await app.pluginPermissions.request({
-                sessionId: session.id,
-                pluginId: BROWSER_PLUGIN_ID,
-                action,
-                reason: typeof result.riskReason === "string"
-                  ? result.riskReason
-                  : "该网页操作可能产生外部或不可逆影响",
-                context: {
-                  url: typeof result.url === "string" ? result.url : undefined,
-                  target: typeof result.target === "string" ? result.target : undefined,
-                  files: Array.isArray(result.files)
-                    ? result.files.filter((file): file is string => typeof file === "string")
-                    : undefined,
-                },
-                send: state.send,
-                signal: controller.signal,
-              })
-            : false;
-          auditApproved = approved;
-          if (approved) {
-            result = await app.browserManager.execute({
-              sessionId: session.id,
-              workdir: project.workdir,
-              action: action as Parameters<typeof app.browserManager.execute>[0]["action"],
-              args: { ...args, userConfirmed: true },
-              signal: controller.signal,
-            });
-          } else {
-            result = {
-              ...result,
-              denied: true,
-              message: state
-                ? "用户未确认或确认已超时，操作未执行。"
-                : "当前渠道无法完成交互式权限确认，操作未执行。",
-            };
-          }
-        }
-        app.plugins.appendAudit({
-          pluginId: BROWSER_PLUGIN_ID,
-          sessionId: session.id,
-          action,
-          risk: auditRisk,
-          approved: auditApproved,
-          success: approved && result.ok !== false,
-          details: auditDetails,
-        });
-        app.plugins.update(BROWSER_PLUGIN_ID, { lastError: null });
-        return result;
+        app.plugins.appendAudit({ pluginId: BROWSER_PLUGIN_ID, sessionId: session.id,
+          action: "agent_browser", risk: auditRisk, approved, success: approved,
+          details: { toolCallId: args.toolCallId, phase: "authorize" } });
+        if (approved) app.browserManager.begin(session.id, args.toolCallId, auditRisk, args.toolName === "agent_browser");
+        return { approved };
       }
       if (req.params.pluginId === COMPUTER_PLUGIN_ID) {
         if (!COMPUTER_ACTIONS.has(action as ComputerAction)) {
@@ -264,51 +238,45 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
         }
         const risk = computerRisk(action as ComputerAction, args);
         auditRisk = risk.level;
-        let approved = risk.level === "normal";
-        auditApproved = approved;
         const computerState = app.computerManager.sessionStatus(session.id);
         auditDetails = {
           reason: risk.reason,
           intent: args.intent,
           windowId: computerState?.targetWindow,
         };
+        let approved = await app.authorization.authorize({
+          sessionId: session.id,
+          source: "plugin",
+          pluginId: COMPUTER_PLUGIN_ID,
+          toolName: `computer.${action}`,
+          action,
+          risk: risk.level,
+          reason: risk.reason ?? "该桌面操作需要用户确认",
+          intent: typeof args.intent === "string" ? args.intent : undefined,
+          context: { windowId: computerState?.targetWindow ?? undefined },
+          signal: controller.signal,
+        });
+        approved = approved && !controller.signal.aborted
+          && app.processManager.validatePluginToken(session.id, COMPUTER_PLUGIN_ID, token)
+          && app.pluginManager.activeForSession(session.id).includes(COMPUTER_PLUGIN_ID);
+        auditApproved = approved;
         if (!approved) {
-          const state = app.sessionStates.get(session.id);
-          approved = state
-            ? await app.pluginPermissions.request({
-                sessionId: session.id,
-                pluginId: COMPUTER_PLUGIN_ID,
-                action,
-                reason: risk.reason ?? "该桌面操作需要用户确认",
-                intent: typeof args.intent === "string" ? args.intent : undefined,
-                context: {
-                  windowId: computerState?.targetWindow ?? undefined,
-                },
-                send: state.send,
-                signal: controller.signal,
-              })
-            : false;
-          auditApproved = approved;
-          if (!approved) {
-            app.plugins.appendAudit({
-              pluginId: COMPUTER_PLUGIN_ID,
-              sessionId: session.id,
-              action,
-              risk: risk.level,
-              approved: false,
-              success: false,
-              details: auditDetails,
-            });
-            return {
-              ok: false,
-              denied: true,
-              requiresConfirmation: true,
-              riskReason: risk.reason,
-              message: state
-                ? "用户未确认或确认已超时，操作未执行。"
-                : "当前渠道无法完成交互式权限确认，操作未执行。",
-            };
-          }
+          app.plugins.appendAudit({
+            pluginId: COMPUTER_PLUGIN_ID,
+            sessionId: session.id,
+            action,
+            risk: risk.level,
+            approved: false,
+            success: false,
+            details: auditDetails,
+          });
+          return {
+            ok: false,
+            denied: true,
+            requiresConfirmation: true,
+            riskReason: risk.reason,
+            message: "用户未确认或确认已超时，操作未执行。",
+          };
         }
         const result = await app.computerManager.execute({
           sessionId: session.id,
@@ -349,6 +317,7 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
       });
     } finally {
       req.raw.off("aborted", abort);
+      reply.raw.off("close", disconnect);
     }
   });
 };

@@ -69,6 +69,8 @@ describe("ws agent reconnect", () => {
       sessionStates: new SessionStateStore(),
       processManager,
       kbBindings: { listBySession: () => [] },
+      channels: { list: () => [] },
+      channelConversations: { list: () => [] },
       experts: { findById: () => null },
     });
     await app.register(agentRoutes);

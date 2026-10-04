@@ -51,6 +51,44 @@ describe("AuthorizationService", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("loads the latest mode per session while leaving an existing approval pending", async () => {
+    const modes = new Map<string, "approve_each" | "risk_based" | "full_access" | null>([
+      ["session-a", "approve_each"],
+      ["session-b", "full_access"],
+    ]);
+    const pendingApprovals: Array<(approved: boolean) => void> = [];
+    const request = vi.fn(() => new Promise<boolean>((resolve) => pendingApprovals.push(resolve)));
+    const getMode = vi.fn(async (sessionId: string) => modes.get(sessionId) ?? null);
+    const service = new AuthorizationService({ getMode, request });
+
+    const firstApproval = service.authorize({
+      sessionId: "session-a", toolName: "read", action: "read", risk: "normal",
+    });
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+
+    modes.set("session-a", "risk_based");
+    await expect(service.authorize({
+      sessionId: "session-a", toolName: "read", action: "read", risk: "normal",
+    })).resolves.toBe(true);
+    await expect(service.authorize({
+      sessionId: "session-b", toolName: "read", action: "read", risk: "normal",
+    })).resolves.toBe(true);
+    expect(request).toHaveBeenCalledOnce();
+
+    modes.set("session-b", "approve_each");
+    const secondApproval = service.authorize({
+      sessionId: "session-b", toolName: "read", action: "read", risk: "normal",
+    });
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+
+    pendingApprovals[0]?.(true);
+    pendingApprovals[1]?.(false);
+    await expect(firstApproval).resolves.toBe(true);
+    await expect(secondApproval).resolves.toBe(false);
+    expect(getMode).toHaveBeenCalledWith("session-a");
+    expect(getMode).toHaveBeenCalledWith("session-b");
+  });
+
   it("reports whether the shared boundary requested confirmation", async () => {
     const riskBased = createService({ mode: "risk_based", approved: true });
     await expect(riskBased.service.authorizeWithDecision({

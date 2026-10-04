@@ -84,6 +84,9 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
         signal: lifecycle.signal,
       });
       if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器搜索。" });
+      if (lifecycle.signal.aborted || !authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) {
+        return reply.code(403).send({ error: "连接器授权已撤销。" });
+      }
       return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
     } finally {
       lifecycle.dispose();
@@ -108,6 +111,9 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
         signal: lifecycle.signal,
       });
       if (!approved) return reply.code(403).send({ error: "用户拒绝了连接器能力查询。" });
+      if (lifecycle.signal.aborted || !authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) {
+        return reply.code(403).send({ error: "连接器授权已撤销。" });
+      }
       try { return app.connectorService.describeTool(toolName, resolved.project.id, req.params.sessionId); }
       catch (error) { return errorReply(reply, error); }
     } finally {
@@ -122,7 +128,7 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
     const lifecycle = abortOnDisconnect(req.raw, reply.raw);
     try {
       return await app.connectorService.invoke(req.body.tool ?? "", req.body.arguments ?? {}, resolved.invocation, async (authorization) => {
-        return app.authorization.authorizeWithDecision({
+        const decision = await app.authorization.authorizeWithDecision({
           sessionId: resolved.session.id,
           source: "connector",
           toolName: authorization.toolName,
@@ -133,6 +139,10 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
           context: { target: authorization.toolName },
           signal: lifecycle.signal,
         });
+        if (lifecycle.signal.aborted || !authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) {
+          return { approved: false, prompted: decision.prompted };
+        }
+        return decision;
       });
     } catch (error) { return errorReply(reply, error); }
     finally { lifecycle.dispose(); }

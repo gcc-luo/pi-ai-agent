@@ -188,12 +188,27 @@ export class ConnectorService {
     if (!tool.enabled) throw new ConnectorError("TOOL_DISABLED", "该能力已禁用。");
     let approval = "not_required";
     try {
-      if (tool.policy === "deny") throw new ConnectorError("POLICY_DENIED", "权限策略禁止调用该能力。");
-      const risk = tool.riskLevel === "low" ? "normal" : "sensitive";
-      const decision = await authorize({ toolName: compoundName, policy: tool.policy, risk });
-      if (decision.prompted) approval = decision.approved ? "approved_once" : "rejected";
-      if (!decision.approved) throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
-      let result;
+    if (tool.policy === "deny") throw new ConnectorError("POLICY_DENIED", "权限策略禁止调用该能力。");
+    const risk = tool.riskLevel === "low" ? "normal" : "sensitive";
+    const decision = await authorize({ toolName: compoundName, policy: tool.policy, risk });
+    if (decision.prompted) approval = decision.approved ? "approved_once" : "rejected";
+    if (!decision.approved) throw new ConnectorError("USER_REJECTED", "用户拒绝了该操作。");
+
+    // Approval may wait for user input while connector credentials, policy, or
+    // enablement change. Re-resolve before any remote side effect and fail
+    // closed if the authorization context no longer matches what was reviewed.
+    const current = this.resolveCompound(compoundName, context.workspaceId, context.sessionId);
+    if (!current.connector.enabled) throw new ConnectorError("POLICY_DENIED", "连接器已禁用。");
+    if (!current.tool.enabled) throw new ConnectorError("TOOL_DISABLED", "该能力已禁用。");
+    if (current.tool.policy === "deny") throw new ConnectorError("POLICY_DENIED", "权限策略禁止调用该能力。");
+    if (
+      current.tool.policy !== tool.policy
+      || current.tool.riskLevel !== tool.riskLevel
+      || JSON.stringify(current.connector.config) !== JSON.stringify(connector.config)
+    ) {
+      throw new ConnectorError("POLICY_DENIED", "连接器配置或授权策略已变化，请重新发起调用。");
+    }
+    let result;
       try {
         result = await this.runtime.call(connector.id, connector.config, tool.name, args);
       } catch (error) {

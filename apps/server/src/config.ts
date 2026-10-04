@@ -1,6 +1,7 @@
 ﻿import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 function splitArgs(value: string | undefined): string[] | undefined {
   const args = value?.split(" ").filter(Boolean);
@@ -57,14 +58,15 @@ export function loadConfig(): Config {
       )
     : undefined;
   const customPiCommand = process.env.PI_COMMAND || undefined;
-  const embeddedAgent = Boolean(bundledAgentEntry) && !customPiCommand;
+  const embeddedAgent = !customPiCommand;
+  const localAgentEntry = fileURLToPath(new URL("../node_modules/@earendil-works/pi-coding-agent/dist/cli.js", import.meta.url));
   const configuredPiArgs = splitArgs(process.env.PI_ARGS);
   const defaultNpxArgs = ["-y", "@earendil-works/pi-coding-agent"];
   const piCommand =
     customPiCommand ?? (embeddedAgent ? process.execPath : "npx");
   const piArgs = embeddedAgent
     ? [
-        bundledAgentEntry!,
+        bundledAgentEntry || localAgentEntry,
         ...(configuredPiArgs ?? ["--mode", "rpc", "--no-extensions"]),
       ]
     : (configuredPiArgs ?? [

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 
 /**
  * Prepare the desktop server runtime.
@@ -55,10 +55,10 @@ if (!tauriTarget) {
   throw new Error(`Unsupported desktop target: ${platformArch}`);
 }
 
-const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
-if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 19)) {
+const [nodeMajor] = process.versions.node.split(".").map(Number);
+if (nodeMajor < 24) {
   throw new Error(
-    `Node.js >= 22.19 is required to package pi-coding-agent; current version is ${process.version}`,
+    `Node.js >= 24 is required to package the native browser runtime; current version is ${process.version}`,
   );
 }
 
@@ -140,7 +140,9 @@ const agentEntry = resolve(
   runtimeDir,
   "node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
 );
-for (const requiredPath of [serverEntry, agentEntry, nodeSidecarPath]) {
+const browserExtensionEntry = resolve(runtimeDir, "node_modules/pi-agent-browser-native/dist/extensions/agent-browser/index.js");
+const browserLauncher = resolve(runtimeDir, "node_modules/agent-browser/bin/agent-browser.js");
+for (const requiredPath of [serverEntry, agentEntry, nodeSidecarPath, browserExtensionEntry, browserLauncher]) {
   if (!existsSync(requiredPath))
     throw new Error(`Missing packaged runtime file: ${requiredPath}`);
 }
@@ -150,6 +152,23 @@ execFileSync(nodeSidecarPath, [agentEntry, "--version"], {
   stdio: "inherit",
   timeout: 60_000,
 });
+
+console.log("\nChecking embedded agent-browser...");
+execFileSync(nodeSidecarPath, [browserLauncher, "--version"], { stdio: "inherit", timeout: 30_000 });
+
+console.log("\nChecking packaged browser extension registration...");
+execFileSync(nodeSidecarPath, ["--input-type=module", "--eval", `
+  import { discoverAndLoadExtensions } from './node_modules/@earendil-works/pi-coding-agent/dist/index.js';
+  import { mkdtempSync, rmSync } from 'node:fs';
+  import { tmpdir } from 'node:os';
+  import path from 'node:path';
+  const isolated = mkdtempSync(path.join(tmpdir(), 'pi-browser-package-'));
+  try {
+    const result = await discoverAndLoadExtensions([path.resolve('dist/agent/extensions/browser-tools.js')], isolated, isolated);
+    if (result.errors.length) throw new Error(JSON.stringify(result.errors));
+    if (!result.extensions.some(extension => extension.tools.has('agent_browser'))) throw new Error('Packaged agent_browser tool missing');
+  } finally { rmSync(isolated, { recursive: true, force: true }); }
+`], { cwd: runtimeDir, stdio: "inherit", timeout: 30_000 });
 
 console.log("\nStarting packaged server smoke test...");
 await smokeTestServer(nodeSidecarPath, serverEntry, runtimeDir);

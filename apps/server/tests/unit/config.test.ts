@@ -41,7 +41,7 @@ describe("loadConfig bundled runtime", () => {
     ]);
   });
 
-  it("disables extension discovery for the default npx RPC process only", () => {
+  it("uses the locked local Pi runtime with extension discovery disabled", () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-config-"));
     tempDirs.push(dataDir);
     vi.stubEnv("PI_WEB_UI_ROOT", dataDir);
@@ -50,10 +50,9 @@ describe("loadConfig bundled runtime", () => {
     vi.stubEnv("PI_ARGS", "");
     const config = loadConfig();
 
-    expect(config.piCommand).toBe("npx");
+    expect(config.piCommand).toBe(process.execPath);
     expect(config.piArgs).toEqual([
-      "-y",
-      "@earendil-works/pi-coding-agent",
+      expect.stringContaining("pi-coding-agent/dist/cli.js"),
       "--mode",
       "rpc",
       "--no-extensions",

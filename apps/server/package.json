@@ -11,11 +11,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "browser:install": "playwright install chromium"
+    "browser:install": "agent-browser install"
   },
   "dependencies": {
     "@amaster.ai/pi-channels": "0.1.6",
-    "@earendil-works/pi-coding-agent": "0.82.1",
+    "@earendil-works/pi-coding-agent": "0.84.0",
     "@fastify/cors": "11.3.0",
     "@fastify/multipart": "10.1.0",
     "@fastify/websocket": "11.3.0",
@@ -33,12 +33,13 @@
     "nodejieba": "3.5.8",
     "pino": "9.3.2",
     "pino-pretty": "11.2.2",
-    "playwright": "1.55.0",
     "qrcode": "1.5.4",
     "typebox": "1.1.38",
     "ulid": "2.3.0",
     "unpdf": "1.6.2",
-    "ws": "8.18.0"
+    "ws": "8.18.0",
+    "pi-agent-browser-native": "0.6.10",
+    "agent-browser": "0.37.0"
   },
   "devDependencies": {
     "@types/adm-zip": "0.5.8",
