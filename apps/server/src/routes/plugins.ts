@@ -11,7 +11,7 @@ import {
 import { WECHAT_FILE_TRANSFER_PLUGIN_ID } from "../channels/wechat-file-transfer-service.js";
 
 const COMPUTER_ACTIONS = new Set<ComputerAction>([
-  "screenshot", "list_windows", "focus_window", "click", "double_click",
+  "screenshot", "list_windows", "focus_window", "click", "move", "double_click",
   "type", "key", "scroll", "drag", "wait", "get_cursor_position",
 ]);
 

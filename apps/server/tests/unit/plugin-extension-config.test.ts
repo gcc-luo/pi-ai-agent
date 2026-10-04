@@ -24,8 +24,10 @@ describe("built-in plugin extension configuration", () => {
     process.env.PI_WEB_UI_COMPUTER_PLUGIN_ENDPOINT = "http://127.0.0.1:8080/api/internal/plugins";
     process.env.PI_WEB_UI_COMPUTER_PLUGIN_TOKEN = "computer-token";
     process.env.PI_WEB_UI_COMPUTER_SESSION_ID = "session-a";
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
-      JSON.stringify({ ok: true, approved: false }),
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify(String(input).includes("computer-use")
+        ? { ok: false, denied: true, message: "用户未确认" }
+        : { ok: true, approved: false }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
     vi.stubGlobal("fetch", fetchMock);
@@ -42,9 +44,10 @@ describe("built-in plugin extension configuration", () => {
     await tools.get("agent_browser")!.definition.execute(
       "browser-call", {}, signal, undefined, {} as never,
     );
-    await tools.get("computer_get_cursor_position")!.definition.execute(
+    const deniedComputerResult = await tools.get("computer_get_cursor_position")!.definition.execute(
       "computer-call", {}, signal, undefined, {} as never,
     );
+    expect("isError" in deniedComputerResult && deniedComputerResult.isError).toBe(true);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [browserUrl, browserRequest] = fetchMock.mock.calls[0]!;

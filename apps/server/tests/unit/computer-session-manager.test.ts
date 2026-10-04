@@ -46,6 +46,12 @@ describe("Computer Use risk classification", () => {
     expect(computerRisk("click", { intent: "提交正式表单" })).toMatchObject({
       level: "sensitive",
     });
+    expect(computerRisk("key", { key: "Cmd+Q", intent: "切换应用" })).toMatchObject({
+      level: "destructive",
+    });
+    expect(computerRisk("key", { key: "Control+Shift+Delete", intent: "打开窗口" })).toMatchObject({
+      level: "destructive",
+    });
   });
 
   it("keeps ordinary navigation operations normal", () => {
@@ -62,6 +68,14 @@ describe("Computer Use risk classification", () => {
     expect(computerRisk("key", { key: "Enter" })).toMatchObject({
       level: "sensitive",
     });
+    expect(computerRisk("move", {})).toMatchObject({ level: "sensitive" });
+  });
+
+  it("classifies context-menu clicks as desktop input", () => {
+    expect(computerRisk("click", { button: "right", intent: "打开文件菜单" })).toEqual({
+      level: "normal",
+      reason: null,
+    });
   });
 
   it("requires a focused target window before desktop input", async () => {
@@ -74,6 +88,12 @@ describe("Computer Use risk classification", () => {
       workdir: ".",
       action: "click",
       args: { x: 10, y: 10, intent: "点击编辑区域" },
+    })).rejects.toThrow("必须先调用 computer_focus_window");
+    await expect(manager.execute({
+      sessionId: "session-a",
+      workdir: ".",
+      action: "move",
+      args: { x: 10, y: 10, intent: "悬停查看提示" },
     })).rejects.toThrow("必须先调用 computer_focus_window");
   });
 

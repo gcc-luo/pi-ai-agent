@@ -45,8 +45,10 @@ async function invoke(
       },
     );
     const result = await response.json() as Record<string, unknown>;
-    if (!response.ok) {
-      const message = typeof result.error === "string" ? result.error : `HTTP ${response.status}`;
+    if (!response.ok || result.ok === false || result.denied === true) {
+      const message = typeof result.error === "string" ? result.error
+        : typeof result.message === "string" ? result.message
+          : `HTTP ${response.status}`;
       return {
         content: [{ type: "text" as const, text: `Computer Use 操作失败：${message}` }],
         details: result,
@@ -107,6 +109,7 @@ export default function computerTools(pi: ExtensionAPI) {
     "操作前先调用 computer_list_windows 和 computer_screenshot；窗口列表会通过 isActive 标识当前活动窗口。",
     "调用 computer_focus_window 绑定输入目标。目标已经在前台时可省略 windowId 绑定当前活动窗口；macOS 无法主动激活时，应提示用户先切换窗口再重试，不要声称 Computer Use 不可用。",
     "每次关键操作后重新截图确认结果；坐标基于最近一次截图，不要凭空猜测。",
+    "悬停控件可用 computer_move；上下文菜单可用 computer_click 的 right 按键，随后截图确认菜单内容。",
     "所有输入操作都要提供真实 intent；涉及发送、提交、删除、支付、覆盖或权限变更时，必须先获得用户明确确认。",
   ];
 
@@ -150,10 +153,21 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_click",
     label: "点击桌面",
-    description: "在桌面绝对坐标执行鼠标单击。",
-    parameters: Type.Object({ ...point, ...intent }),
+    description: "在桌面绝对坐标执行左键、右键或中键单击。",
+    parameters: Type.Object({ ...point, button: Type.Optional(Type.Union([
+      Type.Literal("left"), Type.Literal("right"), Type.Literal("middle"),
+    ], { description: "鼠标按键，默认 left；右键可打开上下文菜单" })), ...intent }),
     executionMode: "sequential",
     execute: run("click"),
+  });
+
+  pi.registerTool({
+    name: "computer_move",
+    label: "移动鼠标",
+    description: "将鼠标移到目标窗口内的桌面绝对坐标，可触发悬停提示或菜单。",
+    parameters: Type.Object({ ...point, ...intent }),
+    executionMode: "sequential",
+    execute: run("move"),
   });
 
   pi.registerTool({
@@ -192,9 +206,11 @@ export default function computerTools(pi: ExtensionAPI) {
   pi.registerTool({
     name: "computer_scroll",
     label: "滚动桌面",
-    description: "在鼠标当前位置滚动，正数向上、负数向下。",
+    description: "在目标窗口内的指定坐标或当前鼠标位置滚动，正数向上、负数向下。",
     parameters: Type.Object({
       delta: Type.Optional(Type.Number({ description: "滚轮增量，默认 -360" })),
+      x: Type.Optional(Type.Number({ description: "滚动位置的桌面绝对 X 坐标；需与 y 一起提供" })),
+      y: Type.Optional(Type.Number({ description: "滚动位置的桌面绝对 Y 坐标；需与 x 一起提供" })),
       ...intent,
     }),
     executionMode: "sequential",

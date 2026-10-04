@@ -48,7 +48,7 @@ const MANIFESTS: PluginManifest[] = [
     id: COMPUTER_PLUGIN_ID,
     name: "Computer Use",
     icon: "🖥️",
-    version: "1.1.0",
+    version: "1.2.0",
     description: "通过窗口信息、桌面截图和坐标操作控制 macOS、Windows 与 Linux 本地应用。",
     source: "Pi Web UI",
     builtin: true,
@@ -56,7 +56,7 @@ const MANIFESTS: PluginManifest[] = [
     defaultEnabled: true,
     tools: [
       "computer_screenshot", "computer_list_windows", "computer_focus_window",
-      "computer_click", "computer_double_click", "computer_type", "computer_key",
+      "computer_click", "computer_move", "computer_double_click", "computer_type", "computer_key",
       "computer_scroll", "computer_drag", "computer_wait",
       "computer_get_cursor_position",
     ],

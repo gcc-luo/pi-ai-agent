@@ -359,13 +359,19 @@ export async function runComputerAction(
     }
 
     const expectedWindowId = typeof args.expectedWindowId === "string" ? args.expectedWindowId : "";
-    if (action === "click" || action === "double_click") {
+    if (action === "click" || action === "double_click" || action === "move") {
       const point = new Point(requiredNumber(args.x, "x"), requiredNumber(args.y, "y"));
+      const button = args.button ?? "left";
+      if (action === "click" && button !== "left" && button !== "right" && button !== "middle") {
+        throw new Error("button 必须是 left、right 或 middle");
+      }
       await assertScreenPoint(point);
       await assertInputTarget(expectedWindowId, point);
       await mouse.setPosition(point);
       if (action === "double_click") await mouse.doubleClick(Button.LEFT);
-      else await mouse.click(Button.LEFT);
+      else if (action === "click") {
+        await mouse.click(button === "right" ? Button.RIGHT : button === "middle" ? Button.MIDDLE : Button.LEFT);
+      }
       return { ok: true, x: point.x, y: point.y };
     }
     if (action === "type") {
@@ -382,7 +388,15 @@ export async function runComputerAction(
     }
     if (action === "scroll") {
       const delta = requiredNumber(args.delta, "delta");
-      await assertInputTarget(expectedWindowId);
+      const hasX = args.x !== undefined;
+      const hasY = args.y !== undefined;
+      if (hasX !== hasY) throw new Error("滚动坐标必须同时提供 x 和 y");
+      const point = hasX
+        ? new Point(requiredNumber(args.x, "x"), requiredNumber(args.y, "y"))
+        : await mouse.getPosition();
+      await assertScreenPoint(point);
+      await assertInputTarget(expectedWindowId, point);
+      if (hasX) await mouse.setPosition(point);
       const steps = Math.max(1, Math.round(Math.abs(delta) / 120));
       if (delta >= 0) await mouse.scrollUp(steps);
       else await mouse.scrollDown(steps);

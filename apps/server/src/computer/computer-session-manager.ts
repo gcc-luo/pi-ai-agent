@@ -12,6 +12,7 @@ export type ComputerAction =
   | "list_windows"
   | "focus_window"
   | "click"
+  | "move"
   | "double_click"
   | "type"
   | "key"
@@ -21,7 +22,7 @@ export type ComputerAction =
   | "get_cursor_position";
 
 const INPUT_ACTIONS = new Set<ComputerAction>([
-  "click", "double_click", "type", "key", "scroll", "drag",
+  "click", "move", "double_click", "type", "key", "scroll", "drag",
 ]);
 
 interface ComputerSessionState {
@@ -65,9 +66,14 @@ export function computerRisk(
 ): { level: "normal" | "sensitive" | "destructive"; reason: string | null } {
   const intent = typeof args.intent === "string" ? args.intent.toLowerCase() : "";
   const key = typeof args.key === "string" ? args.key.toLowerCase() : "";
+  const keys = new Set(key.split("+").map((part) => part.trim()));
+  const hasAny = (...names: string[]) => names.some((name) => keys.has(name));
+  const destructiveShortcut = (hasAny("alt", "option") && keys.has("f4"))
+    || (keys.has("shift") && hasAny("delete", "del"))
+    || (hasAny("cmd", "command", "meta", "super", "ctrl", "control") && hasAny("q", "w"));
   const destructive = /\b(delete|remove|erase|destroy|shutdown|format|overwrite)\b|删除|移除|清空|关机|覆盖|格式化/;
   const sensitive = /\b(send|submit|publish|pay|purchase|transfer|upload|password|permission|save)\b|发送|提交|发布|支付|购买|转账|上传|密码|权限|保存/;
-  if (destructive.test(intent) || /alt\+f4|shift\+delete/.test(key)) {
+  if (destructive.test(intent) || destructiveShortcut) {
     return { level: "destructive", reason: "该桌面操作可能删除、覆盖或关闭重要内容" };
   }
   if (sensitive.test(intent)) {
