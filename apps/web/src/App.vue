@@ -7,6 +7,7 @@ import ChatPanel from "./components/ChatPanel.vue";
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
 const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
+const KbCitationViewer = defineAsyncComponent(() => import("./components/KbCitationViewer.vue"));
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
 import NewProjectDialog from "./components/NewProjectDialog.vue";
@@ -29,6 +30,7 @@ import type { NotificationNavigationTarget } from "./stores/desktop.js";
 import { useI18n } from "./i18n/index.js";
 import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
 import { clampPreviewWidth, getPreviewMaxWidth, PREVIEW_MIN_WIDTH } from "./utils/preview-width.js";
+import type { KbCitationMeta } from "./utils/kb-context.js";
 
 const projectStore = useProjectStore();
 const sessionStore = useSessionStore();
@@ -43,6 +45,7 @@ const { t, currentLocale } = useI18n();
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const filePath = ref<string | null>(null);
+const citationPreview = ref<KbCitationMeta | null>(null);
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
@@ -183,6 +186,7 @@ onBeforeUnmount(() => {
 watch(selectedProjectId, (id) => {
   projectLoadPromise = (async () => {
     filePath.value = null;
+    citationPreview.value = null;
     selectedSessionId.value = null;
     if (!id) return;
     await projectStore.loadOne(id);
@@ -382,10 +386,21 @@ const hasWorkspace = computed(
 );
 
 
-const showPreview = computed(() => filePath.value !== null);
+const showPreview = computed(() => filePath.value !== null || citationPreview.value !== null);
 
 function closePreview() {
   filePath.value = null;
+  citationPreview.value = null;
+}
+
+function openProjectFile(path: string) {
+  citationPreview.value = null;
+  filePath.value = path;
+}
+
+function openKbCitation(citation: KbCitationMeta) {
+  filePath.value = null;
+  citationPreview.value = citation;
 }
 </script>
 
@@ -405,7 +420,7 @@ function closePreview() {
           @create-session="createSession"
           @rename-session="renameSession"
           @delete-session="deleteSession"
-          @select-file="filePath = $event"
+          @select-file="openProjectFile"
         />
         <div
           class="sidebar-resizer"
@@ -446,7 +461,8 @@ function closePreview() {
                     ref="chatPanelRef"
                     :session-id="selectedSessionId"
                     :project-id="selectedProjectId!"
-                    @select-file="filePath = $event"
+                    @select-file="openProjectFile"
+                    @select-kb-citation="openKbCitation"
                     @manage-connectors="activeNav = 'connectors'"
                   />
                 </div>
@@ -471,7 +487,7 @@ function closePreview() {
                     @pointerdown="startPreviewResize"
                   />
                   <div class="preview-header">
-                    <span class="preview-title">{{ filePath?.split('/').pop() }}</span>
+                    <span class="preview-title">{{ citationPreview?.fileName ?? filePath?.split('/').pop() }}</span>
                     <button class="preview-close" @click="closePreview">
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                         <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
@@ -479,7 +495,8 @@ function closePreview() {
                     </button>
                   </div>
                   <div class="preview-body">
-                    <FileViewer :project-id="selectedProjectId!" :path="filePath" hide-header />
+                    <FileViewer v-if="filePath" :project-id="selectedProjectId!" :path="filePath" hide-header />
+                    <KbCitationViewer v-else-if="citationPreview" :citation="citationPreview" />
                   </div>
                 </div>
               </Transition>

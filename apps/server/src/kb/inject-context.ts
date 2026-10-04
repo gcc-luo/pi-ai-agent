@@ -26,6 +26,8 @@ export function buildKbContext(hits: KbSearchHitDto[]): InjectResult {
     const localId = i + 1;
     chunkMap[localId] = {
       chunkId: hit.chunkId,
+      kbId: hit.kbId,
+      fileId: hit.fileId,
       segmentId: hit.segmentId,
       revision: hit.revision,
       kbName: hit.kbName,

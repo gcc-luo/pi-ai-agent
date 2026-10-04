@@ -15,10 +15,41 @@ export interface KbSearchMeta {
   query: string;
   kbIds: string[];
   fileIds?: string[];
-  hits: { localId: number; chunkId: number; kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }[];
+  hits: {
+    localId: number;
+    chunkId: number;
+    kbId?: string;
+    fileId?: string;
+    segmentId?: string;
+    revision?: number;
+    kbName: string;
+    fileName: string;
+    titlePath: string | null;
+    pageStart: number | null;
+    pageEnd: number | null;
+    modality?: "text" | "image" | "video" | "audio";
+  }[];
   durationMs: number;
   diagnostics?: KbSearchDiagnostics;
   timestamp: number;
+}
+
+export interface KbCitationMeta {
+  localId: number;
+  chunkId: number;
+  kbId?: string;
+  fileId?: string;
+  segmentId?: string;
+  revision?: number;
+  kbName: string;
+  fileName: string;
+  titlePath: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  modality?: "text" | "image" | "video" | "audio";
+  timeStartMs?: number | null;
+  timeEndMs?: number | null;
+  content?: string;
 }
 
 export function getKbSearchMeta(metadata: Record<string, unknown> | null): KbSearchMeta | null {
@@ -27,7 +58,7 @@ export function getKbSearchMeta(metadata: Record<string, unknown> | null): KbSea
 }
 
 // Replace [N] citations in text with chip HTML
-export function renderKbCitations(text: string, chunkMap: Record<number, { kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }>): string {
+export function renderKbCitations(text: string, chunkMap: Record<number, KbCitationMeta>): string {
   return text.replace(/\[([1-9][0-9]*)\]/g, (match, numStr) => {
     const id = parseInt(numStr, 10);
     const meta = chunkMap[id];
@@ -40,6 +71,17 @@ export function renderKbCitations(text: string, chunkMap: Record<number, { kbNam
         : t("kb.context.pageSingle", { n: meta.pageStart });
       parts.push(page);
     }
-    return `<span class="kb-citation-chip" data-chunk-id="${id}" title="${parts.join(' · ')}">📖 ${parts.join(' · ')}</span>`;
+    const title = escapeHtml(parts.join(" · "));
+    return `<button type="button" class="kb-citation-chip" data-local-id="${id}" title="${title}" aria-label="${escapeHtml(t("kb.chat.citation.viewFile"))}: ${title}">📖 ${title}</button>`;
   });
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] ?? character);
 }

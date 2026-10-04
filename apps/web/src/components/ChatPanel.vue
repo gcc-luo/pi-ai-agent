@@ -25,7 +25,7 @@ import type {
 } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
 import { TIP_BLOCK_RE, activeTipBody, activeTipLabel } from "../utils/skill-tips.js";
-import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbSearchMeta } from "../utils/kb-context.js";
+import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbCitationMeta, type KbSearchMeta } from "../utils/kb-context.js";
 import { parseArtifacts } from "../utils/artifacts.js";
 import { summarizeTokenUsage } from "../utils/token-usage.js";
 import { type ComposerResourceSelection, type ComposerResourceToken } from "../utils/composer-tokens.js";
@@ -40,7 +40,11 @@ import ConfirmDialog from "./ConfirmDialog.vue";
 import AgentActivity from "./AgentActivity.vue";
 
 const props = defineProps<{ sessionId: string; projectId: string }>();
-const emit = defineEmits<{ (e: "select-file", path: string): void; (e: "manage-connectors"): void }>();
+const emit = defineEmits<{
+  (e: "select-file", path: string): void;
+  (e: "select-kb-citation", citation: KbCitationMeta): void;
+  (e: "manage-connectors"): void;
+}>();
 const agent = useAgentStore();
 const sessionStore = useSessionStore();
 const { t } = useI18n();
@@ -264,7 +268,7 @@ watch(
         [msgId]: {
           phase: search.phase as KbCallState["phase"],
           query: search.query,
-          hits: search.hits,
+          hits: search.hits?.map((hit: any, index: number) => ({ ...hit, localId: index + 1 })),
           durationMs: search.durationMs,
           error: search.error,
           diagnostics: search.diagnostics,
@@ -695,7 +699,18 @@ async function copyMessage(m: { id: string; role: string; parts: MessagePart[] }
 // Event delegation for code-block copy buttons rendered inside v-html.
 // The button markup is produced by renderMarkdown (wrapCodeBlocks).
 async function onMsgContentClick(e: MouseEvent) {
-  const btn = (e.target as HTMLElement).closest?.(".code-copy-btn");
+  const target = e.target as HTMLElement;
+  const citationButton = target.closest?.<HTMLButtonElement>(".kb-citation-chip");
+  if (citationButton) {
+    const messageId = citationButton.closest<HTMLElement>(".msg")?.dataset.msgId;
+    const localId = Number(citationButton.dataset.localId);
+    const message = allMessages.value.find((candidate) => candidate.id === messageId);
+    const citation = message?.chunkMap[localId];
+    if (citation) emit("select-kb-citation", citation);
+    return;
+  }
+
+  const btn = target.closest?.(".code-copy-btn");
   if (!btn) return;
   const wrap = btn.closest(".code-block-wrap");
   const code = wrap?.querySelector("pre code")?.textContent ?? "";
@@ -902,7 +917,7 @@ const allMessages = computed(() => {
         },
       ]
     : all;
-  const decorated = messageSources.map((m) => {
+  const decorated = messageSources.map((m, index) => {
     // Extract <artifacts> blocks from assistant text parts
     let artifacts: ArtifactItem[] = [];
     let parts = m.parts;
@@ -926,6 +941,10 @@ const allMessages = computed(() => {
       }
       parts = newParts;
     }
+    const citationSource = m.role === "user"
+      ? m
+      : [...messageSources.slice(0, index)].reverse().find((candidate) => candidate.role === "user");
+
     return {
       ...m,
       parts,
@@ -936,8 +955,11 @@ const allMessages = computed(() => {
         && (parts.some((part) => part.kind === "image" || (part.kind === "text" && part.text.trim().length > 0))
           || artifacts.length > 0),
       kbSearch: kbSearchByMessage.value[m.id] ?? null,
-      // Build chunkMap from persisted metadata or live search state for citation rendering
-      chunkMap: buildChunkMap(m.id, m.metadata),
+      // Citations resolve against the search attached to this answer's user turn,
+      // so older answers keep pointing at their own source files.
+      chunkMap: citationSource
+        ? buildChunkMap(citationSource.id, citationSource.metadata)
+        : {},
     };
   });
 
@@ -977,66 +999,40 @@ watch(allMessages, async (msgs) => {
 function buildChunkMap(
   msgId: string,
   metadata: Record<string, unknown> | null,
-): Record<number, { kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }> {
+): Record<number, KbCitationMeta> {
   // From live kb_search state
   const liveSearch = kbSearchByMessage.value[msgId];
   if (liveSearch?.hits) {
-    const map: Record<number, any> = {};
-    for (const hit of liveSearch.hits) {
-      map[hit.localId] = {
+    const map: Record<number, KbCitationMeta> = {};
+    liveSearch.hits.forEach((hit: any, index: number) => {
+      const localId = index + 1;
+      map[localId] = {
+        localId,
+        chunkId: hit.chunkId,
+        kbId: hit.kbId,
+        fileId: hit.fileId,
+        segmentId: hit.segmentId,
+        revision: hit.revision,
         kbName: hit.kbName,
         fileName: hit.fileName,
         titlePath: hit.titlePath,
         pageStart: hit.pageStart,
         pageEnd: hit.pageEnd,
+        modality: hit.modality,
+        timeStartMs: hit.timeStartMs,
+        timeEndMs: hit.timeEndMs,
+        content: hit.content,
       };
-    }
+    });
     return map;
   }
-  // From persisted metadata — the user message's metadata contains kbSearch,
-  // but the *assistant* message's citations reference the same chunkMap.
-  // The assistant doesn't have kbSearch in its metadata; we need to find the
-  // preceding user message's kbSearch metadata to build the chunkMap.
-  // For simplicity, we'll handle this at the template level.
-  return {};
-}
-
-// Build a session-wide chunkMap from the most recent user message's kbSearch metadata.
-// This allows assistant messages that reference [N] to resolve citations.
-const sessionChunkMap = computed(() => {
-  const map: Record<number, { kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }> = {};
-  // Check persisted messages for kbSearch metadata on user messages
-  for (const m of persistedMessages.value) {
-    if (m.role !== "user") continue;
-    const meta = getKbSearchMeta(m.metadata);
-    if (meta?.hits) {
-      for (const hit of meta.hits) {
-        map[hit.localId] = {
-          kbName: hit.kbName,
-          fileName: hit.fileName,
-          titlePath: hit.titlePath,
-          pageStart: hit.pageStart,
-          pageEnd: hit.pageEnd,
-        };
-      }
-    }
-  }
-  // Check live kb_search states
-  for (const state of Object.values(kbSearchByMessage.value)) {
-    if (state.hits) {
-      for (const hit of state.hits) {
-        map[hit.localId] = {
-          kbName: hit.kbName,
-          fileName: hit.fileName,
-          titlePath: hit.titlePath,
-          pageStart: hit.pageStart,
-          pageEnd: hit.pageEnd,
-        };
-      }
-    }
+  const meta = getKbSearchMeta(metadata);
+  const map: Record<number, KbCitationMeta> = {};
+  for (const hit of meta?.hits ?? []) {
+    map[hit.localId] = { ...hit };
   }
   return map;
-});
+}
 
 const messageLevelErrorCodes = new Set([
   "pi_prompt_failed",
@@ -1265,7 +1261,7 @@ defineExpose({ revealNotificationMessage });
                 <div v-if="split.text" class="msg-content" @click="onMsgContentClick" v-html="renderMarkdown(split.text)"></div>
               </template>
             </template>
-            <div v-else-if="p.kind === 'text' && !m.hideActivityText" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), sessionChunkMap)"></div>
+            <div v-else-if="p.kind === 'text' && !m.hideActivityText" class="msg-content" @click="onMsgContentClick" v-html="renderKbCitations(renderMarkdown(p.text), m.chunkMap)"></div>
           </template>
           <!-- Artifact cards (files delivered by the agent) -->
           <template v-if="m.artifacts?.length && !m.hideNonTextContent">
@@ -2879,7 +2875,8 @@ defineExpose({ revealNotificationMessage });
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  cursor: default;
+  cursor: pointer;
+  appearance: none;
   white-space: nowrap;
   vertical-align: baseline;
   line-height: 1.4;
@@ -2889,6 +2886,10 @@ defineExpose({ revealNotificationMessage });
   background: var(--accent);
   color: var(--bg-void);
   border-color: var(--accent);
+}
+.msg-content :deep(.kb-citation-chip:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ─── Image Previews in Composer ─── */

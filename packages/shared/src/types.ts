@@ -586,6 +586,9 @@ export interface KbSearchDiagnostics {
 
 export interface ChunkMeta {
   chunkId: number;
+  /** Knowledge base and file identifiers let a rendered citation open its source. */
+  kbId?: string;
+  fileId?: string;
   segmentId?: string;
   revision?: number;
   kbName: string;

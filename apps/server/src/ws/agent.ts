@@ -439,10 +439,11 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                 kbSearchMeta = {
                   phase: "done", query: searchQuery, kbIds, fileIds,
                   hits: result.hits.map((h, i) => ({
-                    localId: i + 1, chunkId: h.chunkId, segmentId: h.segmentId,
+                    localId: i + 1, chunkId: h.chunkId, kbId: h.kbId, fileId: h.fileId,
+                    segmentId: h.segmentId,
                     revision: h.revision, kbName: h.kbName,
                     fileName: h.fileName, titlePath: h.titlePath,
-                    pageStart: h.pageStart, pageEnd: h.pageEnd,
+                    pageStart: h.pageStart, pageEnd: h.pageEnd, modality: h.modality,
                   })),
                   durationMs: result.durationMs, diagnostics: result.diagnostics, timestamp: Date.now(),
                 };

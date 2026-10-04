@@ -6,7 +6,17 @@ import type { KbSearchDiagnostics } from "@pi-web-ui/shared";
 export interface KbCallState {
   phase: "searching" | "done" | "empty" | "failed";
   query: string;
-  hits?: { localId: number; chunkId: number; kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }[];
+  hits?: {
+    localId: number;
+    chunkId: number;
+    kbId?: string;
+    fileId?: string;
+    kbName: string;
+    fileName: string;
+    titlePath: string | null;
+    pageStart: number | null;
+    pageEnd: number | null;
+  }[];
   durationMs?: number;
   error?: string;
   diagnostics?: KbSearchDiagnostics;
