@@ -2,7 +2,7 @@
   ProjectDto, SessionDto, MessageDto, FileNodeDto, FileContentDto, ModelDto, SkillDto,
   SessionAuthorizationMode,
   SkillSearchResult, SkillContentPreview, SkillStoreSearchResponse, SkillStoreInstallRequest, SkillStoreInstallResponse,
-  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, TrashItemDto, ExpertDto,
+  KbDto, KbFileDto, KbFilePage, KbChunkDto, KbBindingDto, KbSearchHitDto, KbSearchDiagnostics, TrashItemDto, ExpertDto,
   ScheduledTaskDto, ScheduledTaskCapabilities, TaskLogDto, TaskType,
   ArtifactItem, ArtifactValidation,
   ChannelDescriptor, ChannelConfigDto, ChannelTestResult, ChannelType, BrowserCapabilityDto,
@@ -240,7 +240,7 @@ export const api = {
   deleteKbFile: (id: string) => request<void>("DELETE", `/kb-files/${id}`),
 
   searchKb: (query: string, kbIds: string[], fileIds?: string[], limit?: number) =>
-    request<{ hits: KbSearchHitDto[]; durationMs: number }>("POST", "/kb-search", { query, kbIds, fileIds, limit }),
+    request<{ hits: KbSearchHitDto[]; durationMs: number; diagnostics: KbSearchDiagnostics }>("POST", "/kb-search", { query, kbIds, fileIds, limit }),
 
   getKbBindings: (sessionId: string) => request<KbBindingDto[]>("GET", `/sessions/${sessionId}/kb-bindings`),
   setKbBindings: (sessionId: string, bindings: { kbId: string; fileFilter?: string[] | null }[]) =>

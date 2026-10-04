@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useI18n } from "../i18n/index.js";
+import type { KbSearchDiagnostics } from "@pi-web-ui/shared";
 
 export interface KbCallState {
   phase: "searching" | "done" | "empty" | "failed";
@@ -8,6 +9,7 @@ export interface KbCallState {
   hits?: { localId: number; chunkId: number; kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }[];
   durationMs?: number;
   error?: string;
+  diagnostics?: KbSearchDiagnostics;
 }
 
 defineProps<{
@@ -16,6 +18,24 @@ defineProps<{
 
 const { t } = useI18n();
 const expanded = ref(false);
+
+function diagnosticText(diagnostics?: KbSearchDiagnostics): string {
+  if (!diagnostics) return "";
+  if (diagnostics.searchableChunkCount === 0) return t("kb.chat.card.noSearchableContent");
+  switch (diagnostics.semanticStatus) {
+    case "not_configured": return t("kb.chat.card.keywordFallback");
+    case "index_missing": return t("kb.chat.card.indexMissing", { indexed: diagnostics.indexedChunkCount, total: diagnostics.searchableChunkCount });
+    case "partial": return t("kb.chat.card.partialIndex", { indexed: diagnostics.indexedChunkCount, total: diagnostics.searchableChunkCount });
+    case "failed": return t("kb.chat.card.embeddingFailed");
+    default: return "";
+  }
+}
+
+function modeText(diagnostics?: KbSearchDiagnostics): string {
+  if (!diagnostics) return "";
+  const key = `kb.chat.card.mode.${diagnostics.mode}`;
+  return t(key);
+}
 </script>
 
 <template>
@@ -61,6 +81,10 @@ const expanded = ref(false);
           </span>
         </div>
       </div>
+      <div v-if="modeText(state.diagnostics) || diagnosticText(state.diagnostics)" class="kb-call-diagnostic">
+        <span v-if="modeText(state.diagnostics)">{{ modeText(state.diagnostics) }}</span>
+        <span v-if="diagnosticText(state.diagnostics)" class="kb-call-diagnostic-warning">{{ diagnosticText(state.diagnostics) }}</span>
+      </div>
     </template>
 
     <!-- Empty -->
@@ -71,6 +95,10 @@ const expanded = ref(false);
           <path d="M4 4l4 4M8 4l-4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
         </svg>
         <span class="kb-call-text">{{ t('kb.chat.card.empty', { query: state.query }) }}</span>
+      </div>
+      <div v-if="modeText(state.diagnostics)" class="kb-call-diagnostic">{{ modeText(state.diagnostics) }}</div>
+      <div v-if="diagnosticText(state.diagnostics)" class="kb-call-diagnostic kb-call-diagnostic-warning">
+        {{ diagnosticText(state.diagnostics) }}
       </div>
     </template>
 
@@ -183,6 +211,17 @@ const expanded = ref(false);
 }
 .kb-call-hit:hover {
   background: var(--bg-hover);
+}
+.kb-call-diagnostic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 5px 0 0 18px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.kb-call-diagnostic-warning {
+  color: var(--amber, #d99213);
 }
 .hit-id {
   color: var(--accent);

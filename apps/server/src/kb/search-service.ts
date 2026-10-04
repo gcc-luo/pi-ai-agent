@@ -1,8 +1,9 @@
 import { buildHighlightSnippet, buildInstrSnippet } from "./search-snippet.js";
 import type Database from "better-sqlite3";
-import { KbSearchHitDto } from "@pi-web-ui/shared";
-import { decodeEmbedding, cosineSimilarity, EmbeddingModelConfig, getEmbedding } from "./embedding-client.js";
+import { KbSearchDiagnostics, KbSearchHitDto } from "@pi-web-ui/shared";
+import { decodeEmbedding, cosineSimilarity, EmbeddingModelConfig, getEmbeddings } from "./embedding-client.js";
 import { segmentQuery } from "./fts-tokenize.js";
+import { buildSearchQueryVariants } from "./query-text.js";
 
 export interface SearchInput {
   query: string;
@@ -23,14 +24,22 @@ export interface SearchScope {
 export interface SearchResult {
   hits: KbSearchHitDto[];
   durationMs: number;
+  diagnostics: KbSearchDiagnostics;
 }
 
 const FTS_CANDIDATE_LIMIT = 20;
-const VECTOR_CANDIDATE_LIMIT = 20;
+const VECTOR_CANDIDATE_LIMIT = 40;
 const RRF_K = 60;  // RRF constant — higher value compresses rank differences
-const MIN_VECTOR_SIMILARITY = 0.35;
+const LEXICAL_STOP_WORDS = new Set([
+  "知识库", "资料库", "文档库", "里面", "其中", "当前", "这个", "帮我", "帮忙", "替我",
+  "搜索", "搜一下", "查找", "查询", "查阅", "检索", "找一下", "一下", "请问", "请", "麻烦",
+  "相关", "有关", "关于", "内容", "信息", "有没有", "哪些", "是什么", "什么", "我想", "想要",
+  "和", "与", "的", "了", "吗", "是", "在", "从", "内", "中", "里", "我", "帮",
+]);
 
 type ScoredCandidate = { hit: KbSearchHitDto; score: number; embedding: Buffer | null };
+type RankedCandidateList = { candidates: ScoredCandidate[]; weight: number };
+type VectorSearchResult = { candidates: ScoredCandidate[]; indexedChunkCount: number; failed: boolean };
 
 export class KbSearchService {
   constructor(private db: Database.Database) {}
@@ -40,80 +49,71 @@ export class KbSearchService {
     const { query, limit = 8 } = input;
     const scopes = normalizeScopes(input);
     const kbIds = scopes.map((scope) => scope.kbId);
+    const queryVariants = buildSearchQueryVariants(query);
+    const normalizedQuery = queryVariants.at(-1) ?? "";
 
     console.log(`[KB Search] ─── start ─── query="${query.slice(0, 60)}" kbIds=[${kbIds.join(",")}] limit=${limit} vectorSpaces=${scopes.filter((s) => s.embeddingModel).length}`);
 
-    if (!query.trim() || !kbIds.length) {
-      console.log(`[KB Search] ─── done (empty input, 0ms)`);
-      return { hits: [], durationMs: 0 };
+    const searchableChunkCount = query.trim() && kbIds.length
+      ? this.countSearchableChunks(scopes)
+      : 0;
+    if (!queryVariants.length || !kbIds.length || searchableChunkCount === 0) {
+      const durationMs = Math.round(performance.now() - start);
+      const diagnostics: KbSearchDiagnostics = {
+        mode: "none",
+        semanticStatus: scopes.some((scope) => scope.embeddingModel) ? "index_missing" : "not_configured",
+        searchableChunkCount,
+        indexedChunkCount: 0,
+        keywordCandidateCount: 0,
+        semanticCandidateCount: 0,
+        normalizedQuery,
+      };
+      console.log(`[KB Search] ─── done (no searchable chunks, ${durationMs}ms)`);
+      return { hits: [], durationMs, diagnostics };
     }
 
-    // ── Step 1: FTS5 keyword search ──
+    // ── Step 1: Search both the original wording and a compact retrieval
+    // variant. Strict AND keeps exact matches; relaxed OR recovers candidates
+    // when conversational filler words are absent from document text. ──
     const t1 = performance.now();
-    const ftsCandidates = this.ftsSearchPhase(query, scopes);
-    console.log(`[KB Search] Step 1/FTS5 keyword: ${ftsCandidates.length} candidates (${Math.round(performance.now() - t1)}ms)`);
-
-    // ── Step 1b: instr fallback for short queries (≤2 CJK chars) ──
-    if (ftsCandidates.length < limit && isShortCjkQuery(query)) {
-      const t1b = performance.now();
-      const instrHits = this.instrFallback(query, scopes, limit);
-      const existingChunkIds = new Set(ftsCandidates.map((candidate) => candidate.hit.chunkId));
-      let added = 0;
-      for (const candidate of instrHits) {
-        if (existingChunkIds.has(candidate.hit.chunkId)) continue;
-        ftsCandidates.push(candidate);
-        existingChunkIds.add(candidate.hit.chunkId);
-        added += 1;
-        if (ftsCandidates.length >= limit) break;
-      }
-      if (added > 0) {
-        console.log(`[KB Search] Step 1b/instr fallback: +${added} hits (${Math.round(performance.now() - t1b)}ms)`);
-      }
-    }
+    const ftsLists = this.ftsSearchPhase(queryVariants, scopes);
+    const keywordCandidateCount = new Set(ftsLists.flatMap((list) => list.candidates.map((candidate) => candidate.hit.chunkId))).size;
+    console.log(`[KB Search] Step 1/FTS5: ${keywordCandidateCount} candidates across ${ftsLists.length} query passes (${Math.round(performance.now() - t1)}ms)`);
 
     const vectorGroups = groupVectorScopes(scopes);
-    if (ftsCandidates.length === 0 && vectorGroups.length === 0) {
-      const ms = Math.round(performance.now() - start);
-      console.log(`[KB Search] ─── done (no results, ${ms}ms)`);
-      return { hits: [], durationMs: ms };
-    }
+    const t2 = performance.now();
+    const vectorResults = await Promise.all(vectorGroups.map(({ model, scopes: groupScopes }) =>
+      this.vectorSearch(queryVariants, model, groupScopes, VECTOR_CANDIDATE_LIMIT)
+    ));
+    const vectorCandidates = vectorResults.flatMap((result) => result.candidates);
+    const indexedChunkCount = vectorResults.reduce((sum, result) => sum + result.indexedChunkCount, 0);
+    const semanticCandidateCount = new Set(vectorCandidates.map((candidate) => candidate.hit.chunkId)).size;
+    console.log(`[KB Search] Step 2/vector search: ${semanticCandidateCount} candidates (${Math.round(performance.now() - t2)}ms)`);
 
-    // ── Step 2: Vector search (independent retrieval) ──
-    let vectorCandidates: ScoredCandidate[] = [];
-    if (vectorGroups.length > 0) {
-      const t2 = performance.now();
-      const vectorLists = await Promise.all(vectorGroups.map(({ model, scopes: groupScopes }) =>
-        this.vectorSearch(query, model, groupScopes, VECTOR_CANDIDATE_LIMIT)
-      ));
-      vectorCandidates = vectorLists.flat();
-      console.log(`[KB Search] Step 2/vector search: ${vectorCandidates.length} candidates (${Math.round(performance.now() - t2)}ms)`);
-    } else {
-      console.log(`[KB Search] Step 2/vector search: skipped (no embedding model)`);
-    }
-
-    // ── Step 3: Merge & rank ──
-    let hits: KbSearchHitDto[];
-    let strategy: string;
-    if (vectorCandidates.length > 0) {
-      hits = rrfMerge(ftsCandidates, vectorCandidates, limit);
-      strategy = "RRF merge (FTS + vector)";
-    } else if (ftsCandidates.length > 0) {
-      hits = ftsCandidates
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((c) => c.hit);
-      strategy = "FTS5 BM25 rank";
-    } else {
-      hits = vectorCandidates
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((c) => c.hit);
-      strategy = "vector cosine rank";
-    }
+    // ── Step 3: Reciprocal-rank fusion across all lexical and semantic lists.
+    // It combines ranks without comparing unlike BM25 and cosine score scales. ──
+    const rankedLists: RankedCandidateList[] = [
+      ...ftsLists,
+      ...vectorResults.map((result) => ({ candidates: result.candidates, weight: 1.5 })),
+    ];
+    const hits = rrfMerge(rankedLists, limit);
+    const semanticStatus = getSemanticStatus(scopes, vectorGroups.length, vectorResults, indexedChunkCount, searchableChunkCount);
+    const semanticAvailable = vectorResults.some((result) => result.indexedChunkCount > 0 && !result.failed);
+    const mode: KbSearchDiagnostics["mode"] = semanticAvailable
+      ? (keywordCandidateCount > 0 ? "hybrid" : "semantic")
+      : (keywordCandidateCount > 0 ? "keyword" : "none");
+    const diagnostics: KbSearchDiagnostics = {
+      mode,
+      semanticStatus,
+      searchableChunkCount,
+      indexedChunkCount,
+      keywordCandidateCount,
+      semanticCandidateCount,
+      normalizedQuery,
+    };
 
     // ── Step 4: Ensure all hits have snippets ──
-    // Vector-only results may lack snippets; generate them from content.
-    const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
+    const queryWords = segmentQuery(normalizedQuery).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
     for (const h of hits) {
       if (!h.snippet && h.content) {
         h.snippet = buildHighlightSnippet(h.content, queryWords);
@@ -121,26 +121,64 @@ export class KbSearchService {
     }
 
     const ms = Math.round(performance.now() - start);
-    console.log(`[KB Search] Step 3/merge: strategy="${strategy}" → ${hits.length} hits`);
+    console.log(`[KB Search] Step 3/merge: mode="${mode}" semanticStatus="${semanticStatus}" → ${hits.length} hits`);
     hits.forEach((h, i) => {
       console.log(`[KB Search]   #${i + 1} score=${h.score.toFixed(4)} file="${h.fileName}" chunk=${h.chunkId} seq=${h.seq} pages=${h.pageStart}-${h.pageEnd}`);
     });
     console.log(`[KB Search] ─── done (${ms}ms) ───`);
-    return { hits, durationMs: ms };
+    return { hits, durationMs: ms, diagnostics };
+  }
+
+  private countSearchableChunks(scopes: SearchScope[]): number {
+    const scopeFilter = buildScopeFilter(scopes, "c");
+    const row = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM kb_chunks c
+      JOIN kb_files f ON f.id = c.file_id
+      JOIN knowledge_bases kb ON kb.id = c.kb_id
+      WHERE (${scopeFilter.sql})
+        AND c.generation = f.parse_generation
+        AND f.parse_generation > 0
+        AND f.enabled = 1
+        AND kb.enabled = 1
+    `).get(...scopeFilter.params) as { count: number };
+    return row.count;
   }
 
   // ─── FTS5 keyword search ───
 
   private ftsSearchPhase(
-    query: string,
+    queryVariants: string[],
     scopes: SearchScope[],
-  ): ScoredCandidate[] {
-    const ftsQuery = buildFtsQuery(query);
-    if (!ftsQuery) return [];
-    // Extract query words for JS-based snippet highlighting
-    const queryWords = segmentQuery(query).filter((w) => /[a-zA-Z0-9㐀-鿿]/.test(w));
-    console.log(`[KB Search]   ftsQuery="${ftsQuery}" words=[${queryWords.join(", ")}]`);
-    return this.ftsSearch(ftsQuery, scopes, FTS_CANDIDATE_LIMIT, queryWords);
+  ): RankedCandidateList[] {
+    const queries = new Map<string, { query: string; words: string[]; weight: number }>();
+    for (const variant of queryVariants) {
+      const words = segmentQuery(variant);
+      const strict = buildFtsQuery(words, "AND");
+      if (strict) queries.set(strict, { query: strict, words, weight: 1 });
+
+      const usefulWords = words.filter((word) => !LEXICAL_STOP_WORDS.has(word.toLowerCase()));
+      const relaxed = buildFtsQuery(usefulWords, "OR");
+      if (relaxed && !queries.has(relaxed)) queries.set(relaxed, { query: relaxed, words: usefulWords, weight: 0.65 });
+    }
+
+    const lists: RankedCandidateList[] = [];
+    for (const { query, words, weight } of queries.values()) {
+      console.log(`[KB Search]   ftsQuery="${query}" words=[${words.join(", ")}]`);
+      const matches = this.ftsSearch(query, scopes, FTS_CANDIDATE_LIMIT, words);
+      if (matches.length) lists.push({ candidates: matches, weight });
+    }
+
+    // Preserve substring matching for very short Chinese queries, where the
+    // segmenter often cannot provide useful OR/AND terms.
+    for (const variant of queryVariants) {
+      if (!isShortCjkQuery(variant)) continue;
+      const matches = this.instrFallback(variant, scopes, FTS_CANDIDATE_LIMIT);
+      const knownIds = new Set(lists.flatMap((list) => list.candidates.map((candidate) => candidate.hit.chunkId)));
+      const extraMatches = matches.filter((candidate) => !knownIds.has(candidate.hit.chunkId));
+      if (extraMatches.length) lists.push({ candidates: extraMatches, weight: 1 });
+    }
+    return lists;
   }
 
   private ftsSearch(
@@ -260,23 +298,45 @@ export class KbSearchService {
   // ─── Vector search (independent retrieval, not just re-rank) ───
 
   private async vectorSearch(
-    query: string,
+    queryVariants: string[],
     embeddingModel: EmbeddingModelConfig,
     scopes: SearchScope[],
     limit: number,
-  ): Promise<ScoredCandidate[]> {
-    // Generate query embedding
-    let queryEmbedding: number[];
+  ): Promise<VectorSearchResult> {
+    const scopeFilter = buildScopeFilter(scopes, "c");
+    const indexedRow = this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM kb_chunks c
+      JOIN kb_segment_vectors v ON v.chunk_id = c.rowid
+      JOIN kb_files f ON f.id = c.file_id
+      JOIN knowledge_bases kb ON kb.id = c.kb_id
+      WHERE (${scopeFilter.sql})
+        AND c.generation = f.parse_generation
+        AND f.parse_generation > 0
+        AND f.enabled = 1
+        AND kb.enabled = 1
+        AND v.vector_space = 'text'
+        AND v.model_id = ?
+        AND v.model_version = ?
+    `).get(
+      ...scopeFilter.params,
+      embeddingModel.modelId,
+      embeddingModel.modelVersion ?? "unknown",
+    ) as { count: number };
+    if (!indexedRow.count) return { candidates: [], indexedChunkCount: 0, failed: false };
+
+    // Embed the user's wording and its compact variant in one provider call.
+    let queryEmbeddings: number[][];
     try {
-      queryEmbedding = await getEmbedding(embeddingModel, query);
-      console.log(`[KB Search]   query embedding: model=${embeddingModel.modelId} dimension=${queryEmbedding.length}`);
+      const result = await getEmbeddings(embeddingModel, queryVariants);
+      queryEmbeddings = result.embeddings;
+      console.log(`[KB Search]   query embeddings: model=${embeddingModel.modelId} queries=${queryEmbeddings.length} dimension=${result.dimension}`);
     } catch (err: any) {
       console.error(`[KB Search]   query embedding failed: ${err.message}`);
-      return [];
+      return { candidates: [], indexedChunkCount: indexedRow.count, failed: true };
     }
 
     // Load all chunks with embeddings from the target KBs
-    const scopeFilter = buildScopeFilter(scopes, "c");
     let sql = `
       SELECT
         c.rowid AS chunkId,
@@ -315,18 +375,25 @@ export class KbSearchService {
       ...scopeFilter.params,
       embeddingModel.modelId,
       embeddingModel.modelVersion ?? "unknown",
-      queryEmbedding.length,
+      queryEmbeddings[0]?.length ?? 0,
     ];
 
     const rows = this.db.prepare(sql).all(...params) as any[];
 
-    // Compute cosine similarity for each chunk
+    // Rank against both phrasings and keep the stronger semantic match. There
+    // is no universal cosine cutoff across embedding models, so confidence is
+    // handled by rank fusion and the answer's evidence sufficiency check.
     const scored: ScoredCandidate[] = [];
     for (const row of rows) {
       if (!row.embedding) continue;
       const chunkEmb = decodeEmbedding(row.embedding);
-      const score = cosineSimilarity(queryEmbedding, chunkEmb);
-      if (score < MIN_VECTOR_SIMILARITY) continue;
+      const score = Math.max(...queryEmbeddings
+        .filter((queryEmbedding) => queryEmbedding.length === chunkEmb.length)
+        .map((queryEmbedding) => cosineSimilarity(queryEmbedding, chunkEmb)));
+      // Zero cosine means no directional relationship. Keep every positive
+      // candidate because a universal high cutoff rejects valid matches for
+      // many embedding models and domains.
+      if (!Number.isFinite(score) || score <= 0) continue;
       const hit = rowToHit(row);
       hit.vectorScore = score;
       scored.push({
@@ -338,7 +405,7 @@ export class KbSearchService {
 
     // Sort by similarity descending
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit);
+    return { candidates: scored.slice(0, limit), indexedChunkCount: rows.length, failed: false };
   }
 }
 
@@ -375,42 +442,48 @@ function groupVectorScopes(scopes: SearchScope[]): { model: EmbeddingModelConfig
   return [...groups.values()];
 }
 
+function getSemanticStatus(
+  scopes: SearchScope[],
+  configuredGroupCount: number,
+  results: VectorSearchResult[],
+  indexedChunkCount: number,
+  searchableChunkCount: number,
+): KbSearchDiagnostics["semanticStatus"] {
+  if (configuredGroupCount === 0) return "not_configured";
+  const failedGroupCount = results.filter((result) => result.failed).length;
+  if (failedGroupCount === configuredGroupCount) return "failed";
+  if (indexedChunkCount === 0) return "index_missing";
+  if (
+    failedGroupCount > 0 ||
+    scopes.some((scope) => !scope.embeddingModel) ||
+    indexedChunkCount < searchableChunkCount
+  ) return "partial";
+  return "ready";
+}
+
 // ─── RRF (Reciprocal Rank Fusion) ───
 
 function rrfMerge(
-  ftsResults: ScoredCandidate[],
-  vectorResults: ScoredCandidate[],
+  resultLists: RankedCandidateList[],
   limit: number,
 ): KbSearchHitDto[] {
-  // Sort each list by its own score (descending)
-  const ftsSorted = [...ftsResults].sort((a, b) => b.score - a.score);
-  const vecSorted = [...vectorResults].sort((a, b) => b.score - a.score);
-
   // Compute RRF score for each chunk
   const rrfScores = new Map<number, { hit: KbSearchHitDto; rrfScore: number }>();
 
-  ftsSorted.forEach((c, rank) => {
-    const chunkId = c.hit.chunkId;
-    const existing = rrfScores.get(chunkId);
-    const rrf = 1 / (RRF_K + rank + 1);
-    if (existing) {
-      existing.rrfScore += rrf;
-    } else {
-      rrfScores.set(chunkId, { hit: c.hit, rrfScore: rrf });
-    }
-  });
-
-  vecSorted.forEach((c, rank) => {
-    const chunkId = c.hit.chunkId;
-    const existing = rrfScores.get(chunkId);
-    const rrf = 1 / (RRF_K + rank + 1);
-    if (existing) {
-      existing.rrfScore += rrf;
-      existing.hit.vectorScore = c.hit.vectorScore;
-    } else {
-      rrfScores.set(chunkId, { hit: c.hit, rrfScore: rrf });
-    }
-  });
+  for (const list of resultLists) {
+    [...list.candidates].sort((a, b) => b.score - a.score).forEach((candidate, rank) => {
+      const chunkId = candidate.hit.chunkId;
+      const existing = rrfScores.get(chunkId);
+      const rrf = list.weight / (RRF_K + rank + 1);
+      if (existing) {
+        existing.rrfScore += rrf;
+        if (candidate.hit.vectorScore !== undefined) existing.hit.vectorScore = candidate.hit.vectorScore;
+        if (candidate.hit.keywordScore !== undefined) existing.hit.keywordScore = candidate.hit.keywordScore;
+      } else {
+        rrfScores.set(chunkId, { hit: candidate.hit, rrfScore: rrf });
+      }
+    });
+  }
 
   // Sort by RRF score and return top-K
   return [...rrfScores.values()]
@@ -421,15 +494,15 @@ function rrfMerge(
 
 // ─── Helpers ───
 
-function buildFtsQuery(input: string): string {
-  const words = segmentQuery(input);
+function buildFtsQuery(words: string[], operator: "AND" | "OR"): string {
   if (!words.length) return "";
 
-  return words.map((w) => {
+  const terms = words.map((w) => {
     const escaped = w.replace(/"/g, '""');
     if (/[㐀-鿿]/.test(w)) return escaped;
     return `"${escaped}"`;
-  }).join(" ");
+  });
+  return terms.join(` ${operator} `);
 }
 
 /** Check if query is a short CJK string (≤2 characters) — needs instr fallback. */

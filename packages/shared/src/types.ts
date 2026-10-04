@@ -76,6 +76,7 @@ type ServerEventPayload =
       fileIds?: string[];
       hits?: KbSearchHitDto[];
       chunkMap?: Record<number, ChunkMeta>;
+      diagnostics?: KbSearchDiagnostics;
       durationMs?: number;
       error?: string;
     }
@@ -568,6 +569,19 @@ export interface KbSearchHitDto {
   score: number;
   keywordScore?: number;
   vectorScore?: number;
+}
+
+export type KbSearchMode = "hybrid" | "semantic" | "keyword" | "none";
+export type KbSemanticStatus = "ready" | "partial" | "not_configured" | "index_missing" | "failed";
+
+export interface KbSearchDiagnostics {
+  mode: KbSearchMode;
+  semanticStatus: KbSemanticStatus;
+  searchableChunkCount: number;
+  indexedChunkCount: number;
+  keywordCandidateCount: number;
+  semanticCandidateCount: number;
+  normalizedQuery: string;
 }
 
 export interface ChunkMeta {

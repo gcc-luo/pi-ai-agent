@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import fs from "node:fs";
 import { ClientEvent, ImageAttachment, ServerEvent, ToolCall } from "@pi-web-ui/shared";
 import { RpcBridge } from "../agent/rpc-bridge.js";
-import { buildKbContext } from "../kb/inject-context.js";
+import { buildKbContext, buildKbNoResultsContext } from "../kb/inject-context.js";
 import { resolveSearchScopes } from "../kb/search-scopes.js";
 import { extractUserSearchQuery } from "../kb/query-text.js";
 import { ulid } from "../util/ulid.js";
@@ -433,6 +433,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                   type: "kb_search", sessionId: session.id, messageId,
                   phase: "done", query: searchQuery, kbIds, fileIds,
                   hits: result.hits, chunkMap, durationMs: result.durationMs,
+                  diagnostics: result.diagnostics,
                 });
                 content = `${contextBlock}\n\n${content}`;
                 kbSearchMeta = {
@@ -443,14 +444,21 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
                     fileName: h.fileName, titlePath: h.titlePath,
                     pageStart: h.pageStart, pageEnd: h.pageEnd,
                   })),
-                  durationMs: result.durationMs, timestamp: Date.now(),
+                  durationMs: result.durationMs, diagnostics: result.diagnostics, timestamp: Date.now(),
                 };
               } else {
                 console.log(`[WS Agent] KB search empty: no hits for query`);
                 send({
                   type: "kb_search", sessionId: session.id, messageId,
                   phase: "empty", query: searchQuery, kbIds, fileIds,
+                  diagnostics: result.diagnostics,
                 });
+                content = `${buildKbNoResultsContext()}\n\n${content}`;
+                kbSearchMeta = {
+                  phase: "empty", query: searchQuery, kbIds, fileIds,
+                  hits: [], durationMs: result.durationMs,
+                  diagnostics: result.diagnostics, timestamp: Date.now(),
+                };
               }
             } catch (err: any) {
               console.error(`[WS Agent] KB search failed: ${err.message}`);

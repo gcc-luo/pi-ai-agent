@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { wsClient } from "../api/ws.js";
 import { api, type ModelOption } from "../api/client.js";
 import { useSessionStore } from "./session.js";
-import type { ModelDto, ServerEvent, MessagePart, ToolCall, ImageAttachment } from "@pi-web-ui/shared";
+import type { ModelDto, ServerEvent, MessagePart, ToolCall, ImageAttachment, KbSearchDiagnostics } from "@pi-web-ui/shared";
 
 interface StreamMessage {
   id: string;
@@ -107,7 +107,7 @@ export const useAgentStore = defineStore("agent", {
     // KB search states keyed by sessionId — each entry tracks the latest
     // kb_search event for that session so the chat panel can render the
     // call card under the user message that triggered the search.
-    kbSearches: {} as Record<string, { phase: string; query: string; hits?: any[]; durationMs?: number; error?: string; at: number }>,
+    kbSearches: {} as Record<string, { phase: string; query: string; hits?: any[]; durationMs?: number; error?: string; diagnostics?: KbSearchDiagnostics; at: number }>,
     contextCompactions: {} as Record<string, {
       phase: "started" | "completed" | "failed";
       reason: "manual" | "threshold" | "overflow";
@@ -549,6 +549,7 @@ export const useAgentStore = defineStore("agent", {
           hits: e.hits,
           durationMs: e.durationMs,
           error: e.error,
+          diagnostics: e.diagnostics,
           at: Date.now(),
         };
       } else if (e.type === "raw") {

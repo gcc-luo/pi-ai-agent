@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted } from "vue";
 import { NInput, NButton, NSelect, NSpin, NEmpty } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
-import type { KbSearchHitDto } from "@pi-web-ui/shared";
+import type { KbSearchDiagnostics, KbSearchHitDto } from "@pi-web-ui/shared";
 import DOMPurify from "dompurify";
 
 const props = defineProps<{ kbId: string }>();
@@ -12,6 +12,7 @@ const { t } = useI18n();
 const query = ref("");
 const limit = ref(5);
 const hits = ref<KbSearchHitDto[]>([]);
+const diagnostics = ref<KbSearchDiagnostics | null>(null);
 const durationMs = ref(0);
 const loading = ref(false);
 const searched = ref(false);
@@ -22,6 +23,7 @@ watch(() => props.kbId, () => {
   requestId++;
   query.value = "";
   hits.value = [];
+  diagnostics.value = null;
   durationMs.value = 0;
   loading.value = false;
   searched.value = false;
@@ -45,6 +47,7 @@ async function handleSearch() {
   loading.value = true;
   searched.value = true;
   hits.value = [];
+  diagnostics.value = null;
   durationMs.value = 0;
 
   try {
@@ -52,6 +55,7 @@ async function handleSearch() {
     if (request !== requestId) return;
     hits.value = result.hits;
     durationMs.value = result.durationMs;
+    diagnostics.value = result.diagnostics;
   } catch (e: unknown) {
     if (request !== requestId) return;
     error.value = e instanceof Error ? e.message : t("kb.search.failed");
@@ -68,6 +72,23 @@ function highlightSnippet(snippet: string): string {
     ALLOWED_ATTR: ["class"],
   });
 }
+
+const diagnosticNotice = computed(() => {
+  const value = diagnostics.value;
+  if (!value) return "";
+  if (value.searchableChunkCount === 0) return t("kb.chat.card.noSearchableContent");
+  switch (value.semanticStatus) {
+    case "not_configured": return t("kb.chat.card.keywordFallback");
+    case "index_missing": return t("kb.chat.card.indexMissing", { indexed: value.indexedChunkCount, total: value.searchableChunkCount });
+    case "partial": return t("kb.chat.card.partialIndex", { indexed: value.indexedChunkCount, total: value.searchableChunkCount });
+    case "failed": return t("kb.chat.card.embeddingFailed");
+    default: return "";
+  }
+});
+
+const diagnosticMode = computed(() => diagnostics.value
+  ? t(`kb.chat.card.mode.${diagnostics.value.mode}`)
+  : "");
 </script>
 
 <template>
@@ -104,7 +125,11 @@ function highlightSnippet(snippet: string): string {
         <NButton size="small" :disabled="!canSearch" @click="handleSearch">{{ t('kb.search.retry') }}</NButton>
       </div>
       <div v-else-if="searched && !hits.length" class="search-state">
-        <NEmpty :description="t('kb.search.noResults')" />
+        <div class="search-empty">
+          <NEmpty :description="diagnostics?.searchableChunkCount === 0 ? t('kb.chat.card.noSearchableContent') : t('kb.search.noResults')" />
+          <p v-if="diagnosticMode" class="search-diagnostic">{{ diagnosticMode }}</p>
+          <p v-if="diagnosticNotice && diagnostics?.searchableChunkCount !== 0" class="search-diagnostic warning">{{ diagnosticNotice }}</p>
+        </div>
       </div>
       <div v-else-if="!searched" class="search-state hint">
         <p class="search-hint">{{ t('kb.search.placeholder') }}</p>
@@ -112,6 +137,10 @@ function highlightSnippet(snippet: string): string {
       <template v-else>
         <div class="search-summary">
           {{ t('kb.search.returnCount') }}: {{ hits.length }} · {{ durationMs }}ms
+        </div>
+        <div v-if="diagnosticMode || diagnosticNotice" class="search-diagnostic">
+          <span v-if="diagnosticMode">{{ diagnosticMode }}</span>
+          <span v-if="diagnosticNotice" class="warning">{{ diagnosticNotice }}</span>
         </div>
         <div class="search-results">
           <div v-for="hit in hits" :key="hit.chunkId" class="search-result">
@@ -125,8 +154,9 @@ function highlightSnippet(snippet: string): string {
               </span>
             </div>
             <div class="result-snippet" v-html="highlightSnippet(hit.snippet)" />
-            <div class="result-score">
-              score: {{ hit.score.toFixed(2) }}
+            <div class="result-match-tags">
+              <span v-if="hit.keywordScore !== undefined" class="match-tag">{{ t('kb.search.keywordMatch') }}</span>
+              <span v-if="hit.vectorScore !== undefined" class="match-tag semantic">{{ t('kb.search.semanticMatch') }}</span>
             </div>
           </div>
         </div>
@@ -195,6 +225,22 @@ function highlightSnippet(snippet: string): string {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-subtle);
 }
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.search-diagnostic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.search-diagnostic.warning {
+  color: var(--amber, #d99213);
+}
 
 .search-results {
   display: flex;
@@ -259,10 +305,21 @@ function highlightSnippet(snippet: string): string {
   font-weight: 600;
 }
 
-.result-score {
+.result-match-tags {
+  display: flex;
+  gap: 5px;
   margin-top: 6px;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-faint);
+}
+.match-tag {
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+}
+.match-tag.semantic {
+  color: var(--accent);
+  border-color: var(--accent-dim);
 }
 </style>

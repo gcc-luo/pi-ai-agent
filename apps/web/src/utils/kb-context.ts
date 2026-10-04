@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n/index.js";
+import type { KbSearchDiagnostics } from "@pi-web-ui/shared";
 
 const { t } = useI18n();
 
@@ -16,6 +17,7 @@ export interface KbSearchMeta {
   fileIds?: string[];
   hits: { localId: number; chunkId: number; kbName: string; fileName: string; titlePath: string | null; pageStart: number | null; pageEnd: number | null }[];
   durationMs: number;
+  diagnostics?: KbSearchDiagnostics;
   timestamp: number;
 }
 

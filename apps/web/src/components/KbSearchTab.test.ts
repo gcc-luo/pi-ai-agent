@@ -58,4 +58,28 @@ describe("knowledge search feedback", () => {
     expect(wrapper.get("input").element.value).toBe("");
     wrapper.unmount();
   });
+
+  it("explains when semantic search fell back to keywords", async () => {
+    vi.mocked(api.searchKb).mockResolvedValue({
+      hits: [{ chunkId: 1, fileName: "spring.md", snippet: "spring content", score: 1 } as any],
+      durationMs: 2,
+      diagnostics: {
+        mode: "keyword",
+        semanticStatus: "not_configured",
+        searchableChunkCount: 1,
+        indexedChunkCount: 0,
+        keywordCandidateCount: 1,
+        semanticCandidateCount: 0,
+        normalizedQuery: "spring",
+      },
+    });
+    const wrapper = mount(KbSearchTab, { props: { kbId: "a" }, global: { stubs } });
+    await wrapper.get("input").setValue("spring");
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("kb.chat.card.mode.keyword");
+    expect(wrapper.text()).toContain("kb.chat.card.keywordFallback");
+    wrapper.unmount();
+  });
 });

@@ -70,6 +70,17 @@ export function buildKbContext(hits: KbSearchHitDto[]): InjectResult {
   return { contextBlock: lines.join("\n"), chunkMap };
 }
 
+/** Tell the agent that the automatic lookup was limited to the selected scopes. */
+export function buildKbNoResultsContext(): string {
+  return [
+    KB_CONTEXT_START,
+    "An automatic knowledge-base search was attempted for the user's question in this session's selected, enabled knowledge bases and searchable files.",
+    "No evidence passages were returned. Do not claim that other knowledge bases, files, or external services were searched.",
+    "If the answer depends on those documents, explain that no evidence was found in the selected searchable content and ask the user to check the selected knowledge bases or files. For unrelated questions, answer normally.",
+    KB_CONTEXT_END,
+  ].join("\n");
+}
+
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
   const minutes = Math.floor(totalSeconds / 60);

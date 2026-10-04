@@ -267,6 +267,7 @@ watch(
           hits: search.hits,
           durationMs: search.durationMs,
           error: search.error,
+          diagnostics: search.diagnostics,
         },
       };
     }
@@ -491,6 +492,7 @@ async function loadMessages() {
           query: meta.query,
           hits: meta.hits,
           durationMs: meta.durationMs,
+          diagnostics: meta.diagnostics,
         };
       }
     }
