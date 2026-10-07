@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { NSelect } from "naive-ui";
+import { ref, computed, h, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { NSelect, type SelectOption } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { useSessionStore } from "../stores/session.js";
 import { api } from "../api/client.js";
@@ -21,6 +21,7 @@ import type {
   MessagePart,
   ArtifactItem,
   ArtifactValidation,
+  ModelType,
   SessionAuthorizationMode,
 } from "@pi-web-ui/shared";
 import { renderMarkdown } from "../utils/markdown.js";
@@ -303,9 +304,44 @@ const authorizationModeOptions = computed(() => ([
 // model turn. Use the run lifecycle so the control remains in its stop state
 // throughout that complete sequence.
 const isBusy = computed(() => agent.isSessionBusy(props.sessionId));
-const modelSelectOptions = computed(() =>
-  agent.models.map((m) => ({ label: m.label, value: m.id })),
-);
+const modelTypeLabels = computed<Record<ModelType, string>>(() => ({
+  text: t("model.typeText"),
+  multimodal: t("model.typeMultimodal"),
+  embedding: t("model.typeEmbedding"),
+}));
+const modelTypeLabelsById = computed(() => new Map(
+  agent.modelDtos.map((model) => [model.id, modelTypeLabels.value[model.modelType]]),
+));
+const modelSelectOptions = computed(() => {
+  return agent.models.map((model) => {
+    return {
+      label: model.label,
+      value: model.id,
+      modelTypeLabel: modelTypeLabelsById.value.get(model.id) ?? "",
+    };
+  });
+});
+const modelSelectMenuProps = {
+  class: "composer-model-menu",
+  style: {
+    width: "max-content",
+    minWidth: "260px",
+    maxWidth: "min(360px, calc(100vw - 32px))",
+  },
+};
+function renderModelOptionLabel(option: SelectOption) {
+  const modelTypeLabel = modelTypeLabelsById.value.get(String(option.value ?? ""))
+    ?? (typeof option.modelTypeLabel === "string" ? option.modelTypeLabel : "");
+  return h("span", { class: "composer-model-option-label" }, [
+    h("span", { class: "composer-model-option-name" }, String(option.label ?? "")),
+    ...(modelTypeLabel
+      ? [h("span", { class: "composer-model-option-type" }, modelTypeLabel)]
+      : []),
+  ]);
+}
+function renderSelectedModelLabel({ option }: { option: SelectOption; handleClose: () => void }) {
+  return renderModelOptionLabel(option);
+}
 const expandedRunIds = ref<Set<string>>(new Set());
 const durationClock = ref(Date.now());
 const showScrollButton = ref(false);
@@ -1475,6 +1511,11 @@ defineExpose({ revealNotificationMessage });
               v-if="agent.models.length"
               :value="agent.currentModel"
               :options="modelSelectOptions"
+              :render-label="renderModelOptionLabel"
+              :render-tag="renderSelectedModelLabel"
+              :consistent-menu-width="false"
+              :menu-props="modelSelectMenuProps"
+              placement="top"
               size="small"
               :placeholder="t('model.selectForChat')"
               class="composer-model-select"
@@ -2400,6 +2441,7 @@ defineExpose({ revealNotificationMessage });
 .composer-input-wrap {
   position: relative;
   display: flex;
+  container-type: inline-size;
   min-width: 0;
   flex-direction: column;
   border: 1px solid var(--border-default);
@@ -2426,6 +2468,25 @@ defineExpose({ revealNotificationMessage });
   align-items: center;
   gap: 8px;
   padding: 0 8px 7px;
+}
+
+@container (max-width: 500px) {
+  .composer-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+
+  .composer-add-and-auth {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .composer-actions {
+    grid-column: 1;
+    justify-self: end;
+    margin-left: 0;
+  }
 }
 
 .composer-add-and-auth {
@@ -2636,7 +2697,9 @@ defineExpose({ revealNotificationMessage });
 }
 
 .composer-model-select {
-  width: 150px;
+  width: max-content;
+  min-width: 150px;
+  max-width: min(280px, 55cqw);
 }
 .composer-model-select :deep(.n-base-selection) {
   background: var(--bg-surface);
@@ -2647,6 +2710,41 @@ defineExpose({ revealNotificationMessage });
 }
 .composer-model-select :deep(.n-base-selection-input) {
   background: transparent;
+}
+
+:global(.composer-model-option-label) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+:global(.composer-model-menu .composer-model-option-label) {
+  width: 100%;
+}
+
+.composer-model-select :deep(.composer-model-option-label) {
+  max-width: 100%;
+}
+
+:global(.composer-model-option-name) {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.composer-model-option-type) {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 /* Embedded send button */
