@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import {
   getComposerPlainText,
+  getComposerUserText,
   getComposerTokenElement,
   insertComposerToken,
   type ComposerResourceToken,
@@ -61,6 +62,10 @@ function clear() {
   savedRange = null;
   emit("update", "");
   emit("update-tokens", []);
+}
+
+function getUserText(): string {
+  return editor.value ? getComposerUserText(editor.value) : "";
 }
 
 function setText(value: string) {
@@ -153,7 +158,7 @@ function onPaste(event: ClipboardEvent) {
 onMounted(() => document.addEventListener("selectionchange", saveSelection));
 onBeforeUnmount(() => document.removeEventListener("selectionchange", saveSelection));
 
-defineExpose({ clear, focus, insertToken, removeTokens, saveSelection, setText });
+defineExpose({ clear, focus, getUserText, insertToken, removeTokens, saveSelection, setText });
 </script>
 
 <template>

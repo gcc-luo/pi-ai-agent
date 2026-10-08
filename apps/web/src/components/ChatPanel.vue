@@ -3,6 +3,7 @@ import { ref, computed, h, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { NSelect, NSwitch, type SelectOption } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { useSessionStore } from "../stores/session.js";
+import { useExpertStore } from "../stores/expert.js";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
 import ImportSkillDialog from "./ImportSkillDialog.vue";
@@ -50,6 +51,7 @@ const emit = defineEmits<{
 }>();
 const agent = useAgentStore();
 const sessionStore = useSessionStore();
+const expertStore = useExpertStore();
 const { t } = useI18n();
 const skillStore = useSkillStore();
 const kbBindingStore = useKbBindingStore();
@@ -75,7 +77,26 @@ const selectedCapabilityTokens = computed(() => {
     return true;
   });
 });
-const selectedExpertToken = computed(() => [...selectedCapabilityTokens.value].reverse().find((token) => token.kind === "expert") ?? null);
+const selectedExpertToken = computed(() => {
+  const session = sessionStore.sessions.find((item) => item.id === props.sessionId)
+    ?? (sessionStore.current?.id === props.sessionId ? sessionStore.current : null);
+  const expertId = session?.expertId;
+  if (!expertId) return null;
+  const expert = expertStore.experts.find((item) => item.id === expertId);
+  if (expert) {
+    return {
+      id: `session-expert-${expert.id}`,
+      resourceId: expert.id,
+      kind: "expert" as const,
+      label: expert.name,
+      icon: expert.icon,
+      value: "",
+    };
+  }
+  return [...selectedCapabilityTokens.value].reverse().find(
+    (token) => token.kind === "expert" && token.resourceId === expertId,
+  ) ?? null;
+});
 const selectedConnectorTokens = computed(() => connectorStore.connectors.filter(
   (connector) => connector.enabled
     && (connector.scopeType === "user" || connector.scopeId === props.projectId),
@@ -89,6 +110,7 @@ const promptEditorRef = ref<{
   insertToken: (token: ComposerResourceToken) => void;
   saveSelection: () => void;
   focus: () => void;
+  getUserText: () => string;
   clear: () => void;
   removeTokens: (kind: ComposerResourceToken["kind"], resourceId?: string) => void;
   setText: (value: string) => void;
@@ -595,6 +617,7 @@ async function loadMessages() {
 
 onMounted(async () => {
   agent.subscribe(props.sessionId);
+  if (!expertStore.experts.length) void expertStore.loadAll().catch(() => undefined);
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
   await kbStore.loadAll();
@@ -886,7 +909,7 @@ function toolArtifacts(result: unknown): ArtifactItem[] {
 }
 
 function send() {
-  const text = input.value;
+  const text = promptEditorRef.value?.getUserText() ?? input.value;
   const skills = selectedSkills.value;
   const files = attachedFiles.value;
   const images = attachedImages.value;

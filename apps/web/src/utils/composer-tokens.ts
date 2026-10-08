@@ -107,6 +107,15 @@ export function insertComposerToken(
 }
 
 export function getComposerPlainText(editor: HTMLElement): string {
+  return serializeComposerText(editor, true);
+}
+
+/** Return only text typed by the user, excluding selected resource tokens. */
+export function getComposerUserText(editor: HTMLElement): string {
+  return serializeComposerText(editor, false);
+}
+
+function serializeComposerText(editor: HTMLElement, includeResourceValues: boolean): string {
   const serialize = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) {
       return (node.textContent ?? "").replaceAll("\u00a0", " ");
@@ -114,7 +123,9 @@ export function getComposerPlainText(editor: HTMLElement): string {
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
     const element = node as HTMLElement;
-    if (element.dataset.composerToken) return element.dataset.composerValue ?? "";
+    if (element.dataset.composerToken) {
+      return includeResourceValues ? element.dataset.composerValue ?? "" : "";
+    }
     if (element.tagName === "BR") return "\n";
 
     const text = Array.from(element.childNodes, serialize).join("");
