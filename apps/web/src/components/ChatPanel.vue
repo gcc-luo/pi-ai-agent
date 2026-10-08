@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { ref, computed, h, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { NSelect, type SelectOption } from "naive-ui";
+import { NSelect, NSwitch, type SelectOption } from "naive-ui";
 import { useAgentStore, partsFromPersisted } from "../stores/agent.js";
 import { useSessionStore } from "../stores/session.js";
 import { api } from "../api/client.js";
@@ -14,6 +14,7 @@ import { usePluginStore } from "../stores/plugin.js";
 import { useConnectorStore } from "../stores/connector.js";
 import { removeComposerSelection } from "../utils/composer-selection.js";
 import ChatCapabilityToolbar from "./ChatCapabilityToolbar.vue";
+import ConnectorIcon from "./ConnectorIcon.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
@@ -30,6 +31,7 @@ import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbCitationMeta
 import { parseArtifacts } from "../utils/artifacts.js";
 import { summarizeTokenUsage } from "../utils/token-usage.js";
 import { type ComposerResourceSelection, type ComposerResourceToken } from "../utils/composer-tokens.js";
+import { connectorIconValue } from "../utils/connector-icons.js";
 import TokenUsage from "./TokenUsage.vue";
 import {
   annotateChatRuns,
@@ -60,11 +62,35 @@ const selectedSkills = ref<string[]>([]);
 const messagesEl = ref<HTMLElement | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const composerAddMenuOpen = ref(false);
+const composerResourceTokens = ref<ComposerResourceToken[]>([]);
+const selectedCapabilityTokens = computed(() => {
+  const seen = new Set<string>();
+  const latestExpert = [...composerResourceTokens.value].reverse().find((token) => token.kind === "expert");
+  return composerResourceTokens.value.filter((token) => {
+    if (token.kind === "expert" && token !== latestExpert) return false;
+    if (token.kind !== "expert" && token.kind !== "connector") return false;
+    const key = `${token.kind}:${token.resourceId ?? token.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+});
+const selectedExpertToken = computed(() => [...selectedCapabilityTokens.value].reverse().find((token) => token.kind === "expert") ?? null);
+const selectedConnectorTokens = computed(() => connectorStore.connectors.filter(
+  (connector) => connector.enabled
+    && (connector.scopeType === "user" || connector.scopeId === props.projectId),
+));
+const visibleConnectors = computed(() => connectorStore.connectors.filter(
+  (connector) => connector.scopeType === "user" || connector.scopeId === props.projectId,
+));
+const visibleConnectorTokens = computed(() => selectedConnectorTokens.value.slice(0, 3));
+const connectorListOpen = ref(false);
 const promptEditorRef = ref<{
   insertToken: (token: ComposerResourceToken) => void;
   saveSelection: () => void;
   focus: () => void;
   clear: () => void;
+  removeTokens: (kind: ComposerResourceToken["kind"], resourceId?: string) => void;
   setText: (value: string) => void;
 } | null>(null);
 let composerTokenSequence = 0;
@@ -75,11 +101,36 @@ function nextComposerTokenId(kind: string): string {
 }
 
 function addComposerResource(selection: ComposerResourceSelection) {
+  if (selection.kind === "expert") promptEditorRef.value?.removeTokens("expert");
   promptEditorRef.value?.insertToken({
     ...selection,
     id: nextComposerTokenId(selection.kind),
   });
   composerAddMenuOpen.value = false;
+}
+
+async function toggleSelectedConnector(connector: (typeof connectorStore.connectors)[number], enabled: boolean) {
+  const updated = await connectorStore.update(connector.id, { enabled });
+  if (!updated.enabled) {
+    promptEditorRef.value?.removeTokens("connector", connector.id);
+    return;
+  }
+  if (!composerResourceTokens.value.some((token) => token.kind === "connector" && token.resourceId === connector.id)) {
+    addComposerResource({
+      resourceId: updated.id,
+      kind: "connector",
+      label: updated.name,
+      icon: connectorIconValue(updated.builtinKey, updated.icon),
+      value: `@${updated.name}`,
+    });
+  }
+}
+
+async function toggleConnectorList() {
+  connectorListOpen.value = !connectorListOpen.value;
+  if (connectorListOpen.value && !connectorStore.connectors.length) {
+    await connectorStore.load(props.projectId);
+  }
 }
 
 interface AttachedFile {
@@ -1400,6 +1451,7 @@ defineExpose({ revealNotificationMessage });
           ref="promptEditorRef"
           :placeholder="t('chat.placeholder')"
           @update="input = $event"
+          @update-tokens="composerResourceTokens = $event"
           @keydown="handleKeySend"
           @compositionstart="isComposing = true"
           @compositionend="isComposing = false"
@@ -1472,6 +1524,66 @@ defineExpose({ revealNotificationMessage });
                   </svg>
                 </button>
               </div>
+            </div>
+          </div>
+          <div
+            v-if="selectedExpertToken || selectedConnectorTokens.length"
+            class="composer-selected-resources"
+            role="group"
+            aria-label="已选择的专家和连接器"
+          >
+            <span
+              v-if="selectedExpertToken"
+              class="composer-selected-resource"
+              :title="selectedExpertToken.label"
+            >
+              <span aria-hidden="true">{{ selectedExpertToken.icon }}</span>
+              <span class="composer-selected-resource-label">{{ selectedExpertToken.label }}</span>
+            </span>
+            <button
+              v-if="selectedConnectorTokens.length"
+              type="button"
+              class="composer-connector-group"
+              :class="{ open: connectorListOpen }"
+              :title="selectedConnectorTokens.map((connector) => connector.name).join('、')"
+              :aria-label="`已启用连接器：${selectedConnectorTokens.map((connector) => connector.name).join('、')}`"
+              :aria-expanded="connectorListOpen"
+              aria-haspopup="dialog"
+              @click="toggleConnectorList"
+            >
+              <span
+                v-for="connector in visibleConnectorTokens"
+                :key="connector.id"
+                class="composer-connector-icon"
+              ><ConnectorIcon :icon="connector.icon" :builtin-key="connector.builtinKey" :size="18" /></span>
+              <span v-if="selectedConnectorTokens.length > visibleConnectorTokens.length" class="composer-connector-count">
+                +{{ selectedConnectorTokens.length - visibleConnectorTokens.length }}
+              </span>
+            </button>
+            <div v-if="connectorListOpen" class="composer-connector-popover" role="dialog" aria-label="连接器列表">
+              <div v-if="!visibleConnectors.length" class="composer-connector-empty">暂无可用连接器</div>
+              <div
+                v-for="connector in visibleConnectors"
+                :key="connector.id"
+                class="composer-connector-popover-item"
+              >
+                <span class="composer-connector-popover-icon"><ConnectorIcon :icon="connector.icon" :builtin-key="connector.builtinKey" :size="20" /></span>
+                <span class="composer-connector-name">{{ connector.name }}</span>
+                <NSwitch
+                  size="small"
+                  :value="connector.enabled"
+                  :disabled="isBusy"
+                  :aria-label="`启用${connector.name}`"
+                  @update:value="toggleSelectedConnector(connector, $event)"
+                />
+              </div>
+              <button
+                type="button"
+                class="composer-connector-manage"
+                @click="connectorListOpen = false; emit('manage-connectors')"
+              >
+                管理连接器
+              </button>
             </div>
           </div>
           <div
@@ -2470,6 +2582,154 @@ defineExpose({ revealNotificationMessage });
   padding: 0 8px 7px;
 }
 
+.composer-selected-resources {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: min(360px, 34%);
+  align-items: center;
+  gap: 5px;
+  overflow: visible;
+}
+
+.composer-selected-resource {
+  display: inline-flex;
+  min-width: 0;
+  height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.composer-selected-resource-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-connector-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 30px;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-surface));
+  cursor: pointer;
+}
+
+.composer-connector-group:hover,
+.composer-connector-group.open,
+.composer-connector-group:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-default));
+  outline: none;
+}
+
+.composer-connector-icon {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 2px solid var(--bg-surface);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.composer-connector-icon + .composer-connector-icon {
+  margin-left: -7px;
+}
+
+.composer-connector-count {
+  margin-left: 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.composer-connector-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 31;
+  display: grid;
+  min-width: 190px;
+  max-width: min(320px, 70vw);
+  max-height: 240px;
+  gap: 2px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.composer-connector-popover-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  overflow: hidden;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.composer-connector-popover-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-connector-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-connector-empty {
+  padding: 12px 9px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.composer-connector-manage {
+  margin-top: 4px;
+  padding: 9px 9px 3px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-connector-manage:hover,
+.composer-connector-manage:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.composer-connector-popover-icon {
+  display: grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  font-size: 16px;
+}
+
 @container (max-width: 500px) {
   .composer-footer {
     display: grid;
@@ -2482,8 +2742,16 @@ defineExpose({ revealNotificationMessage });
     justify-self: start;
   }
 
+  .composer-selected-resources {
+    grid-column: 1;
+    grid-row: 2;
+    max-width: 100%;
+    padding-left: 36px;
+  }
+
   .composer-actions {
     grid-column: 1;
+    grid-row: 3;
     justify-self: end;
     margin-left: 0;
   }

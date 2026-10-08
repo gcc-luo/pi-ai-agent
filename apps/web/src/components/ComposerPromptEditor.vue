@@ -10,6 +10,7 @@ import {
 const props = defineProps<{ placeholder: string }>();
 const emit = defineEmits<{
   (event: "update", value: string): void;
+  (event: "update-tokens", value: ComposerResourceToken[]): void;
   (event: "keydown", value: KeyboardEvent): void;
   (event: "paste", value: ClipboardEvent): void;
   (event: "compositionstart"): void;
@@ -36,6 +37,14 @@ function saveSelection() {
 function emitCurrentValue() {
   if (!editor.value) return;
   emit("update", getComposerPlainText(editor.value));
+  emit("update-tokens", Array.from(editor.value.querySelectorAll<HTMLElement>("[data-composer-token]"), (element) => ({
+    id: element.dataset.composerToken ?? "",
+    resourceId: element.dataset.composerResourceId,
+    kind: (element.dataset.composerKind ?? "file") as ComposerResourceToken["kind"],
+    label: element.dataset.composerLabel ?? "",
+    icon: element.dataset.composerIcon ?? element.querySelector<HTMLElement>(".composer-resource-token-icon")?.textContent ?? "",
+    value: element.dataset.composerValue ?? "",
+  })));
   saveSelection();
 }
 
@@ -51,6 +60,7 @@ function clear() {
   editor.value.replaceChildren();
   savedRange = null;
   emit("update", "");
+  emit("update-tokens", []);
 }
 
 function setText(value: string) {
@@ -66,6 +76,25 @@ function setText(value: string) {
   selection?.addRange(range);
   savedRange = range.cloneRange();
   emit("update", getComposerPlainText(root));
+  emit("update-tokens", []);
+}
+
+function removeTokens(kind: ComposerResourceToken["kind"], resourceId?: string) {
+  const root = editor.value;
+  if (!root) return;
+  const removed = Array.from(root.querySelectorAll<HTMLElement>("[data-composer-kind]"))
+    .filter((token) => token.dataset.composerKind === kind
+      && (resourceId === undefined || token.dataset.composerResourceId === resourceId));
+  if (!removed.length) return;
+  removed.forEach((token) => token.remove());
+  const range = root.ownerDocument.createRange();
+  range.selectNodeContents(root);
+  range.collapse(false);
+  const selection = root.ownerDocument.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  savedRange = range.cloneRange();
+  emitCurrentValue();
 }
 
 function focus() {
@@ -91,7 +120,7 @@ function onClick(event: MouseEvent) {
     resourceId: tokenElement.dataset.composerResourceId,
     kind: (tokenElement.dataset.composerKind ?? "file") as ComposerResourceToken["kind"],
     label: tokenElement.dataset.composerLabel ?? "",
-    icon: tokenElement.querySelector<HTMLElement>(".composer-resource-token-icon")?.textContent ?? "",
+    icon: tokenElement.dataset.composerIcon ?? tokenElement.querySelector<HTMLElement>(".composer-resource-token-icon")?.textContent ?? "",
     value: tokenElement.dataset.composerValue ?? "",
   };
   const range = editor.value.ownerDocument.createRange();
@@ -124,7 +153,7 @@ function onPaste(event: ClipboardEvent) {
 onMounted(() => document.addEventListener("selectionchange", saveSelection));
 onBeforeUnmount(() => document.removeEventListener("selectionchange", saveSelection));
 
-defineExpose({ clear, focus, insertToken, saveSelection, setText });
+defineExpose({ clear, focus, insertToken, removeTokens, saveSelection, setText });
 </script>
 
 <template>
@@ -196,6 +225,13 @@ defineExpose({ clear, focus, insertToken, saveSelection, setText });
   flex: 0 0 auto;
   font-size: 14px;
   line-height: 1;
+}
+
+.composer-prompt-editor :deep(.composer-resource-token-icon img) {
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .composer-prompt-editor :deep(.composer-resource-token-label) {

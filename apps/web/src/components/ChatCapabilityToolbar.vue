@@ -8,6 +8,7 @@ import ChatExpertPicker from "./ChatExpertPicker.vue";
 import CapabilityCategoryIcon from "./CapabilityCategoryIcon.vue";
 import type { ConnectorDto, ExpertDto, KbDto, PluginDto } from "@pi-web-ui/shared";
 import type { ComposerResourceSelection } from "../utils/composer-tokens.js";
+import { connectorIconValue } from "../utils/connector-icons.js";
 import { useI18n } from "../i18n/index.js";
 
 const props = defineProps<{
@@ -69,7 +70,7 @@ function selectKnowledgeBase(kb: KbDto) {
 }
 
 function selectConnector(connector: ConnectorDto) {
-  emit("resource-selected", { resourceId: connector.id, kind: "connector", label: connector.name, icon: connector.icon, value: `@${connector.name}` });
+  emit("resource-selected", { resourceId: connector.id, kind: "connector", label: connector.name, icon: connectorIconValue(connector.builtinKey, connector.icon), value: `@${connector.name}` });
 }
 </script>
 

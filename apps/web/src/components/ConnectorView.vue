@@ -4,6 +4,7 @@ import { NButton, NEmpty, NInput, NModal, NSelect, NSpin, NSwitch, NTag, createD
 import type { BuiltinConnectorDto, ConnectorDto, ConnectorRiskLevel, ConnectorToolPolicy, CreateConnectorInput, McpConnectorConfig } from "@pi-web-ui/shared";
 import { api } from "../api/client.js";
 import { useConnectorStore } from "../stores/connector.js";
+import ConnectorIcon from "./ConnectorIcon.vue";
 
 const props = defineProps<{ projectId?: string | null }>();
 const store = useConnectorStore();
@@ -180,7 +181,7 @@ function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "er
         <h3 v-if="visibleOfficial.length" class="section-title">官方连接器</h3>
         <div v-if="visibleOfficial.length" class="grid">
           <article v-for="item in visibleOfficial" :key="item.key" class="card" @click="openBuiltin(item)">
-            <div class="icon">{{ item.icon }}</div>
+            <div class="icon"><ConnectorIcon :icon="item.icon" :builtin-key="item.key" :size="28" /></div>
             <div class="card-main"><h2 :title="item.name">{{ item.name }}</h2><p :title="item.description">{{ item.description }}</p><span v-if="item.connected" class="status connected"><i />已连接</span><span v-else class="category">{{ item.category }}</span></div>
             <template v-if="item.connected"><NSwitch class="card-switch" :value="store.connectors.find(c => c.id === item.instanceId)?.enabled ?? true" @click.stop @update:value="item.instanceId && toggle(store.connectors.find(c => c.id === item.instanceId)!, $event)" /></template>
             <button v-else class="add-button" :aria-label="`连接${item.name}`" @click.stop="openBuiltin(item)">+</button>
@@ -222,7 +223,7 @@ function riskTagType(riskLevel: ConnectorRiskLevel): "success" | "warning" | "er
 
     <NModal :show="builtinTarget !== null" preset="card" :title="builtinTarget ? `连接${builtinTarget.name}` : ''" :style="{ width: '560px', maxWidth: '94vw' }" @update:show="(value: boolean) => { if (!value) builtinTarget = null }">
       <template v-if="builtinTarget">
-        <div class="builtin-head"><div class="icon large">{{ builtinTarget.icon }}</div><div><strong>{{ builtinTarget.name }}</strong><p>{{ builtinTarget.description }}</p></div></div>
+        <div class="builtin-head"><div class="icon large"><ConnectorIcon :icon="builtinTarget.icon" :builtin-key="builtinTarget.key" :size="32" /></div><div><strong>{{ builtinTarget.name }}</strong><p>{{ builtinTarget.description }}</p></div></div>
         <section class="authorization"><h3>连接后，Agent 可以：</h3><ul><li v-for="capability in builtinTarget.capabilities" :key="capability">✓ {{ capability }}</li></ul><p>高风险操作仍会根据权限设置要求确认。</p></section>
         <p class="account-note">{{ builtinTarget.accountNote }}</p>
         <a class="auth-link" :href="builtinTarget.authUrl" target="_blank" rel="noreferrer">前往官方页面获取 Token ↗</a>

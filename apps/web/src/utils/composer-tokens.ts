@@ -61,13 +61,21 @@ export function insertComposerToken(
   chip.dataset.composerKind = token.kind;
   chip.dataset.composerLabel = token.label;
   chip.dataset.composerValue = token.value;
+  chip.dataset.composerIcon = token.icon;
   chip.setAttribute("role", "group");
   chip.setAttribute("aria-label", `${TOKEN_LABELS[token.kind]}：${token.label}`);
 
   const icon = doc.createElement("span");
   icon.className = "composer-resource-token-icon";
   icon.setAttribute("aria-hidden", "true");
-  icon.textContent = token.icon;
+  if (token.icon.startsWith("/connector-icons/")) {
+    const image = doc.createElement("img");
+    image.src = token.icon;
+    image.alt = "";
+    icon.append(image);
+  } else {
+    icon.textContent = token.icon;
+  }
   chip.append(icon);
 
   const label = doc.createElement("span");

@@ -5,6 +5,7 @@ import { NPopover, NSwitch } from "naive-ui";
 import type { ConnectorDto } from "@pi-web-ui/shared";
 import { useI18n } from "../i18n/index.js";
 import { useConnectorStore } from "../stores/connector.js";
+import ConnectorIcon from "./ConnectorIcon.vue";
 
 const props = defineProps<{
   projectId: string;
@@ -65,13 +66,13 @@ const filteredConnectors = computed(() => available.value.filter((item) => match
         <span class="tool-btn-label">连接器</span>
       </button>
     </template>
-    <div class="picker"><strong>连接器</strong><p v-if="!filteredConnectors.length">{{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'chat.noConnectors') }}</p><div v-for="item in filteredConnectors" :key="item.id" class="row"><span>{{ item.icon }}</span><span class="name">{{ item.name }}</span><NSwitch size="small" :value="draft ? selectedIds.includes(item.id) : item.enabled" @update:value="toggleConnector(item, $event)" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
+    <div class="picker"><strong>连接器</strong><p v-if="!filteredConnectors.length">{{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'chat.noConnectors') }}</p><div v-for="item in filteredConnectors" :key="item.id" class="row"><ConnectorIcon :icon="item.icon" :builtin-key="item.builtinKey" :size="22" /><span class="name">{{ item.name }}</span><NSwitch size="small" :value="draft ? selectedIds.includes(item.id) : item.enabled" @update:value="toggleConnector(item, $event)" /></div><button class="manage" @click="show = false; emit('manage')">管理全部连接器</button></div>
   </NPopover>
   <div v-else class="picker">
     <strong>连接器</strong>
     <p v-if="!filteredConnectors.length">{{ t(props.searchQuery?.trim() ? 'chat.resourceSearchEmpty' : 'chat.noConnectors') }}</p>
     <div v-for="item in filteredConnectors" :key="item.id" class="row">
-      <span>{{ item.icon }}</span>
+      <ConnectorIcon :icon="item.icon" :builtin-key="item.builtinKey" :size="22" />
       <span class="name">{{ item.name }}</span>
       <NSwitch
         size="small"
