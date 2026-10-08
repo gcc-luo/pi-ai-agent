@@ -33,6 +33,7 @@ describe("RenameProjectDialog", () => {
     name: "old",
     workdir: "/tmp",
     description: null,
+    authorizationMode: "risk_based",
     createdAt: 0,
     updatedAt: 0,
     deletedAt: null,

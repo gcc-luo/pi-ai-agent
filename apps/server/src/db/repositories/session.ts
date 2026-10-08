@@ -5,6 +5,7 @@ import { ulid } from "../../util/ulid.js";
 type Row = {
   id: string; project_id: string; title: string | null; parent_id: string | null;
   expert_id: string | null; authorization_mode: SessionAuthorizationMode;
+  project_authorization_mode: SessionAuthorizationMode;
   status: SessionStatus; pi_session_ref: string | null;
   browser_enabled: number;
   created_at: number; updated_at: number; last_active_at: number | null;
@@ -15,7 +16,7 @@ type Row = {
 function toDto(r: Row): SessionDto {
   return {
     id: r.id, projectId: r.project_id, title: r.title, parentId: r.parent_id, expertId: r.expert_id,
-    authorizationMode: r.authorization_mode,
+    authorizationMode: r.project_authorization_mode,
     selectedPluginIds: [],
     browserEnabled: r.browser_enabled === 1,
     status: r.status, createdAt: r.created_at, updatedAt: r.updated_at, lastActiveAt: r.last_active_at,
@@ -34,28 +35,37 @@ export class SessionRepository {
       INSERT INTO sessions (id, project_id, title, parent_id, expert_id, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
     `).run(id, input.projectId, input.title ?? null, input.parentId ?? null, input.expertId ?? null, now, now);
-    return {
-      id, projectId: input.projectId, title: input.title ?? null, parentId: input.parentId ?? null, expertId: input.expertId ?? null,
-      authorizationMode: "risk_based",
-      selectedPluginIds: [],
-      browserEnabled: false,
-      status: "active", createdAt: now, updatedAt: now, lastActiveAt: null,
-      unreadCount: 0, lastReadMessageId: null, deletedAt: null,
-    };
+    return this.findById(id)!;
   }
 
   findById(id: string): SessionDto | null {
-    const r = this.db.prepare("SELECT * FROM sessions WHERE id = ? AND deleted_at IS NULL").get(id) as Row | undefined;
+    const r = this.db.prepare(`
+      SELECT sessions.*, projects.authorization_mode AS project_authorization_mode
+      FROM sessions
+      JOIN projects ON projects.id = sessions.project_id
+      WHERE sessions.id = ? AND sessions.deleted_at IS NULL
+    `).get(id) as Row | undefined;
     return r ? this.withPlugins(toDto(r)) : null;
   }
 
   listByProject(projectId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId) as Row[])
+    return (this.db.prepare(`
+      SELECT sessions.*, projects.authorization_mode AS project_authorization_mode
+      FROM sessions
+      JOIN projects ON projects.id = sessions.project_id
+      WHERE sessions.project_id = ? AND sessions.deleted_at IS NULL
+      ORDER BY sessions.updated_at DESC
+    `).all(projectId) as Row[])
       .map((row) => this.withPlugins(toDto(row)));
   }
 
   children(parentId: string): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE parent_id = ? AND deleted_at IS NULL").all(parentId) as Row[])
+    return (this.db.prepare(`
+      SELECT sessions.*, projects.authorization_mode AS project_authorization_mode
+      FROM sessions
+      JOIN projects ON projects.id = sessions.project_id
+      WHERE sessions.parent_id = ? AND sessions.deleted_at IS NULL
+    `).all(parentId) as Row[])
       .map((row) => this.withPlugins(toDto(row)));
   }
 
@@ -91,8 +101,8 @@ export class SessionRepository {
   setAuthorizationMode(id: string, mode: SessionAuthorizationMode): void {
     const cur = this.findById(id);
     if (!cur) throw new Error("session not found");
-    this.db.prepare("UPDATE sessions SET authorization_mode = ?, updated_at = ? WHERE id = ?")
-      .run(mode, Date.now(), id);
+    this.db.prepare("UPDATE projects SET authorization_mode = ?, updated_at = ? WHERE id = ?")
+      .run(mode, Date.now(), cur.projectId);
   }
 
   setBrowserEnabled(id: string, enabled: boolean): void {
@@ -144,7 +154,13 @@ export class SessionRepository {
   }
 
   listDeleted(): SessionDto[] {
-    return (this.db.prepare("SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC").all() as Row[])
+    return (this.db.prepare(`
+      SELECT sessions.*, projects.authorization_mode AS project_authorization_mode
+      FROM sessions
+      JOIN projects ON projects.id = sessions.project_id
+      WHERE sessions.deleted_at IS NOT NULL
+      ORDER BY sessions.deleted_at DESC
+    `).all() as Row[])
       .map((row) => this.withPlugins(toDto(row)));
   }
 }

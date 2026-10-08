@@ -4,6 +4,7 @@ import { ulid } from "../../util/ulid.js";
 
 type ProjectRow = {
   id: string; name: string; workdir: string; description: string | null;
+  authorization_mode: ProjectDto["authorizationMode"];
   deleted_at: number | null;
   created_at: number; updated_at: number;
 };
@@ -11,6 +12,7 @@ type ProjectRow = {
 function toDto(r: ProjectRow): ProjectDto {
   return {
     id: r.id, name: r.name, workdir: r.workdir, description: r.description,
+    authorizationMode: r.authorization_mode,
     createdAt: r.created_at, updatedAt: r.updated_at, deletedAt: r.deleted_at,
   };
 }
@@ -25,7 +27,10 @@ export class ProjectRepository {
       INSERT INTO projects (id, name, workdir, description, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, input.name, input.workdir, input.description ?? null, now, now);
-    return { id, name: input.name, workdir: input.workdir, description: input.description ?? null, createdAt: now, updatedAt: now, deletedAt: null };
+    return {
+      id, name: input.name, workdir: input.workdir, description: input.description ?? null,
+      authorizationMode: "risk_based", createdAt: now, updatedAt: now, deletedAt: null,
+    };
   }
 
   findById(id: string): ProjectDto | null {

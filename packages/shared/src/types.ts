@@ -130,6 +130,8 @@ export interface ProjectDto {
   name: string;
   workdir: string;
   description: string | null;
+  /** Default authorization mode shared by every session in this workspace. */
+  authorizationMode: SessionAuthorizationMode;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -141,6 +143,7 @@ export interface SessionDto {
   title: string | null;
   parentId: string | null;
   expertId: string | null;
+  /** Effective workspace-wide mode exposed for session consumers. */
   authorizationMode: SessionAuthorizationMode;
   /** Plugins explicitly exposed to this session's Pi process. */
   selectedPluginIds: string[];

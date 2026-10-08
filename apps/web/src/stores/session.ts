@@ -36,18 +36,31 @@ export const useSessionStore = defineStore("sessions", {
       return updated;
     },
     async setAuthorizationMode(id: string, authorizationMode: SessionAuthorizationMode) {
-      const previous = this.sessions.find((session) => session.id === id)
+      const target = this.sessions.find((session) => session.id === id)
         ?? (this.current?.id === id ? this.current : null);
-      if (previous) this.applySession({ ...previous, authorizationMode });
+      const projectId = target?.projectId;
+      const previousSessions = projectId
+        ? this.sessions.filter((session) => session.projectId === projectId)
+        : [];
+      const previousCurrent = projectId && this.current?.projectId === projectId
+        ? this.current
+        : null;
+      if (projectId) this.applyProjectAuthorizationMode(projectId, authorizationMode);
+      else if (target) this.applySession({ ...target, authorizationMode });
       try {
         const updated = await api.updateSessionAuthorizationMode(id, authorizationMode);
-        this.applySession(updated);
+        if (projectId) this.applyProjectAuthorizationMode(projectId, updated.authorizationMode);
+        else this.applySession(updated);
         return updated;
       } catch (error) {
-        const current = this.sessions.find((session) => session.id === id)
-          ?? (this.current?.id === id ? this.current : null);
-        if (previous && current?.authorizationMode === authorizationMode) {
-          this.applySession(previous);
+        if (projectId) {
+          const previousById = new Map(previousSessions.map((session) => [session.id, session]));
+          this.sessions = this.sessions.map((session) => previousById.get(session.id) ?? session);
+          if (previousCurrent) this.current = previousCurrent;
+        } else if (target) {
+          const current = this.sessions.find((session) => session.id === id)
+            ?? (this.current?.id === id ? this.current : null);
+          if (current?.authorizationMode === authorizationMode) this.applySession(target);
         }
         throw error;
       }
@@ -60,6 +73,14 @@ export const useSessionStore = defineStore("sessions", {
       const idx = this.sessions.findIndex((session) => session.id === updated.id);
       if (idx >= 0) this.sessions.splice(idx, 1, updated);
       if (this.current?.id === updated.id) this.current = updated;
+    },
+    applyProjectAuthorizationMode(projectId: string, authorizationMode: SessionAuthorizationMode) {
+      this.sessions = this.sessions.map((session) => session.projectId === projectId
+        ? { ...session, authorizationMode }
+        : session);
+      if (this.current?.projectId === projectId) {
+        this.current = { ...this.current, authorizationMode };
+      }
     },
     applyUnreadCount(id: string, unreadCount: number) {
       const session = this.sessions.find((candidate) => candidate.id === id);

@@ -601,6 +601,24 @@ const MIGRATIONS = [
       ALTER TABLE sessions ADD COLUMN authorization_mode TEXT NOT NULL DEFAULT 'risk_based';
     `,
   },
+  {
+    name: "031_project_authorization_mode",
+    sql: `
+      ALTER TABLE projects ADD COLUMN authorization_mode TEXT NOT NULL DEFAULT 'risk_based';
+
+      UPDATE projects
+      SET authorization_mode = COALESCE(
+        (
+          SELECT sessions.authorization_mode
+          FROM sessions
+          WHERE sessions.project_id = projects.id
+          ORDER BY sessions.updated_at DESC, sessions.id DESC
+          LIMIT 1
+        ),
+        'risk_based'
+      );
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
