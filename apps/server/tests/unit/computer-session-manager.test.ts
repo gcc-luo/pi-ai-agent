@@ -89,6 +89,7 @@ describe("Computer Use risk classification", () => {
       action: "click",
       args: { x: 10, y: 10, intent: "点击编辑区域" },
     })).rejects.toThrow("必须先调用 computer_focus_window");
+    expect(manager.runtimeStatus()).toEqual({ status: "enabled", error: null });
     await expect(manager.execute({
       sessionId: "session-a",
       workdir: ".",

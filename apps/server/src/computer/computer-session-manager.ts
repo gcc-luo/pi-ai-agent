@@ -176,6 +176,9 @@ export class ComputerSessionManager {
       error: null,
     };
     this.sessions.set(input.sessionId, state);
+    if (INPUT_ACTIONS.has(input.action) && !state.targetWindow) {
+      throw new Error("执行桌面输入前必须先调用 computer_focus_window 绑定目标窗口");
+    }
     state.status = "starting";
     state.error = null;
     const args = { ...(input.args ?? {}) };
@@ -220,9 +223,6 @@ export class ComputerSessionManager {
           args.delta = asFiniteNumber(args.delta, "delta", -360);
         }
         if (INPUT_ACTIONS.has(input.action)) {
-          if (!state.targetWindow) {
-            throw new Error("执行桌面输入前必须先调用 computer_focus_window 绑定目标窗口");
-          }
           args.expectedWindowId = state.targetWindow;
         }
         result = await runComputerAction(input.action, args, input.signal);
