@@ -155,6 +155,14 @@ async function toggleConnectorList() {
   }
 }
 
+function closeConnectorListOnOutsidePointerDown(event: PointerEvent) {
+  if (!connectorListOpen.value) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest(".composer-connector-group, .composer-connector-popover")) return;
+  connectorListOpen.value = false;
+}
+
 interface AttachedFile {
   id: string;
   name: string;
@@ -616,6 +624,7 @@ async function loadMessages() {
 }
 
 onMounted(async () => {
+  document.addEventListener("pointerdown", closeConnectorListOnOutsidePointerDown);
   agent.subscribe(props.sessionId);
   if (!expertStore.experts.length) void expertStore.loadAll().catch(() => undefined);
   await loadMessages();
@@ -633,6 +642,7 @@ watch(() => props.sessionId, async (sessionId, previousSessionId) => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener("pointerdown", closeConnectorListOnOutsidePointerDown);
   stopDurationTimer();
   if (revealMessageTimer !== null) window.clearTimeout(revealMessageTimer);
   agent.unsubscribe(props.sessionId);
