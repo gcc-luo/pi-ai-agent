@@ -32,7 +32,6 @@ import { stripKbContext, getKbSearchMeta, renderKbCitations, type KbCitationMeta
 import { parseArtifacts } from "../utils/artifacts.js";
 import { summarizeTokenUsage } from "../utils/token-usage.js";
 import { type ComposerResourceSelection, type ComposerResourceToken } from "../utils/composer-tokens.js";
-import { connectorIconValue } from "../utils/connector-icons.js";
 import TokenUsage from "./TokenUsage.vue";
 import {
   annotateChatRuns,
@@ -70,7 +69,7 @@ const selectedCapabilityTokens = computed(() => {
   const latestExpert = [...composerResourceTokens.value].reverse().find((token) => token.kind === "expert");
   return composerResourceTokens.value.filter((token) => {
     if (token.kind === "expert" && token !== latestExpert) return false;
-    if (token.kind !== "expert" && token.kind !== "connector") return false;
+    if (token.kind !== "expert") return false;
     const key = `${token.kind}:${token.resourceId ?? token.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -123,6 +122,10 @@ function nextComposerTokenId(kind: string): string {
 }
 
 function addComposerResource(selection: ComposerResourceSelection) {
+  if (selection.kind === "connector") {
+    composerAddMenuOpen.value = false;
+    return;
+  }
   if (selection.kind === "expert") promptEditorRef.value?.removeTokens("expert");
   promptEditorRef.value?.insertToken({
     ...selection,
@@ -132,20 +135,8 @@ function addComposerResource(selection: ComposerResourceSelection) {
 }
 
 async function toggleSelectedConnector(connector: (typeof connectorStore.connectors)[number], enabled: boolean) {
-  const updated = await connectorStore.update(connector.id, { enabled });
-  if (!updated.enabled) {
-    promptEditorRef.value?.removeTokens("connector", connector.id);
-    return;
-  }
-  if (!composerResourceTokens.value.some((token) => token.kind === "connector" && token.resourceId === connector.id)) {
-    addComposerResource({
-      resourceId: updated.id,
-      kind: "connector",
-      label: updated.name,
-      icon: connectorIconValue(updated.builtinKey, updated.icon),
-      value: `@${updated.name}`,
-    });
-  }
+  await connectorStore.update(connector.id, { enabled });
+  promptEditorRef.value?.removeTokens("connector", connector.id);
 }
 
 async function toggleConnectorList() {
@@ -626,11 +617,14 @@ async function loadMessages() {
 onMounted(async () => {
   document.addEventListener("pointerdown", closeConnectorListOnOutsidePointerDown);
   agent.subscribe(props.sessionId);
+  void connectorStore.load(props.projectId);
   if (!expertStore.experts.length) void expertStore.loadAll().catch(() => undefined);
   await loadMessages();
   await kbBindingStore.load(props.sessionId);
   await kbStore.loadAll();
 });
+
+watch(() => props.projectId, (projectId) => { void connectorStore.load(projectId); });
 
 watch(() => props.sessionId, async (sessionId, previousSessionId) => {
   agent.unsubscribe(previousSessionId);
@@ -937,7 +931,8 @@ function send() {
   const imageAttachments = images.length
     ? images.map((img) => ({ name: img.name, mediaType: img.mediaType, data: img.data }))
     : undefined;
-  agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`, imageAttachments);
+  const connectorIds = selectedConnectorTokens.value.map((connector) => connector.id);
+  agent.send(props.sessionId, `${tipPrefix}${filePrefix}${text}${skillSuffix}`, imageAttachments, connectorIds);
   input.value = "";
   promptEditorRef.value?.clear();
   selectedSkills.value = [];

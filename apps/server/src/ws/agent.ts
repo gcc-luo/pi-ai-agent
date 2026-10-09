@@ -239,6 +239,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         bridge.onEvent((e) => {
           let forwardedEvent = e;
           if (e.type === "agent_status") {
+            const wasWorking = nextState.runStatus === "working";
             nextState.runStatus = e.status;
             if (e.status === "working") {
               if (nextState.runStartedAt === null) nextState.runStartedAt = Date.now();
@@ -249,7 +250,10 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
               app.messages.updateMetadata(lastAssistantMessage.id, metadata);
               lastAssistantMessage = { ...lastAssistantMessage, metadata };
             }
-            if (e.status === "idle") nextState.runStartedAt = null;
+            if (e.status === "idle") {
+              nextState.runStartedAt = null;
+              if (wasWorking) app.connectorService.clearSessionConnectorScope(session.id);
+            }
           }
           nextState.send(forwardedEvent);
           if (e.type === "error") {
@@ -306,6 +310,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           if (e.type === "agent_status" && e.status === "idle") settleActiveTask();
         });
         proc.on("exit", () => {
+          app.connectorService.clearSessionConnectorScope(session.id);
           if (nextState.activeTask) {
             settleActiveTask(
               proc.status === "crashed" ? "Agent 进程异常退出" : "Agent 进程已结束",
@@ -529,6 +534,18 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           };
         }
         console.log(`[WS Agent] forwarding to bridge: type=${event.type} contentLen=${content?.length ?? 0} images=${event.type === "send" ? (event.images?.length ?? 0) : 0}`);
+        let connectorIds: string[] = [];
+        if (event.type === "send") {
+          connectorIds = [...new Set((Array.isArray(event.connectorIds) ? event.connectorIds : [])
+            .filter((id): id is string => typeof id === "string" && id.length > 0))];
+          app.connectorService.setSessionConnectorScope(session.id, connectorIds);
+          const selectedConnectors = app.connectorService.list(project.id)
+            .filter((connector) => connectorIds.includes(connector.id) && connector.enabled);
+          if (connectorIds.length) {
+            const names = selectedConnectors.map((connector) => connector.name).join("、") || "所选连接器（当前不可用）";
+            content = `<system-instruction>本轮用户明确选择的连接器：${names}。凡是需要调用外部服务的操作，必须先通过 connector_search 搜索，并且只允许使用这些已选连接器提供的能力；禁止改用其他连接器、DWS CLI、shell 命令或浏览器登录来完成同一操作。如果所选连接器没有相应能力，请直接说明，不要切换到其他服务。</system-instruction>\n\n${content}`;
+          }
+        }
         const bridgePayload: Record<string, unknown> = { type: event.type, sessionId: event.sessionId, content };
         if (event.type === "send" && event.images?.length) {
           bridgePayload.images = event.images;
@@ -545,6 +562,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
           msgMeta.clientMessageId = event.clientMessageId;
         }
         if (kbSearchMeta) msgMeta.kbSearch = kbSearchMeta;
+        if (event.type === "send" && connectorIds.length) msgMeta.connectorIds = connectorIds;
         if (event.type === "send" && event.images?.length) {
           msgMeta.images = event.images.map((img: ImageAttachment) => ({
             name: img.name, mediaType: img.mediaType, data: img.data,
@@ -566,6 +584,7 @@ export const agentRoutes: FastifyPluginAsync = async (app) => {
         state.runStatus = "idle";
         state.runStartedAt = null;
         state.activeTask = null;
+        app.connectorService.clearSessionConnectorScope(session.id);
         state.send({ type: "agent_status", sessionId: session.id, status: "idle" });
         state.process.kill();
       } else if (event.type === "switchModel") {

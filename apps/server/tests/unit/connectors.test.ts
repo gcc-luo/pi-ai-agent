@@ -70,6 +70,17 @@ describe("connector system", () => {
     expect(defaultPolicy(defaultRisk("mystery_action"))).toBe("ask");
   });
 
+  it("discovers selected connector tools before the first search", async () => {
+    const connector = create();
+    service.setSessionConnectorScope("session-a", [connector.id]);
+    expect(repository.listTools(connector.id)).toHaveLength(0);
+
+    await service.prepareSearch("workspace-a", "session-a");
+
+    expect(service.searchTools("read", "workspace-a", 10, "session-a")
+      .map((tool) => tool.connectorId)).toEqual([connector.id]);
+  });
+
   it("refreshes inferred risk when a discovered tool is seen again", () => {
     const connector = create();
     repository.upsertTools(connector.id, [{ name: "doc.insert_attachment" }]);
@@ -113,6 +124,16 @@ describe("connector system", () => {
 
     const titleOnlyResults = service.searchTools("腾讯云文档 在线文档 添加记录 写入", "workspace-a");
     expect(titleOnlyResults.map((tool) => tool.name)).toContain("manage.search_file");
+  });
+
+  it("finds Tencent Meeting list tools from a continuous Chinese query", () => {
+    const connector = service.connectBuiltin("tencent-meeting", "meeting-secret-token");
+    repository.upsertTools(connector.id, [
+      { name: "get_user_meetings", description: "查询自己的会议列表" },
+      { name: "cancel_meeting", description: "取消会议" },
+    ]);
+
+    expect(service.searchTools("腾讯会议列表", "workspace-a")[0]?.name).toBe("get_user_meetings");
   });
 
   it("preserves MCP business errors instead of reporting a connection failure", () => {

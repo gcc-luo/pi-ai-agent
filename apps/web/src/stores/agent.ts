@@ -199,13 +199,14 @@ export const useAgentStore = defineStore("agent", {
       this.modelDtos = this.modelDtos.filter((x) => x.id !== id);
       await this.loadConfig();
     },
-    send(sessionId: string, content: string, images?: ImageAttachment[]) {
-      const messageId = this.appendUser(sessionId, content, images);
+    send(sessionId: string, content: string, images?: ImageAttachment[], connectorIds: string[] = []) {
+      const messageId = this.appendUser(sessionId, content, images, connectorIds);
       this.runStates[sessionId] = "working";
       this.runStartedAt[sessionId] = Date.now();
       delete this.runOutcomes[sessionId];
       const event: Record<string, unknown> = {
         type: "send", sessionId, content, clientMessageId: messageId,
+        connectorIds,
       };
       if (this.currentModel) event.model = this.currentModel;
       if (images?.length) event.images = images;
@@ -237,6 +238,7 @@ export const useAgentStore = defineStore("agent", {
         content,
         ...(this.currentModel ? { model: this.currentModel } : {}),
         ...(images.length ? { images } : {}),
+        ...(Array.isArray(message.metadata?.connectorIds) ? { connectorIds: message.metadata.connectorIds as string[] } : {}),
       });
       if (!sent) this.markUserMessageFailed(sessionId, messageId, "connection_unavailable");
       return sent;
@@ -276,7 +278,7 @@ export const useAgentStore = defineStore("agent", {
     unsubscribe(sessionId: string) {
       wsClient.unsubscribe(sessionId);
     },
-    appendUser(sessionId: string, content: string, images?: ImageAttachment[]) {
+    appendUser(sessionId: string, content: string, images?: ImageAttachment[], connectorIds: string[] = []) {
       const parts: MessagePart[] = [];
       if (images?.length) {
         for (const img of images) {
@@ -290,7 +292,7 @@ export const useAgentStore = defineStore("agent", {
         parts,
         status: "complete",
         createdAt: Date.now(),
-        metadata: null,
+        metadata: connectorIds.length ? { connectorIds: [...connectorIds] } : null,
       };
       this.streams[sessionId] = [...(this.streams[sessionId] ?? []), msg];
       return msg.id;

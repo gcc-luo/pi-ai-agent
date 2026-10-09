@@ -141,6 +141,16 @@ export class ConnectorService {
     this.sessionConnectorScopes.delete(sessionId);
   }
 
+  async prepareSearch(workspaceId: string, sessionId?: string): Promise<void> {
+    const connectors = this.repository.list(workspaceId)
+      .filter((connector) => connector.enabled && this.isConnectorAllowed(sessionId, connector.id));
+    for (const connector of connectors) {
+      if (this.repository.listTools(connector.id).length) continue;
+      const result = await this.test(connector.id);
+      if (!result.ok) throw new ConnectorError("CONNECTION_FAILED", `${connector.name}：${result.error ?? "连接失败"}`);
+    }
+  }
+
   searchTools(query: string, workspaceId: string, limit = 10, sessionId?: string) {
     const terms = queryTerms(query);
     const normalizedQuery = query.toLowerCase().replace(/腾讯云文档/g, "腾讯文档");
@@ -158,6 +168,8 @@ export class ConnectorService {
         const hasDocumentTypeHint = /(?:^|\W)sheet(?:\W|$)|在线表格|智能表格|smartsheet/.test(normalizedQuery);
         if (connector.builtinKey === "tencent-docs" && normalizedQuery.includes("文档")
           && !hasDocumentTypeHint && tool.name === "manage.search_file") score += 12;
+        if (connector.builtinKey === "tencent-meeting" && /会议.*(?:列表|哪些|最近)/.test(normalizedQuery)
+          && (tool.name === "get_user_meetings" || tool.name === "search_meetings")) score += 12;
         return { connector, tool, score };
       }).filter(({ score }) => score > 0),
     ).sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name)).slice(0, Math.max(1, Math.min(limit, 50)))

@@ -6,9 +6,8 @@ import ConnectorSelect from "./ConnectorSelect.vue";
 import ChatKbPicker from "./ChatKbPicker.vue";
 import ChatExpertPicker from "./ChatExpertPicker.vue";
 import CapabilityCategoryIcon from "./CapabilityCategoryIcon.vue";
-import type { ConnectorDto, ExpertDto, KbDto, PluginDto } from "@pi-web-ui/shared";
+import type { ExpertDto, KbDto, PluginDto } from "@pi-web-ui/shared";
 import type { ComposerResourceSelection } from "../utils/composer-tokens.js";
-import { connectorIconValue } from "../utils/connector-icons.js";
 import { useI18n } from "../i18n/index.js";
 
 const props = defineProps<{
@@ -69,9 +68,6 @@ function selectKnowledgeBase(kb: KbDto) {
   emit("resource-selected", { resourceId: kb.id, kind: "knowledge_base", label: kb.name, icon: "📚", value: `@${kb.name}` });
 }
 
-function selectConnector(connector: ConnectorDto) {
-  emit("resource-selected", { resourceId: connector.id, kind: "connector", label: connector.name, icon: connectorIconValue(connector.builtinKey, connector.icon), value: `@${connector.name}` });
-}
 </script>
 
 <template>
@@ -123,7 +119,6 @@ function selectConnector(connector: ConnectorDto) {
           :disabled="disabled"
           @manage="emit('manage-connectors')"
           @update:model-value="emit('update:connectorIds', $event)"
-          @selected="selectConnector"
         />
       </div>
       <div v-show="activeCategory === 'plugins'" class="capability-menu-resource-list">
@@ -178,7 +173,6 @@ function selectConnector(connector: ConnectorDto) {
         :disabled="disabled"
         @manage="emit('manage-connectors')"
         @update:model-value="emit('update:connectorIds', $event)"
-        @selected="selectConnector"
       />
     </template>
   </div>

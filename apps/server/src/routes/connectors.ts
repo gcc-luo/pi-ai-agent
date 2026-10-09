@@ -87,7 +87,12 @@ export const connectorsRoutes: FastifyPluginAsync = async (app) => {
       if (lifecycle.signal.aborted || !authorize(req.params.sessionId, req.headers["x-pi-connector-token"])) {
         return reply.code(403).send({ error: "连接器授权已撤销。" });
       }
-      return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
+      try {
+        await app.connectorService.prepareSearch(resolved.project.id, req.params.sessionId);
+        return app.connectorService.searchTools(query, resolved.project.id, req.body.limit, req.params.sessionId);
+      } catch (error) {
+        return errorReply(reply, error);
+      }
     } finally {
       lifecycle.dispose();
     }
