@@ -53,10 +53,7 @@ function disconnect() {
 
 async function connect() {
   if (!props.active || disposed || state.value === "ended") return;
-  if (hasConnected) {
-    terminal?.reset();
-    lastSize = "";
-  }
+  const isReconnect = hasConnected;
   disconnect();
   const attempt = generation;
   state.value = "connecting";
@@ -67,10 +64,11 @@ async function connect() {
     candidate.binaryType = "arraybuffer";
     candidate.onopen = () => {
       if (candidate !== socket || attempt !== generation) return;
+      if (isReconnect) terminal?.reset();
+      lastSize = "";
       state.value = "connected";
       hasConnected = true;
       error.value = "";
-      lastSize = "";
       reportSize();
       terminal?.focus();
     };

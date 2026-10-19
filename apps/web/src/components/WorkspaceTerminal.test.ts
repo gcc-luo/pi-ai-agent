@@ -138,6 +138,25 @@ describe("workspace terminal", () => {
     wrapper.unmount();
   });
 
+  it("preserves the existing screen when a reconnect handshake fails", async () => {
+    const wrapper = mountTerminal();
+    await flushPromises();
+    const original = sockets[0]!;
+    original.onopen?.(new Event("open"));
+    original.receive(new Uint8Array([104, 105, 13, 10]).buffer);
+
+    original.onclose?.({ code: 1006, reason: "connection lost" } as CloseEvent);
+    await flushPromises();
+    await wrapper.get('[data-test="terminal-retry"]').trigger("click");
+    await flushPromises();
+    sockets[1]!.onerror?.(new Event("error"));
+    await flushPromises();
+
+    expect(terminalMocks.instances[0]!.reset).not.toHaveBeenCalled();
+    expect(terminalMocks.instances[0]!.writes).toHaveLength(1);
+    wrapper.unmount();
+  });
+
   it("uses the close endpoint even when explicit disposal races a connecting socket", async () => {
     const wrapper = mountTerminal();
     await flushPromises();
