@@ -8,8 +8,12 @@ import type { TreeOption } from "naive-ui";
 import type { FileNodeDto } from "@pi-web-ui/shared";
 import FileTypeIcon from "./FileTypeIcon.vue";
 
-const props = defineProps<{ projectId: string }>();
-const emit = defineEmits<{ (e: "select", path: string): void }>();
+const props = withDefaults(defineProps<{ projectId: string; readOnly?: boolean }>(), { readOnly: false });
+const emit = defineEmits<{
+  (e: "select", path: string): void;
+  (e: "load-error", message: string): void;
+  (e: "load-success"): void;
+}>();
 
 const { t } = useI18n();
 const agent = useAgentStore();
@@ -56,7 +60,7 @@ function toTree(nodes: FileNodeDto[]): TreeOption[] {
           ? dirIcon
           : h(FileTypeIcon, { filename: n.name, size: 14 }),
       ]),
-    suffix: () =>
+    suffix: props.readOnly ? undefined : () =>
       h("span", {
         class: "tree-node-actions",
         onClick: (e: MouseEvent) => e.stopPropagation(),
@@ -128,8 +132,10 @@ async function load() {
   try {
     const list = await api.listFiles(props.projectId, "/");
     treeData.value = toTree(list);
+    emit("load-success");
   } catch (e) {
     console.error("FileTree load failed", e);
+    emit("load-error", e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -194,6 +200,7 @@ const createInputRef = ref<InstanceType<typeof NInput> | null>(null);
 const createBusy = ref(false);
 
 function startCreate() {
+  if (props.readOnly) return;
   createParent.value = parentDirOf(selectedNode.value);
   createName.value = "";
   createType.value = "file";
@@ -206,6 +213,7 @@ function startCreate() {
 }
 
 async function handleCreate() {
+  if (props.readOnly) return;
   const name = createName.value.trim();
   if (!name) return;
   const target = joinPath(createParent.value, name);
@@ -233,6 +241,7 @@ const renameInputRef = ref<InstanceType<typeof NInput> | null>(null);
 const renameBusy = ref(false);
 
 function startRename(node: FileNodeDto) {
+  if (props.readOnly) return;
   renameTarget.value = node;
   renameName.value = node.name;
   renameShow.value = true;
@@ -245,6 +254,7 @@ function startRename(node: FileNodeDto) {
 }
 
 async function handleRename() {
+  if (props.readOnly) return;
   const node = renameTarget.value;
   if (!node) return;
   const name = renameName.value.trim();
@@ -275,11 +285,13 @@ const deleteTarget = ref<FileNodeDto | null>(null);
 const deleteBusy = ref(false);
 
 function startDelete(node: FileNodeDto) {
+  if (props.readOnly) return;
   deleteTarget.value = node;
   deleteShow.value = true;
 }
 
 async function handleDelete() {
+  if (props.readOnly) return;
   const node = deleteTarget.value;
   if (!node) return;
   deleteBusy.value = true;
@@ -305,6 +317,7 @@ defineExpose({ startCreate, refresh: load });
 <template>
   <div class="file-tree">
     <NDropdown
+      v-if="!readOnly"
       placement="bottom-start"
       trigger="manual"
       :x="ctxMenu.x"
@@ -317,7 +330,7 @@ defineExpose({ startCreate, refresh: load });
     <NTree
       :data="treeData"
       :selected-keys="selectedKeys"
-      :node-props="nodeProps"
+      :node-props="readOnly ? undefined : nodeProps"
       block-line
       selectable
       :indent="16"

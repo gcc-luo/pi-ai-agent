@@ -5,11 +5,11 @@ import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, date
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 import WorkspaceToolPanel from "./components/WorkspaceToolPanel.vue";
+const WorkspaceFileBrowser = defineAsyncComponent(() => import("./components/WorkspaceFileBrowser.vue"));
+const WorkspacePreviewTab = defineAsyncComponent(() => import("./components/WorkspacePreviewTab.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
-const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
-const KbCitationViewer = defineAsyncComponent(() => import("./components/KbCitationViewer.vue"));
 import NavRail from "./components/NavRail.vue";
 import ModelPanel from "./components/ModelPanel.vue";
 import NewProjectDialog from "./components/NewProjectDialog.vue";
@@ -48,7 +48,9 @@ const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
-const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {};
+const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {
+  files: WorkspaceFileBrowser,
+};
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
@@ -538,8 +540,7 @@ function openKbCitation(citation: KbCitationMeta) {
               @resize-start="startPreviewResize"
             >
               <template #preview="{ target, projectId }">
-                <FileViewer v-if="target.kind === 'file'" :project-id="projectId" :path="target.path" hide-header />
-                <KbCitationViewer v-else :citation="target.citation" />
+                <WorkspacePreviewTab :target="target" :project-id="projectId" />
               </template>
             </WorkspaceToolPanel>
           </div>

@@ -40,6 +40,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "workspaceTools.openPanel": "Open tools panel",
     "workspaceTools.closePanel": "Hide tools panel",
     "workspaceTools.empty": "Open a tool to get started",
+    "workspaceTools.refreshFiles": "Refresh files",
 
     // Welcome screen
     "welcome.title": "PI Workspace",
@@ -949,6 +950,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "workspaceTools.openPanel": "打开工具面板",
     "workspaceTools.closePanel": "收起工具面板",
     "workspaceTools.empty": "打开一个工具以开始使用",
+    "workspaceTools.refreshFiles": "刷新文件",
 
     "welcome.title": "PI 工作台",
     "welcome.sub": "从侧边栏选择一个项目或创建新项目以开始。",

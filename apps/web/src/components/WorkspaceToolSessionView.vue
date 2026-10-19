@@ -48,7 +48,7 @@ defineExpose({ disposeTool, disposeAll });
   <div class="workspace-tool-session-view">
     <div
       v-for="kind in tools"
-      :key="kind"
+      :key="`${sessionId}:${kind}`"
       v-show="panel?.activeTab === kind"
       class="workspace-tool-tab-panel"
       :data-tab-panel="kind"

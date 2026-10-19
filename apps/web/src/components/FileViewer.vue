@@ -14,7 +14,7 @@ import DocxPreview from "./file-preview/DocxPreview.vue";
 import XlsxPreview from "./file-preview/XlsxPreview.vue";
 import UnsupportedPreview from "./file-preview/UnsupportedPreview.vue";
 
-const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean }>();
+const props = defineProps<{ projectId: string; path: string | null; hideHeader?: boolean; reloadKey?: number }>();
 const { t } = useI18n();
 
 // Text content for the `text` and `markdown` kinds. Other kinds consume
@@ -23,6 +23,11 @@ const { t } = useI18n();
 const content = ref<string>("");
 const loading = ref(false);
 const error = ref<string | null>(null);
+const retryVersion = ref(0);
+
+function retry() {
+  retryVersion.value++;
+}
 
 const fileName = computed(() => {
   if (!props.path) return null;
@@ -46,7 +51,7 @@ const unsupportedReason = computed(() => {
 });
 
 watch(
-  () => [props.projectId, props.path],
+  () => [props.projectId, props.path, props.reloadKey, retryVersion.value],
   async () => {
     content.value = "";
     error.value = null;
@@ -73,6 +78,9 @@ watch(
   },
   { immediate: true },
 );
+
+defineExpose({ retry });
+
 </script>
 
 <template>
@@ -95,6 +103,9 @@ watch(
         <path d="M10 6v5M10 13.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
       </svg>
       <span>{{ error }}</span>
+      <button class="viewer-retry" type="button" data-test="retry-file-read" @click="retry">
+        {{ t('chat.retry') }}
+      </button>
     </div>
 
     <!-- Empty -->
@@ -185,4 +196,19 @@ watch(
   gap: 8px;
   opacity: 0.4;
 }
+
+.viewer-retry {
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.viewer-retry:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 </style>
