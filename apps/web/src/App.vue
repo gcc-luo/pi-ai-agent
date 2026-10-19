@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 import WorkspaceToolPanel from "./components/WorkspaceToolPanel.vue";
 const WorkspaceFileBrowser = defineAsyncComponent(() => import("./components/WorkspaceFileBrowser.vue"));
+const WorkspaceBrowser = defineAsyncComponent(() => import("./components/WorkspaceBrowser.vue"));
 const WorkspacePreviewTab = defineAsyncComponent(() => import("./components/WorkspacePreviewTab.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
@@ -50,6 +51,7 @@ const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
 const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {
   files: WorkspaceFileBrowser,
+  browser: WorkspaceBrowser,
 };
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
@@ -62,7 +64,7 @@ const showOnboardingProject = ref(false);
 const chatPanelRef = ref<{
   revealNotificationMessage: (messageId?: string) => Promise<void>;
 } | null>(null);
-const workspacePanelRefs = new Map<string, ComponentPublicInstance & { disposeAll: () => void }>();
+const workspacePanelRefs = new Map<string, ComponentPublicInstance & { disposeAll: () => Promise<void> }>();
 
 let resizeStartX = 0;
 let resizeStartWidth = sidebarWidth.value;
@@ -164,7 +166,7 @@ const currentWorkspacePanel = computed(() => selectedSessionId.value
 
 function setWorkspacePanelRef(sessionId: string, instance: ComponentPublicInstance | null) {
   if (instance) {
-    workspacePanelRefs.set(sessionId, instance as ComponentPublicInstance & { disposeAll: () => void });
+    workspacePanelRefs.set(sessionId, instance as ComponentPublicInstance & { disposeAll: () => Promise<void> });
   } else {
     workspacePanelRefs.delete(sessionId);
   }
@@ -257,8 +259,8 @@ async function renameSession(id: string, title: string) {
 
 async function deleteSession(id: string) {
   try {
+    await workspacePanelRefs.get(id)?.disposeAll();
     await sessionStore.remove(id);
-    workspacePanelRefs.get(id)?.disposeAll();
     workspaceTools.removeSession(id);
     await notifications.refreshTotalUnread();
     if (selectedSessionId.value === id) {

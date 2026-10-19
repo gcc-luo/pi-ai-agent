@@ -171,23 +171,23 @@ agent-browser 服务端帧包括 `frame`、`status`、`tabs`、`url`；使用其
 - 修改：`apps/web/src/App.vue`
 - 修改：`apps/web/src/i18n/messages.ts`
 
-- [ ] **步骤 1：实现带现有认证协议的 API 客户端**
+- [x] **步骤 1：实现带现有认证协议的 API 客户端**
 
 `workspace-tools.ts` 使用 `webSocketUrl()` 和 `authToken()` 创建 socket：`new WebSocket(url, token ? ["pi-web-ui", token] : ["pi-web-ui"])`。定义浏览器控制消息类型和面板 API 请求封装；URL、状态与错误使用结构化对象，不拼接 HTML。
 
-- [ ] **步骤 2：渲染流帧并转发用户输入**
+- [x] **步骤 2：渲染流帧并转发用户输入**
 
 `WorkspaceBrowser.vue` 连接 `/ws/browser/:sessionId`，发送 `{"type":"config","pacing":"ack","maxFps":10}`。解析 `frame` 的 base64 JPEG，在画面绘制完成后回传 `{"type":"ack","seq":N}`。把画面内的 pointer/key/touch 事件转换为 agent-browser 的 `input_mouse`、`input_keyboard`、`input_touch` 消息，并按画面缩放比例换算坐标。遇到断线时显示重连状态，提供一次明确的重连操作；底层浏览器会话不存在时提示关闭后重新打开标签。
 
-- [ ] **步骤 3：加入导航工具栏和生命周期**
+- [x] **步骤 3：加入导航工具栏和生命周期**
 
 实现受控 URL 输入框、Go、Back、Forward、Reload 按钮。连接成功后调用 `ensurePanelSession()`；标签切换为非活动时断开 stream socket 但不关闭浏览器；组件 `dispose()` 调用面板关闭 API，关闭标签时释放会话实例。页面 `url`/`status` 消息更新地址栏和连接状态。
 
-- [ ] **步骤 4：注册浏览器组件**
+- [x] **步骤 4：注册浏览器组件**
 
 将 `browser: WorkspaceBrowser` 注册到 `WorkspaceToolPanel`，传入当前 session ID 和活动状态。打开标签时只启动/连接浏览器，不更改 `browser-use` 插件权限；Agent 工具仍通过现有扩展按同一 session identity 操作页面。
 
-- [ ] **步骤 5：运行服务端与前端类型检查**
+- [x] **步骤 5：运行服务端与前端类型检查**
 
 运行：
 

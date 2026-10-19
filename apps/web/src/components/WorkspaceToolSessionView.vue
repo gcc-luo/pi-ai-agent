@@ -7,6 +7,7 @@ import { useI18n } from "../i18n/index.js";
 const props = defineProps<{
   sessionId: string;
   projectId: string;
+  active: boolean;
   toolComponents: Partial<Record<WorkspaceToolKind, Component>>;
 }>();
 
@@ -14,8 +15,9 @@ const store = useWorkspaceToolsStore();
 const { t } = useI18n();
 const panel = computed(() => store.panels[props.sessionId] ?? null);
 const tools = computed(() => panel.value?.tools.filter((kind) => props.toolComponents[kind]) ?? []);
-const instances = new Map<WorkspaceToolKind, ComponentPublicInstance & { dispose?: () => void }>();
+const instances = new Map<WorkspaceToolKind, ComponentPublicInstance & { dispose?: () => void | Promise<void> }>();
 const disposed = new WeakSet<object>();
+const disposePromises = new Map<WorkspaceToolKind, Promise<void>>();
 
 function getToolComponent(kind: WorkspaceToolKind): Component | undefined {
   const component = props.toolComponents[kind];
@@ -24,22 +26,34 @@ function getToolComponent(kind: WorkspaceToolKind): Component | undefined {
 
 function setToolRef(kind: WorkspaceToolKind, value: unknown) {
   const instance = value as ComponentPublicInstance | null;
-  if (instance) instances.set(kind, instance as ComponentPublicInstance & { dispose?: () => void });
+  if (instance) instances.set(kind, instance as ComponentPublicInstance & { dispose?: () => void | Promise<void> });
   else instances.delete(kind);
 }
 
-function disposeTool(kind: WorkspaceToolKind) {
+function disposeTool(kind: WorkspaceToolKind): Promise<void> {
+  const pending = disposePromises.get(kind);
+  if (pending) return pending;
+
   const instance = instances.get(kind);
-  if (!instance || disposed.has(instance)) return;
-  disposed.add(instance);
-  instance.dispose?.();
+  if (!instance || disposed.has(instance)) return Promise.resolve();
+
+  const cleanup = Promise.resolve()
+    .then(() => instance.dispose?.())
+    .then(() => { disposed.add(instance); });
+  const tracked = cleanup.finally(() => {
+    if (disposePromises.get(kind) === tracked) disposePromises.delete(kind);
+  });
+  disposePromises.set(kind, tracked);
+  return tracked;
 }
 
-function disposeAll() {
-  for (const kind of instances.keys()) disposeTool(kind);
+async function disposeAll(): Promise<void> {
+  await Promise.all([...instances.keys()].map((kind) => disposeTool(kind)));
 }
 
-onBeforeUnmount(disposeAll);
+onBeforeUnmount(() => {
+  void disposeAll().catch((error) => console.error("Failed to dispose workspace tools:", error));
+});
 
 defineExpose({ disposeTool, disposeAll });
 </script>
@@ -49,7 +63,7 @@ defineExpose({ disposeTool, disposeAll });
     <div
       v-for="kind in tools"
       :key="`${sessionId}:${kind}`"
-      v-show="panel?.activeTab === kind"
+      v-show="active && panel?.visible && panel?.activeTab === kind"
       class="workspace-tool-tab-panel"
       :data-tab-panel="kind"
     >
@@ -58,11 +72,12 @@ defineExpose({ disposeTool, disposeAll });
         :ref="(instance: unknown) => setToolRef(kind, instance)"
         :session-id="sessionId"
         :project-id="panel?.projectId ?? projectId"
+        :active="active && Boolean(panel?.visible && panel?.activeTab === kind)"
       />
     </div>
     <div
       v-if="panel?.preview"
-      v-show="panel.activeTab === 'preview'"
+      v-show="active && panel.visible && panel.activeTab === 'preview'"
       class="workspace-tool-tab-panel workspace-tool-preview"
       data-tab-panel="preview"
     >

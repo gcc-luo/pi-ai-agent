@@ -111,6 +111,18 @@ export const api = {
     request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),
   setBrowserCapability: (sessionId: string, enabled: boolean) =>
     request<BrowserCapabilityDto>("PUT", `/sessions/${sessionId}/browser`, { enabled }),
+  openBrowserPanel: (sessionId: string) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/open`),
+  closeBrowserPanel: (sessionId: string) =>
+    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/close`),
+  navigateBrowserPanel: (sessionId: string, url: string) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/navigate`, { url }),
+  backBrowserPanel: (sessionId: string) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/back`),
+  forwardBrowserPanel: (sessionId: string) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/forward`),
+  reloadBrowserPanel: (sessionId: string) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/reload`),
   listPlugins: () => request<PluginDto[]>("GET", "/plugins"),
   updatePlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }) =>
     request<PluginDto>("PUT", `/plugins/${encodeURIComponent(id)}`, patch),

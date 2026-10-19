@@ -43,12 +43,12 @@ function openTool(kind: WorkspaceToolKind) {
   store.openTool(props.sessionId, props.projectId, kind);
 }
 
-function closeTab(tab: WorkspaceTabId) {
+async function closeTab(tab: WorkspaceTabId) {
   if (tab === "preview") {
     store.closePreview(props.sessionId);
     return;
   }
-  sessionViewRef.value?.disposeTool(tab);
+  await sessionViewRef.value?.disposeTool(tab);
   store.closeTool(props.sessionId, tab);
 }
 
@@ -56,8 +56,8 @@ function activateTab(tab: WorkspaceTabId) {
   store.setActiveTab(props.sessionId, tab);
 }
 
-function disposeAll() {
-  sessionViewRef.value?.disposeAll();
+async function disposeAll(): Promise<void> {
+  await sessionViewRef.value?.disposeAll();
 }
 
 defineExpose({ disposeAll });
@@ -142,6 +142,7 @@ defineExpose({ disposeAll });
       class="workspace-tool-content"
       :session-id="sessionId"
       :project-id="panel.projectId"
+      :active="active"
       :tool-components="toolComponents"
     >
       <template #preview="slotProps">
