@@ -241,4 +241,48 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("forgets tombstones and browser tracking after queued cleanup completes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    let releaseTabList: (() => void) | undefined;
+    let markTabListStarted: (() => void) | undefined;
+    const tabListStarted = new Promise<void>((resolve) => { markTabListStarted = resolve; });
+    const waitForTabList = new Promise<void>((resolve) => { releaseTabList = resolve; });
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) {
+        markTabListStarted?.();
+        await waitForTabList;
+        return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      }
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44108 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      const startup = manager.ensurePanelSession("session-forget");
+      await tabListStarted;
+      const closing = manager.closeSession("session-forget", { retainTombstone: true });
+      const forgetting = manager.forgetSession("session-forget");
+      const lateClose = manager.closeSession("session-forget", { retainTombstone: true });
+      releaseTabList?.();
+
+      await expect(startup).resolves.toBe(44108);
+      await closing;
+      await forgetting;
+      await lateClose;
+
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+      expect(manager.getPanelStreamPort("session-forget")).toBeNull();
+      expect((manager as any).terminalSessions.has("session-forget")).toBe(false);
+      expect((manager as any).closingSessions.has("session-forget")).toBe(false);
+      expect((manager as any).panelBrowserSessions.has("session-forget")).toBe(false);
+      expect((manager as any).states.has("session-forget")).toBe(false);
+    } finally {
+      releaseTabList?.();
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

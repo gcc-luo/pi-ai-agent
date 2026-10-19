@@ -89,6 +89,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
           ?? Promise.resolve(),
       ));
       app.projects.destroyPermanently(body.id);
+      await Promise.allSettled(projectSessionIds.map((sessionId) =>
+        app.browserManager?.forgetSession(sessionId) ?? Promise.resolve(),
+      ));
     } else if (body.kind === "session") {
       // Kill running agent process for this session
       app.pluginPermissions?.cancelSession(body.id);
@@ -101,6 +104,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       if (app.pluginManager) await app.pluginManager.closeSession(body.id, { retainTombstone: true });
       else if (app.browserManager) await app.browserManager.closeSession(body.id, { retainTombstone: true });
       app.sessions.destroyPermanently(body.id);
+      await app.browserManager?.forgetSession(body.id);
     } else {
       return reply.code(400).send({ error: "invalid kind" });
     }
@@ -130,6 +134,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
           ?? Promise.resolve(),
       ));
       app.projects.destroyPermanently(p.id);
+      await Promise.allSettled(projectSessionIds.map((sessionId) =>
+        app.browserManager?.forgetSession(sessionId) ?? Promise.resolve(),
+      ));
     }
 
     for (const s of deletedSessions) {
@@ -145,6 +152,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       if (app.pluginManager) await app.pluginManager.closeSession(s.id, { retainTombstone: true });
       else if (app.browserManager) await app.browserManager.closeSession(s.id, { retainTombstone: true });
       app.sessions.destroyPermanently(s.id);
+      await app.browserManager?.forgetSession(s.id);
     }
 
     return reply.code(204).send();

@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import { runMigrations } from "../../src/db/migrations.js";
 import { ProjectRepository } from "../../src/db/repositories/project.js";
 import { SessionRepository } from "../../src/db/repositories/session.js";
+import { TrashSweeper } from "../../src/services/trash-sweeper.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -62,5 +63,38 @@ describe("trash retention purge", () => {
     expect(projects.purgeDeletedOlderThan(Date.now() - 30 * DAY)).toEqual([]);
     // still in trash
     expect(projects.listDeleted().map((x) => x.id)).toEqual([p.id]);
+  });
+
+  it("forgets an expired session after purging it", async () => {
+    const p = projects.create({ name: "p", workdir: "/tmp/p" });
+    const oldSession = sessions.create({ projectId: p.id, title: "old" });
+    sessions.delete(oldSession.id);
+    setDeletedAt(db, "sessions", oldSession.id, Date.now() - 31 * DAY);
+    const onSessionPurged = vi.fn(async () => undefined);
+    const sweeper = new TrashSweeper(projects, sessions, 30 * DAY, { info: vi.fn(), error: vi.fn() } as never, undefined, onSessionPurged);
+
+    await sweeper.sweep();
+
+    expect(onSessionPurged).toHaveBeenCalledTimes(1);
+    expect(onSessionPurged).toHaveBeenCalledWith(oldSession.id);
+    expect(sessions.listDeleted()).toEqual([]);
+  });
+
+  it("forgets every child session when an expired project is cascaded", async () => {
+    const p = projects.create({ name: "old", workdir: "/tmp/old" });
+    const activeChild = sessions.create({ projectId: p.id, title: "active child" });
+    const trashedChild = sessions.create({ projectId: p.id, title: "trashed child" });
+    projects.delete(p.id);
+    sessions.delete(trashedChild.id);
+    setDeletedAt(db, "projects", p.id, Date.now() - 31 * DAY);
+    const onSessionPurged = vi.fn(async () => undefined);
+    const sweeper = new TrashSweeper(projects, sessions, 30 * DAY, { info: vi.fn(), error: vi.fn() } as never, undefined, onSessionPurged);
+
+    await sweeper.sweep();
+
+    expect(onSessionPurged).toHaveBeenCalledTimes(2);
+    expect(onSessionPurged).toHaveBeenCalledWith(activeChild.id);
+    expect(onSessionPurged).toHaveBeenCalledWith(trashedChild.id);
+    expect(sessions.listDeleted()).toEqual([]);
   });
 });

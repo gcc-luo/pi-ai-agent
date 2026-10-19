@@ -262,39 +262,31 @@ export class BrowserSessionManager {
     this.pending.delete(sessionId);
     await this.withSessionLock(sessionId, async () => {
       try {
-        const shouldCloseBrowser = this.states.has(sessionId)
-          || this.panelSessions.has(sessionId)
-          || this.panelBrowserSessions.has(sessionId);
-        try {
-          await this.stopPanelSession(sessionId);
-        } catch (error) {
-          // Closing the session daemon below also releases a stream that could not
-          // be disabled on its own.
-          this.options.logger.warn({ sessionId, err: error }, "browser panel stream cleanup failed");
-        }
-        if (!shouldCloseBrowser) return;
-        try {
-          await this.runForSession(sessionId, ["close"]);
-          this.states.delete(sessionId);
-          this.panelSessions.delete(sessionId);
-          this.panelBrowserSessions.delete(sessionId);
-          this.panelPorts.delete(sessionId);
-        } catch (error) {
-          this.options.logger.warn(
-            { sessionId, err: error },
-            "browser cleanup failed",
-          );
-          this.states.set(sessionId, {
-            ...this.status(sessionId, true),
-            status: "error",
-            error: "浏览器清理失败，空闲超时将再次回收。",
-          });
-          throw error;
-        }
+        await this.closeSessionResourcesLocked(sessionId);
       } finally {
-        if (!options.retainTombstone && !this.terminalSessions.has(sessionId)) {
-          this.closingSessions.delete(sessionId);
-        }
+        if (!this.terminalSessions.has(sessionId)) this.closingSessions.delete(sessionId);
+      }
+    });
+  }
+
+  /** Permanently forget a purged session after all queued browser operations finish. */
+  async forgetSession(sessionId: string): Promise<void> {
+    this.closingSessions.add(sessionId);
+    this.pending.delete(sessionId);
+    await this.withSessionLock(sessionId, async () => {
+      try {
+        await this.closeSessionResourcesLocked(sessionId);
+      } catch (error) {
+        this.options.logger.warn({ sessionId, err: error }, "browser cleanup failed while forgetting session");
+      } finally {
+        this.pending.delete(sessionId);
+        this.states.delete(sessionId);
+        this.panelSessions.delete(sessionId);
+        this.panelBrowserSessions.delete(sessionId);
+        this.panelPorts.delete(sessionId);
+        this.panelStarting.delete(sessionId);
+        this.terminalSessions.delete(sessionId);
+        this.closingSessions.delete(sessionId);
       }
     });
   }
@@ -370,6 +362,38 @@ export class BrowserSessionManager {
       return await starting;
     } finally {
       if (this.panelStarting.get(sessionId) === starting) this.panelStarting.delete(sessionId);
+    }
+  }
+
+  private async closeSessionResourcesLocked(sessionId: string): Promise<void> {
+    const shouldCloseBrowser = this.states.has(sessionId)
+      || this.panelSessions.has(sessionId)
+      || this.panelBrowserSessions.has(sessionId);
+    try {
+      await this.stopPanelSession(sessionId);
+    } catch (error) {
+      // Closing the session daemon below also releases a stream that could not
+      // be disabled on its own.
+      this.options.logger.warn({ sessionId, err: error }, "browser panel stream cleanup failed");
+    }
+    if (!shouldCloseBrowser) return;
+    try {
+      await this.runForSession(sessionId, ["close"]);
+      this.states.delete(sessionId);
+      this.panelSessions.delete(sessionId);
+      this.panelBrowserSessions.delete(sessionId);
+      this.panelPorts.delete(sessionId);
+    } catch (error) {
+      this.options.logger.warn(
+        { sessionId, err: error },
+        "browser cleanup failed",
+      );
+      this.states.set(sessionId, {
+        ...this.status(sessionId, true),
+        status: "error",
+        error: "浏览器清理失败，空闲超时将再次回收。",
+      });
+      throw error;
     }
   }
 

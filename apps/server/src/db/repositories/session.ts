@@ -59,6 +59,13 @@ export class SessionRepository {
       .map((row) => this.withPlugins(toDto(row)));
   }
 
+  /** Return every session row for a project, including trashed sessions. */
+  listIdsByProject(projectId: string): string[] {
+    return (this.db.prepare(
+      "SELECT id FROM sessions WHERE project_id = ? ORDER BY created_at, id",
+    ).all(projectId) as { id: string }[]).map((row) => row.id);
+  }
+
   children(parentId: string): SessionDto[] {
     return (this.db.prepare(`
       SELECT sessions.*, projects.authorization_mode AS project_authorization_mode

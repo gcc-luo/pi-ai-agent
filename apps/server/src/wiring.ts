@@ -351,7 +351,14 @@ export async function buildConfiguredApp(config: Config) {
   app.addHook("onClose", async () => taskScheduler.stop());
 
   // Trash auto-purge: permanently delete items past the retention period
-  const trashSweeper = new TrashSweeper(projects, sessions, config.trashRetentionMs, app.log);
+  const trashSweeper = new TrashSweeper(
+    projects,
+    sessions,
+    config.trashRetentionMs,
+    app.log,
+    undefined,
+    (sessionId) => browserManager.forgetSession(sessionId),
+  );
   app.addHook("onReady", async () => trashSweeper.start());
   app.addHook("onClose", async () => trashSweeper.stop());
 

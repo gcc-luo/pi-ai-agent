@@ -9,7 +9,10 @@ describe("trash browser session lifecycle", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  async function buildTrashApp() {
+  async function buildTrashApp(options: {
+    deletedProjects?: { id: string }[];
+    deletedSessions?: { id: string; projectId: string }[];
+  } = {}) {
     const app = Fastify();
     apps.push(app);
     const projectRestore = vi.fn();
@@ -17,6 +20,7 @@ describe("trash browser session lifecycle", () => {
     const listByProject = vi.fn(() => [{ id: "active-child" }, { id: "another-child" }]);
     const resumeSession = vi.fn(async () => undefined);
     const closeSession = vi.fn(async () => undefined);
+    const forgetSession = vi.fn(async () => undefined);
     const destroyProject = vi.fn();
     const destroySession = vi.fn();
     const prepare = vi.fn(() => ({ all: () => [{ id: "active-child" }, { id: "trashed-child" }] }));
@@ -24,15 +28,15 @@ describe("trash browser session lifecycle", () => {
     app.decorate("projects", {
       restore: projectRestore,
       destroyPermanently: destroyProject,
-      listDeleted: () => [],
+      listDeleted: () => options.deletedProjects ?? [],
     } as any);
     app.decorate("sessions", {
       restore: sessionRestore,
       listByProject,
       destroyPermanently: destroySession,
-      listDeleted: () => [],
+      listDeleted: () => options.deletedSessions ?? [],
     } as any);
-    app.decorate("browserManager", { resumeSession } as any);
+    app.decorate("browserManager", { resumeSession, forgetSession } as any);
     app.decorate("pluginManager", { closeSession } as any);
     app.decorate("processManager", {
       revokePluginTokens: vi.fn(),
@@ -50,6 +54,7 @@ describe("trash browser session lifecycle", () => {
       listByProject,
       resumeSession,
       closeSession,
+      forgetSession,
       destroyProject,
       destroySession,
     };
@@ -87,7 +92,7 @@ describe("trash browser session lifecycle", () => {
   });
 
   it("keeps permanent-delete tombstones for sessions and project children", async () => {
-    const { app, closeSession, destroyProject, destroySession } = await buildTrashApp();
+    const { app, closeSession, forgetSession, destroyProject, destroySession } = await buildTrashApp();
 
     const projectDelete = await app.inject({
       method: "POST",
@@ -107,5 +112,33 @@ describe("trash browser session lifecycle", () => {
     expect(closeSession).toHaveBeenCalledWith("deleted-session", { retainTombstone: true });
     expect(destroyProject).toHaveBeenCalledWith("deleted-project");
     expect(destroySession).toHaveBeenCalledWith("deleted-session");
+    expect(forgetSession).toHaveBeenCalledWith("active-child");
+    expect(forgetSession).toHaveBeenCalledWith("trashed-child");
+    expect(forgetSession).toHaveBeenCalledWith("deleted-session");
+    expect(destroyProject.mock.invocationCallOrder[0]!).toBeLessThan(forgetSession.mock.invocationCallOrder[0]!);
+    expect(destroySession.mock.invocationCallOrder[0]!).toBeLessThan(forgetSession.mock.invocationCallOrder[2]!);
+  });
+
+  it("forgets all purged session tombstones when emptying the trash", async () => {
+    const { app, closeSession, forgetSession, destroyProject, destroySession } = await buildTrashApp({
+      deletedProjects: [{ id: "deleted-project" }],
+      deletedSessions: [
+        { id: "trashed-child", projectId: "deleted-project" },
+        { id: "deleted-session", projectId: "other-project" },
+      ],
+    });
+
+    const result = await app.inject({ method: "POST", url: "/api/trash/empty" });
+
+    expect(result.statusCode).toBe(204);
+    expect(closeSession).toHaveBeenCalledWith("active-child", { retainTombstone: true });
+    expect(closeSession).toHaveBeenCalledWith("trashed-child", { retainTombstone: true });
+    expect(closeSession).toHaveBeenCalledWith("deleted-session", { retainTombstone: true });
+    expect(destroyProject).toHaveBeenCalledWith("deleted-project");
+    expect(destroySession).toHaveBeenCalledWith("deleted-session");
+    expect(forgetSession).toHaveBeenCalledTimes(3);
+    expect(forgetSession).toHaveBeenCalledWith("active-child");
+    expect(forgetSession).toHaveBeenCalledWith("trashed-child");
+    expect(forgetSession).toHaveBeenCalledWith("deleted-session");
   });
 });
