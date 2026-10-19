@@ -92,28 +92,30 @@ defineExpose({ disposeAll });
     />
 
     <div v-if="tabs.length" class="workspace-tool-tabs" role="tablist">
-      <div v-for="tab in tabs" :key="tab" class="workspace-tool-tab">
-        <button
-          class="workspace-tool-tab-select"
-          :class="{ active: panel?.activeTab === tab }"
-          role="tab"
-          :aria-selected="panel?.activeTab === tab"
-          :data-test="`select-tab-${tab}`"
-          @click="activateTab(tab)"
-        >
-          {{ t(`workspaceTools.${tab}`) }}
-        </button>
-        <button
-          class="workspace-tool-tab-close"
-          type="button"
-          :aria-label="`${t('workspaceTools.closeTab')} ${t(`workspaceTools.${tab}`)}`"
-          :data-test="`close-tab-${tab}`"
-          @click="closeTab(tab)"
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-        </button>
+      <div class="workspace-tool-tabs-scroll" data-test="tool-tabs-scroll">
+        <div v-for="tab in tabs" :key="tab" class="workspace-tool-tab">
+          <button
+            class="workspace-tool-tab-select"
+            :class="{ active: panel?.activeTab === tab }"
+            role="tab"
+            :aria-selected="panel?.activeTab === tab"
+            :data-test="`select-tab-${tab}`"
+            @click="activateTab(tab)"
+          >
+            {{ t(`workspaceTools.${tab}`) }}
+          </button>
+          <button
+            class="workspace-tool-tab-close"
+            type="button"
+            :aria-label="`${t('workspaceTools.closeTab')} ${t(`workspaceTools.${tab}`)}`"
+            :data-test="`close-tab-${tab}`"
+            @click="closeTab(tab)"
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
       <details v-if="availableTools.length" class="workspace-tool-add" data-test="tool-add-menu">
         <summary :aria-label="t('workspaceTools.addTab')" :title="t('workspaceTools.addTab')">+</summary>
@@ -201,11 +203,20 @@ defineExpose({ disposeAll });
 }
 
 .workspace-tool-tabs {
+  position: relative;
+  z-index: 4;
   display: flex;
   align-items: stretch;
   min-height: 38px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  overflow: visible;
+}
+
+.workspace-tool-tabs-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
 }
 
@@ -256,6 +267,7 @@ defineExpose({ disposeAll });
 
 .workspace-tool-add {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   padding: 0 6px;

@@ -94,6 +94,17 @@ describe("workspace tool panel shell", () => {
     wrapper.unmount();
   });
 
+  it("keeps the add menu outside the horizontally scrolling tab strip", () => {
+    const store = useWorkspaceToolsStore();
+    store.openTool("session-1", "project-1", "files");
+    const wrapper = mountPanel();
+    const scrollStrip = wrapper.get('[data-test="tool-tabs-scroll"]');
+    const addMenu = wrapper.get('[data-test="tool-add-menu"]');
+
+    expect(scrollStrip.element.contains(addMenu.element)).toBe(false);
+    wrapper.unmount();
+  });
+
   it("keeps tool components mounted while switching tabs and hiding the panel", async () => {
     const store = useWorkspaceToolsStore();
     store.openTool("session-1", "project-1", "files");
