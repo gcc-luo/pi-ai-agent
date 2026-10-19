@@ -47,7 +47,7 @@
 - 修改：`apps/web/src/App.vue`
 - 修改：`apps/web/src/i18n/messages.ts`
 
-- [ ] **步骤 1：定义会话级面板状态**
+- [x] **步骤 1：定义会话级面板状态**
 
 在 Pinia store 中使用下列联合类型，按 `sessionId` 存储状态：
 
@@ -73,21 +73,21 @@ interface WorkspaceSessionPanel {
 
 `showPreview` 仅在从持久工具切入预览时记录 `returnTab`；已在预览时改选目标不得覆盖返回目标。`closePreview` 在预览仍为活动项时恢复仍打开的 `returnTab`，否则保持当前标签；没有返回标签时清除激活标签并收起面板。`openTool` 从预览切走时保留原返回目标；关闭目标为 `returnTab` 的工具时将返回目标改为最后一个仍打开的持久工具，或清为 `null`。
 
-- [ ] **步骤 2：创建可注入工具组件的面板 Shell**
+- [x] **步骤 2：创建可注入工具组件的面板 Shell**
 
 `WorkspaceToolPanel.vue` 接收当前 `sessionId`、`projectId`、`toolComponents`、面板宽度和当前激活项。空状态列出有注册组件的工具；有标签时只显示未打开类型的 `+` 菜单项。它为每个存在面板状态的 session 渲染一个 `WorkspaceToolSessionView.vue`，非当前 session 用 `v-show` 隐藏；每个 session view 再以 `v-show` 切换已打开标签。会话和工具切换因此都保留文件树、xterm 和浏览器组件实例；只有明确关闭标签或删除会话才卸载。
 
 用组件 `expose({ dispose })` 约定处理显式关闭：面板隐藏或 session view 切换可见性时不释放资源；关闭标签时调用 `dispose()` 释放服务端资源，再移除标签；删除会话时卸载该 session view 并调用每个已打开工具的 `dispose()`。浏览器仅在不可见时断开画面流，终端保持 WebSocket 连接以保留隐藏期间的输出缓冲。
 
-- [ ] **步骤 3：接入现有右侧尺寸和面板开关**
+- [x] **步骤 3：接入现有右侧尺寸和面板开关**
 
 在 `App.vue` 中把现有 `workspace-preview` 容器替换为 `WorkspaceToolPanel`，复用 `previewWidth`、`preview-resizer` 的宽度状态和拖动处理。增加工具面板开关按钮，调用 `togglePanel()`；隐藏时不删除已打开标签。关闭最后一个工具/预览标签时同步收起面板。
 
-- [ ] **步骤 4：加入基础中英文标签文案**
+- [x] **步骤 4：加入基础中英文标签文案**
 
 在 `apps/web/src/i18n/messages.ts` 的中文和英文对象中添加文件浏览器、浏览器、终端、预览、添加标签、关闭标签、打开面板和空状态文案。组件只通过 `t()` 读取界面文字。
 
-- [ ] **步骤 5：运行前端类型检查**
+- [x] **步骤 5：运行前端类型检查**
 
 运行：`pnpm --filter @pi-web-ui/web typecheck`
 
@@ -101,23 +101,23 @@ interface WorkspaceSessionPanel {
 - 修改：`apps/web/src/components/FileTree.vue`
 - 修改：`apps/web/src/App.vue`
 
-- [ ] **步骤 1：让 FileTree 支持只读展示**
+- [x] **步骤 1：让 FileTree 支持只读展示**
 
 增加可选属性 `readOnly?: boolean`，默认 `false`。`toTree()` 只在 `readOnly === false` 时渲染 rename/delete suffix；`nodeProps()` 在只读时不绑定 context menu。保留 Sidebar 现有创建、重命名、删除和文件打开行为。
 
-- [ ] **步骤 2：组合文件树与预览组件**
+- [x] **步骤 2：组合文件树与预览组件**
 
 `WorkspaceFileBrowser.vue` 接收 `projectId`，内部渲染 `<FileTree :project-id="projectId" :read-only="true" @select="selectedPath = $event" />` 和 `<FileViewer :project-id="projectId" :path="selectedPath" hide-header />`。在文件区工具栏提供刷新按钮，调用 FileTree 暴露的 `refresh()`；选择文件后只更新文件浏览器内部预览。文件列表或读取失败时在各自区域显示可重试错误，重试沿用现有 list/read API。
 
-- [ ] **步骤 3：迁移文件和知识库引用预览到临时标签**
+- [x] **步骤 3：迁移文件和知识库引用预览到临时标签**
 
 `WorkspacePreviewTab.vue` 根据 `WorkspacePreviewTarget.kind` 渲染 `FileViewer` 或 `KbCitationViewer`。在 `App.vue` 中把 Sidebar/ChatPanel 的文件事件接到 `showPreview(sessionId, projectId, { kind: "file", path })`，把引用事件接到 `showPreview(sessionId, projectId, { kind: "citation", citation })`。重复调用只更新同一个 `preview` 标签；关闭活动预览时恢复仍存在的 `returnTab`，如果用户已切换到其他标签则关闭预览不改变当前选中标签。
 
-- [ ] **步骤 4：把文件浏览器注册到工具 Shell**
+- [x] **步骤 4：把文件浏览器注册到工具 Shell**
 
 向 `WorkspaceToolPanel` 的 `toolComponents` 传入 `files: WorkspaceFileBrowser`，向标签内容传入会话所属 `projectId`。使用会话 ID 与工具类型组成 Vue key，避免不同会话共用 FileTree 的内部选中状态。
 
-- [ ] **步骤 5：运行前端类型检查**
+- [x] **步骤 5：运行前端类型检查**
 
 运行：`pnpm --filter @pi-web-ui/web typecheck`
 
