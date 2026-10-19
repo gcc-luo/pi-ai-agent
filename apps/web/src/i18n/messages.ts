@@ -30,6 +30,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     // Header
     "header.files": "FILES",
 
+    // Workspace tools
+    "workspaceTools.files": "Files",
+    "workspaceTools.browser": "Browser",
+    "workspaceTools.terminal": "Terminal",
+    "workspaceTools.preview": "Preview",
+    "workspaceTools.addTab": "Add tab",
+    "workspaceTools.closeTab": "Close tab",
+    "workspaceTools.openPanel": "Open tools panel",
+    "workspaceTools.closePanel": "Hide tools panel",
+    "workspaceTools.empty": "Open a tool to get started",
+
     // Welcome screen
     "welcome.title": "PI Workspace",
     "welcome.sub": "Select a project from the sidebar or create a new one to begin.",
@@ -927,6 +938,17 @@ export const messages: Record<Locale, Record<string, string>> = {
     "sidebar.projectPlaceholder…": "项目名称…",
 
     "header.files": "文件",
+
+    // Workspace tools
+    "workspaceTools.files": "文件",
+    "workspaceTools.browser": "浏览器",
+    "workspaceTools.terminal": "终端",
+    "workspaceTools.preview": "预览",
+    "workspaceTools.addTab": "添加标签",
+    "workspaceTools.closeTab": "关闭标签",
+    "workspaceTools.openPanel": "打开工具面板",
+    "workspaceTools.closePanel": "收起工具面板",
+    "workspaceTools.empty": "打开一个工具以开始使用",
 
     "welcome.title": "PI 工作台",
     "welcome.sub": "从侧边栏选择一个项目或创建新项目以开始。",

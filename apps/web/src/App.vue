@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, defineAsyncComponent } from "vue";
+import type { Component, ComponentPublicInstance } from "vue";
 import { NConfigProvider, NSelect, NMessageProvider, darkTheme, zhCN, enUS, dateZhCN, dateEnUS, createDiscreteApi } from "naive-ui";
 import Sidebar from "./components/Sidebar.vue";
 import ChatPanel from "./components/ChatPanel.vue";
+import WorkspaceToolPanel from "./components/WorkspaceToolPanel.vue";
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
 // bundle for users who only browse the chat.
@@ -26,6 +28,7 @@ import { useAgentStore } from "./stores/agent.js";
 import { useTrashStore } from "./stores/trash.js";
 import { useThemeStore } from "./stores/theme.js";
 import { useNotificationStore } from "./stores/notifications.js";
+import { useWorkspaceToolsStore, type WorkspaceToolKind } from "./stores/workspace-tools.js";
 import type { NotificationNavigationTarget } from "./stores/desktop.js";
 import { useI18n } from "./i18n/index.js";
 import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
@@ -40,12 +43,12 @@ const trashStore = useTrashStore();
 const { message } = createDiscreteApi(["message"]);
 const themeStore = useThemeStore();
 const notifications = useNotificationStore();
+const workspaceTools = useWorkspaceToolsStore();
 const { t, currentLocale } = useI18n();
 
 const selectedProjectId = ref<string | null>(null);
 const selectedSessionId = ref<string | null>(null);
-const filePath = ref<string | null>(null);
-const citationPreview = ref<KbCitationMeta | null>(null);
+const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {};
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
@@ -57,6 +60,7 @@ const showOnboardingProject = ref(false);
 const chatPanelRef = ref<{
   revealNotificationMessage: (messageId?: string) => Promise<void>;
 } | null>(null);
+const workspacePanelRefs = new Map<string, ComponentPublicInstance & { disposeAll: () => void }>();
 
 let resizeStartX = 0;
 let resizeStartWidth = sidebarWidth.value;
@@ -147,6 +151,28 @@ const currentSession = computed(() =>
   sessionStore.sessions.find((s) => s.id === selectedSessionId.value),
 );
 
+const workspacePanelEntries = computed(() => Object.entries(workspaceTools.panels).map(([sessionId, panel]) => ({
+  sessionId,
+  panel,
+})));
+
+const currentWorkspacePanel = computed(() => selectedSessionId.value
+  ? workspaceTools.panels[selectedSessionId.value] ?? null
+  : null);
+
+function setWorkspacePanelRef(sessionId: string, instance: ComponentPublicInstance | null) {
+  if (instance) {
+    workspacePanelRefs.set(sessionId, instance as ComponentPublicInstance & { disposeAll: () => void });
+  } else {
+    workspacePanelRefs.delete(sessionId);
+  }
+}
+
+function toggleWorkspacePanel() {
+  if (!selectedSessionId.value || !selectedProjectId.value) return;
+  workspaceTools.togglePanel(selectedSessionId.value, selectedProjectId.value);
+}
+
 let projectLoadPromise: Promise<void> = Promise.resolve();
 let sessionOpenPromise: Promise<void> = Promise.resolve();
 
@@ -185,8 +211,6 @@ onBeforeUnmount(() => {
 
 watch(selectedProjectId, (id) => {
   projectLoadPromise = (async () => {
-    filePath.value = null;
-    citationPreview.value = null;
     selectedSessionId.value = null;
     if (!id) return;
     await projectStore.loadOne(id);
@@ -232,6 +256,8 @@ async function renameSession(id: string, title: string) {
 async function deleteSession(id: string) {
   try {
     await sessionStore.remove(id);
+    workspacePanelRefs.get(id)?.disposeAll();
+    workspaceTools.removeSession(id);
     await notifications.refreshTotalUnread();
     if (selectedSessionId.value === id) {
       selectedSessionId.value = null;
@@ -386,21 +412,14 @@ const hasWorkspace = computed(
 );
 
 
-const showPreview = computed(() => filePath.value !== null || citationPreview.value !== null);
-
-function closePreview() {
-  filePath.value = null;
-  citationPreview.value = null;
-}
-
 function openProjectFile(path: string) {
-  citationPreview.value = null;
-  filePath.value = path;
+  if (!selectedSessionId.value || !selectedProjectId.value) return;
+  workspaceTools.showPreview(selectedSessionId.value, selectedProjectId.value, { kind: "file", path });
 }
 
 function openKbCitation(citation: KbCitationMeta) {
-  filePath.value = null;
-  citationPreview.value = citation;
+  if (!selectedSessionId.value || !selectedProjectId.value) return;
+  workspaceTools.showPreview(selectedSessionId.value, selectedProjectId.value, { kind: "citation", citation });
 }
 </script>
 
@@ -435,7 +454,6 @@ function openKbCitation(citation: KbCitationMeta) {
 
         <main class="workspace">
           <template v-if="hasWorkspace">
-            <!-- Header -->
             <header class="workspace-header">
               <div class="header-left">
                 <h1 class="project-name">{{ projectStore.current?.name }}</h1>
@@ -444,93 +462,67 @@ function openKbCitation(citation: KbCitationMeta) {
                 </span>
               </div>
               <div class="header-right">
+                <button
+                  class="workspace-panel-toggle"
+                  type="button"
+                  :aria-label="t(currentWorkspacePanel?.visible ? 'workspaceTools.closePanel' : 'workspaceTools.openPanel')"
+                  :aria-pressed="currentWorkspacePanel?.visible ?? false"
+                  @click="toggleWorkspacePanel"
+                >
+                  {{ t(currentWorkspacePanel?.visible ? 'workspaceTools.closePanel' : 'workspaceTools.openPanel') }}
+                </button>
                 <span class="connection-status" :class="connection.status">
                   <span class="conn-dot" />
                   {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
                 </span>
               </div>
             </header>
-
-            <!-- Main content area: chat + preview panel -->
-            <div class="workspace-body">
-              <!-- Chat Area -->
-              <div class="workspace-main">
-                <div class="workspace-chat">
-                  <ChatPanel
-                    v-if="selectedSessionId"
-                    ref="chatPanelRef"
-                    :session-id="selectedSessionId"
-                    :project-id="selectedProjectId!"
-                    @select-file="openProjectFile"
-                    @select-kb-citation="openKbCitation"
-                    @manage-connectors="activeNav = 'connectors'"
-                  />
-                </div>
-              </div>
-
-              <!-- Right preview panel (slides in, office mode only) -->
-              <Transition name="preview-slide">
-                <div
-                  v-if="showPreview"
-                  class="workspace-preview"
-                  :style="{ width: `${previewWidth}px` }"
-                >
-                  <div
-                    class="preview-resizer"
-                    :class="{ active: isPreviewResizing }"
-                    role="separator"
-                    aria-orientation="vertical"
-                    :aria-valuemin="PREVIEW_MIN_WIDTH"
-                    :aria-valuemax="previewMaxWidth"
-                    :aria-valuenow="previewWidth"
-                    data-test="preview-resizer"
-                    @pointerdown="startPreviewResize"
-                  />
-                  <div class="preview-header">
-                    <span class="preview-title">{{ citationPreview?.fileName ?? filePath?.split('/').pop() }}</span>
-                    <button class="preview-close" @click="closePreview">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div class="preview-body">
-                    <FileViewer v-if="filePath" :project-id="selectedProjectId!" :path="filePath" hide-header />
-                    <KbCitationViewer v-else-if="citationPreview" :citation="citationPreview" />
-                  </div>
-                </div>
-              </Transition>
-            </div>
           </template>
 
-          <!-- Welcome Screen -->
-          <div v-else class="welcome">
-            <div class="welcome-inner">
-              <div class="welcome-symbol">π</div>
-              <template v-if="!projectStore.projects.length">
-                <h2 class="welcome-title">{{ t('welcome.emptyTitle') }}</h2>
-                <p class="welcome-sub">{{ t('welcome.emptySub') }}</p>
-                <div class="welcome-steps">
-                  <div><strong>1</strong><span>{{ t('welcome.stepProject') }}</span></div>
-                  <div><strong>2</strong><span>{{ t('welcome.stepSession') }}</span></div>
-                  <div><strong>3</strong><span>{{ t('welcome.stepPrompt') }}</span></div>
-                </div>
-                <button class="welcome-primary" @click="showOnboardingProject = true">{{ t('welcome.createProject') }}</button>
-              </template>
-              <template v-else>
-                <h2 class="welcome-title">{{ t('welcome.title') }}</h2>
-                <p class="welcome-sub">{{ t('welcome.sub') }}</p>
-                <button v-if="selectedProjectId" class="welcome-primary" @click="createSession">{{ t('welcome.createSession') }}</button>
-                <div class="welcome-hint">
-                  <kbd>&#8984;</kbd> + <kbd>N</kbd> {{ t('welcome.hint') }}
-                </div>
-              </template>
-              <NewProjectDialog
-                :show="showOnboardingProject"
-                @close="showOnboardingProject = false"
-                @create="createOnboardingProject"
-              />
+          <div class="workspace-body">
+            <div v-if="hasWorkspace" class="workspace-main">
+              <div class="workspace-chat">
+                <ChatPanel
+                  v-if="selectedSessionId"
+                  ref="chatPanelRef"
+                  :session-id="selectedSessionId"
+                  :project-id="selectedProjectId!"
+                  @select-file="openProjectFile"
+                  @select-kb-citation="openKbCitation"
+                  @manage-connectors="activeNav = 'connectors'"
+                />
+              </div>
             </div>
+
+            <div v-else class="welcome">
+              <div class="welcome-inner">
+                <div class="welcome-symbol">π</div>
+                <template v-if="!projectStore.projects.length">
+                  <h2 class="welcome-title">{{ t('welcome.emptyTitle') }}</h2>
+                  <p class="welcome-sub">{{ t('welcome.emptySub') }}</p>
+                  <div class="welcome-steps">
+                    <div><strong>1</strong><span>{{ t('welcome.stepProject') }}</span></div>
+                    <div><strong>2</strong><span>{{ t('welcome.stepSession') }}</span></div>
+                    <div><strong>3</strong><span>{{ t('welcome.stepPrompt') }}</span></div>
+                  </div>
+                  <button class="welcome-primary" @click="showOnboardingProject = true">{{ t('welcome.createProject') }}</button>
+                </template>
+                <template v-else>
+                  <h2 class="welcome-title">{{ t('welcome.title') }}</h2>
+                  <p class="welcome-sub">{{ t('welcome.sub') }}</p>
+                  <button v-if="selectedProjectId" class="welcome-primary" @click="createSession">{{ t('welcome.createSession') }}</button>
+                  <div class="welcome-hint">
+                    <kbd>&#8984;</kbd> + <kbd>N</kbd> {{ t('welcome.hint') }}
+                  </div>
+                </template>
+                <NewProjectDialog
+                  :show="showOnboardingProject"
+                  @close="showOnboardingProject = false"
+                  @create="createOnboardingProject"
+                />
+              </div>
+            </div>
+
           </div>
         </main>
       </template>
@@ -544,6 +536,26 @@ function openKbCitation(citation: KbCitationMeta) {
         <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToScheduledSession" @manage-connectors="activeNav = 'connectors'" />
       <ChannelView v-else-if="activeNav === 'channels'" />
       <TrashView v-else-if="activeNav === 'trash'" @restore-project="navigateToProject" />
+
+      <WorkspaceToolPanel
+        v-for="entry in workspacePanelEntries"
+        :key="entry.sessionId"
+        :ref="(instance) => setWorkspacePanelRef(entry.sessionId, instance as ComponentPublicInstance | null)"
+        :session-id="entry.sessionId"
+        :project-id="entry.panel.projectId"
+        :active="Boolean(activeNav === 'chat' && hasWorkspace && selectedSessionId === entry.sessionId)"
+        :width="previewWidth"
+        :min-width="PREVIEW_MIN_WIDTH"
+        :max-width="previewMaxWidth"
+        :is-resizing="isPreviewResizing"
+        :tool-components="workspaceToolComponents"
+        @resize-start="startPreviewResize"
+      >
+        <template #preview="{ target, projectId }">
+          <FileViewer v-if="target.kind === 'file'" :project-id="projectId" :path="target.path" hide-header />
+          <KbCitationViewer v-else :citation="target.citation" />
+        </template>
+      </WorkspaceToolPanel>
     </div>
     </NMessageProvider>
   </NConfigProvider>
@@ -608,6 +620,22 @@ function openKbCitation(citation: KbCitationMeta) {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.workspace-panel-toggle {
+  padding: 6px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.workspace-panel-toggle:hover,
+.workspace-panel-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 
@@ -690,118 +718,6 @@ function openKbCitation(citation: KbCitationMeta) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-/* ─── Preview Panel ─── */
-
-.workspace-preview {
-  position: relative;
-  width: 480px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border-default);
-  background: var(--bg-deep);
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
-}
-
-.preview-resizer {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  width: 6px;
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.preview-resizer::after {
-  position: absolute;
-  inset: 0 2px;
-  content: "";
-  background: transparent;
-  transition: background var(--transition-fast);
-}
-
-.preview-resizer:hover::after,
-.preview-resizer.active::after {
-  background: var(--accent);
-}
-
-.preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  height: 38px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.preview-title {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-.preview-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.preview-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* ─── Preview Slide Transition ─── */
-
-.preview-slide-enter-active {
-  animation: previewIn 0.3s var(--ease-spring) both;
-}
-.preview-slide-leave-active {
-  animation: previewOut 0.2s var(--ease-out) both;
-}
-
-@keyframes previewIn {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes previewOut {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(20px);
-  }
 }
 
 /* ─── Welcome ─── */
