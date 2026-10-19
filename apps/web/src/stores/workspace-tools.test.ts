@@ -50,6 +50,18 @@ describe("workspace tool panels", () => {
     expect(store.panels["session-1"]?.visible).toBe(true);
   });
 
+  it("falls back to the last open tool when preview has no return tab", () => {
+    const store = useWorkspaceToolsStore();
+    store.openTool("session-1", "project-1", "files");
+    store.openTool("session-1", "project-1", "browser");
+    store.showPreview("session-1", "project-1", { kind: "file", path: "/a" });
+    store.panels["session-1"]!.returnTab = null;
+
+    store.closePreview("session-1");
+
+    expect(store.panels["session-1"]?.activeTab).toBe("browser");
+  });
+
   it("does not overwrite the preview return tab when a tool is opened from preview", () => {
     const store = useWorkspaceToolsStore();
 
@@ -75,6 +87,18 @@ describe("workspace tool panels", () => {
     store.closeTool("session-1", "terminal");
     expect(store.panels["session-1"]?.activeTab).toBeNull();
     expect(store.panels["session-1"]?.visible).toBe(false);
+  });
+
+  it("selects the last remaining tab when closing an active tool with preview open", () => {
+    const store = useWorkspaceToolsStore();
+    store.openTool("session-1", "project-1", "files");
+    store.openTool("session-1", "project-1", "browser");
+    store.showPreview("session-1", "project-1", { kind: "file", path: "/a" });
+    store.setActiveTab("session-1", "browser");
+
+    store.closeTool("session-1", "browser");
+
+    expect(store.panels["session-1"]?.activeTab).toBe("preview");
   });
 
   it("does not change the active tool when a background preview is closed", () => {

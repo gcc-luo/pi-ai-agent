@@ -60,7 +60,7 @@ export const useWorkspaceToolsStore = defineStore("workspace-tools", {
       }
 
       if (panel.activeTab === kind) {
-        panel.activeTab = panel.tools.at(-1) ?? (panel.preview ? "preview" : null);
+        panel.activeTab = panel.preview ? "preview" : panel.tools.at(-1) ?? null;
       }
 
       if (!panel.tools.length && !panel.preview) {
@@ -92,7 +92,7 @@ export const useWorkspaceToolsStore = defineStore("workspace-tools", {
       if (panel.activeTab === "preview") {
         panel.activeTab = panel.returnTab && panel.tools.includes(panel.returnTab)
           ? panel.returnTab
-          : null;
+          : panel.tools.at(-1) ?? null;
       }
       panel.returnTab = null;
 

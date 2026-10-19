@@ -429,7 +429,7 @@ function openKbCitation(citation: KbCitationMeta) {
     <div class="app-shell">
       <NavRail :active-nav="activeNav" @navigate="activeNav = $event" />
 
-      <template v-if="activeNav === 'chat'">
+      <div class="chat-layout" v-show="activeNav === 'chat'">
         <Sidebar
           :style="{ width: `${sidebarWidth}px` }"
           :selected-project-id="selectedProjectId"
@@ -523,39 +523,38 @@ function openKbCitation(citation: KbCitationMeta) {
               </div>
             </div>
 
+            <WorkspaceToolPanel
+              v-for="entry in workspacePanelEntries"
+              :key="entry.sessionId"
+              :ref="(instance) => setWorkspacePanelRef(entry.sessionId, instance as ComponentPublicInstance | null)"
+              :session-id="entry.sessionId"
+              :project-id="entry.panel.projectId"
+              :active="Boolean(hasWorkspace && selectedSessionId === entry.sessionId)"
+              :width="previewWidth"
+              :min-width="PREVIEW_MIN_WIDTH"
+              :max-width="previewMaxWidth"
+              :is-resizing="isPreviewResizing"
+              :tool-components="workspaceToolComponents"
+              @resize-start="startPreviewResize"
+            >
+              <template #preview="{ target, projectId }">
+                <FileViewer v-if="target.kind === 'file'" :project-id="projectId" :path="target.path" hide-header />
+                <KbCitationViewer v-else :citation="target.citation" />
+              </template>
+            </WorkspaceToolPanel>
           </div>
         </main>
-      </template>
+      </div>
 
-      <ModelPanel v-else-if="activeNav === 'model'" />
-      <SkillStoreView v-else-if="activeNav === 'skill-store'" />
-      <PluginManagerView v-else-if="activeNav === 'plugins'" />
-      <ConnectorView v-else-if="activeNav === 'connectors'" :project-id="selectedProjectId" />
-      <KnowledgeBaseView v-else-if="activeNav === 'knowledge-base'" />
-      <ExpertView v-else-if="activeNav === 'experts'" @summon-session="navigateToSession" />
-        <ScheduledTasksView v-else-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToScheduledSession" @manage-connectors="activeNav = 'connectors'" />
-      <ChannelView v-else-if="activeNav === 'channels'" />
-      <TrashView v-else-if="activeNav === 'trash'" @restore-project="navigateToProject" />
-
-      <WorkspaceToolPanel
-        v-for="entry in workspacePanelEntries"
-        :key="entry.sessionId"
-        :ref="(instance) => setWorkspacePanelRef(entry.sessionId, instance as ComponentPublicInstance | null)"
-        :session-id="entry.sessionId"
-        :project-id="entry.panel.projectId"
-        :active="Boolean(activeNav === 'chat' && hasWorkspace && selectedSessionId === entry.sessionId)"
-        :width="previewWidth"
-        :min-width="PREVIEW_MIN_WIDTH"
-        :max-width="previewMaxWidth"
-        :is-resizing="isPreviewResizing"
-        :tool-components="workspaceToolComponents"
-        @resize-start="startPreviewResize"
-      >
-        <template #preview="{ target, projectId }">
-          <FileViewer v-if="target.kind === 'file'" :project-id="projectId" :path="target.path" hide-header />
-          <KbCitationViewer v-else :citation="target.citation" />
-        </template>
-      </WorkspaceToolPanel>
+      <ModelPanel v-if="activeNav === 'model'" />
+      <SkillStoreView v-if="activeNav === 'skill-store'" />
+      <PluginManagerView v-if="activeNav === 'plugins'" />
+      <ConnectorView v-if="activeNav === 'connectors'" :project-id="selectedProjectId" />
+      <KnowledgeBaseView v-if="activeNav === 'knowledge-base'" />
+      <ExpertView v-if="activeNav === 'experts'" @summon-session="navigateToSession" />
+      <ScheduledTasksView v-if="activeNav === 'scheduled-tasks'" @navigate-session="navigateToScheduledSession" @manage-connectors="activeNav = 'connectors'" />
+      <ChannelView v-if="activeNav === 'channels'" />
+      <TrashView v-if="activeNav === 'trash'" @restore-project="navigateToProject" />
     </div>
     </NMessageProvider>
   </NConfigProvider>
@@ -567,6 +566,13 @@ function openKbCitation(citation: KbCitationMeta) {
   height: 100vh;
   overflow: hidden;
   background: var(--bg-void);
+}
+
+.chat-layout {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .workspace {
