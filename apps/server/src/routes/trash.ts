@@ -88,6 +88,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
           ?? app.browserManager?.closeSession(sessionId, { retainTombstone: true })
           ?? Promise.resolve(),
       ));
+      await Promise.allSettled(projectSessionIds.map((sessionId) =>
+        app.terminalManager?.close(sessionId) ?? Promise.resolve(),
+      ));
       app.projects.destroyPermanently(body.id);
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
         app.browserManager?.forgetSession(sessionId) ?? Promise.resolve(),
@@ -103,6 +106,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       }
       if (app.pluginManager) await app.pluginManager.closeSession(body.id, { retainTombstone: true });
       else if (app.browserManager) await app.browserManager.closeSession(body.id, { retainTombstone: true });
+      await app.terminalManager?.close(body.id);
       app.sessions.destroyPermanently(body.id);
       await app.browserManager?.forgetSession(body.id);
     } else {
@@ -133,6 +137,9 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
           ?? app.browserManager?.closeSession(sessionId, { retainTombstone: true })
           ?? Promise.resolve(),
       ));
+      await Promise.allSettled(projectSessionIds.map((sessionId) =>
+        app.terminalManager?.close(sessionId) ?? Promise.resolve(),
+      ));
       app.projects.destroyPermanently(p.id);
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
         app.browserManager?.forgetSession(sessionId) ?? Promise.resolve(),
@@ -151,6 +158,7 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
       }
       if (app.pluginManager) await app.pluginManager.closeSession(s.id, { retainTombstone: true });
       else if (app.browserManager) await app.browserManager.closeSession(s.id, { retainTombstone: true });
+      await app.terminalManager?.close(s.id);
       app.sessions.destroyPermanently(s.id);
       await app.browserManager?.forgetSession(s.id);
     }

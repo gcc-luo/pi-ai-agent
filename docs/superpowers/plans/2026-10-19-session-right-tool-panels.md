@@ -212,25 +212,25 @@ pnpm --filter @pi-web-ui/web typecheck
 - 修改：`apps/server/src/routes/projects.ts`
 - 修改：`apps/server/src/index.ts`
 
-- [ ] **步骤 1：添加 PTY 运行时依赖**
+- [x] **步骤 1：添加 PTY 运行时依赖**
 
 运行：`pnpm --filter @pi-web-ui/server add node-pty`
 
 使用 pnpm 更新 workspace lockfile；不要手工修改锁文件。
 
-- [ ] **步骤 2：建立每会话一个 PTY 的管理器**
+- [x] **步骤 2：建立每会话一个 PTY 的管理器**
 
 `TerminalSessionManager` 使用 `Map<string, { pty: IPty; output: string[]; outputBytes: number }>` 以 `sessionId` 索引进程。公开 `ensure(sessionId, projectWorkdir)`、`write(sessionId, data)`、`resize(sessionId, cols, rows)`、`recentOutput(sessionId)`、`close(sessionId)`、`shutdown()`。PTY `onData` 同时向当前 socket 广播并将最近 256 KiB 输出存入有界缓冲；新 socket 连接时先发送该缓冲，再接收实时输出。使用 `node-pty.spawn(shell, [], { cwd: project.workdir, cols: 80, rows: 24, name: "xterm-256color", env: { ...process.env, TERM: "xterm-256color" } })`。Windows shell 取 `COMSPEC`，Unix shell 取 `SHELL` 并回退 `/bin/sh`。
 
-- [ ] **步骤 3：创建会话验证和消息校验的 WebSocket**
+- [x] **步骤 3：创建会话验证和消息校验的 WebSocket**
 
 新增 `/ws/terminal/:sessionId`。路由先解析 session 与其 project workdir，再 `ensure()`。客户端只可发送 `{type:"input", data:string}`、`{type:"resize", cols:number, rows:number}` 和 `{type:"close"}`；截断超过 8 KiB 的单条输入，并把 cols 限制为 20–300、rows 限制为 5–100。PTY 输出以 WebSocket binary frame 发送；退出时发送 `{type:"exit", exitCode:number, signal:number}`。`close` 明确终止该会话 PTY，普通 socket 断开只允许重连，不终止 PTY。
 
-- [ ] **步骤 4：接入应用生命周期清理**
+- [x] **步骤 4：接入应用生命周期清理**
 
 在 `wiring.ts` 创建并装饰 `terminalManager`，注册终端 WebSocket。会话永久删除、清空回收站、项目删除和 server close 时都调用 `close(sessionId)` 或 `shutdown()`。收到客户端连接时必须从服务端 session/project 关系取 cwd；禁止接受客户端提交的 cwd 或另一个 session ID。
 
-- [ ] **步骤 5：运行服务端类型检查**
+- [x] **步骤 5：运行服务端类型检查**
 
 运行：`pnpm --filter @pi-web-ui/server typecheck`
 

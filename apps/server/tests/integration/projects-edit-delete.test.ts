@@ -112,6 +112,8 @@ describe("projects edit/delete routes", () => {
 
     const closeSession = vi.fn().mockResolvedValue(undefined);
     (app as any).pluginManager = { closeSession };
+    const closeTerminal = vi.fn().mockResolvedValue(undefined);
+    (app as any).terminalManager = { close: closeTerminal };
 
     const res = await app.inject({ method: "DELETE", url: `/api/projects/${id}` });
     expect(res.statusCode).toBe(204);
@@ -123,6 +125,8 @@ describe("projects edit/delete routes", () => {
     expect(store.get("other-session")).toBeDefined();
     expect(closeSession).toHaveBeenCalledWith(sessionId1, { retainTombstone: true });
     expect(closeSession).toHaveBeenCalledWith(sessionId2, { retainTombstone: true });
+    expect(closeTerminal).toHaveBeenCalledWith(sessionId1);
+    expect(closeTerminal).toHaveBeenCalledWith(sessionId2);
   });
 
   it("DELETE returns 404 for unknown id", async () => {

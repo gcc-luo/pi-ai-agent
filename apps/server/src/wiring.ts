@@ -57,6 +57,7 @@ import {
 import { ChannelAgentService } from "./channels/channel-agent-service.js";
 import { ChannelConversationRepository } from "./db/repositories/channel-conversation.js";
 import { BrowserSessionManager } from "./browser/browser-session-manager.js";
+import { TerminalSessionManager } from "./terminal/terminal-session-manager.js";
 import { browserRoutes } from "./routes/browser.js";
 import { PluginRepository } from "./db/repositories/plugin.js";
 import { ComputerSessionManager } from "./computer/computer-session-manager.js";
@@ -73,6 +74,7 @@ import { ConnectorService } from "./connectors/connector-service.js";
 import { connectorsRoutes } from "./routes/connectors.js";
 import { releaseRoutes } from "./routes/releases.js";
 import { authorizationRoutes } from "./routes/authorization.js";
+import { terminalWsRoutes } from "./ws/terminal.js";
 
 export async function buildConfiguredApp(config: Config) {
   const db = openDatabase(config.dbPath);
@@ -161,6 +163,9 @@ export async function buildConfiguredApp(config: Config) {
   app.addHook("onClose", async () => kbParseWorker.stop());
   const browserManager = new BrowserSessionManager({ logger: app.log, sessionRoot: config.piSessionRootDir });
   (app as any).browserManager = browserManager;
+  const terminalManager = new TerminalSessionManager({ logger: app.log });
+  (app as any).terminalManager = terminalManager;
+  app.addHook("onClose", async () => terminalManager.shutdown());
   const computerManager = new ComputerSessionManager(app.log);
   (app as any).computerManager = computerManager;
   const pluginManager = new PluginManager(plugins, browserManager, computerManager);
@@ -310,6 +315,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(browserRoutes, { prefix: "/api" });
   await app.register(browserWsRoutes);
+  await app.register(terminalWsRoutes);
   await app.register(pluginsRoutes, { prefix: "/api" });
   await app.register(authorizationRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });
@@ -357,7 +363,12 @@ export async function buildConfiguredApp(config: Config) {
     config.trashRetentionMs,
     app.log,
     undefined,
-    (sessionId) => browserManager.forgetSession(sessionId),
+    async (sessionId) => {
+      await Promise.allSettled([
+        browserManager.forgetSession(sessionId),
+        terminalManager.close(sessionId),
+      ]);
+    },
   );
   app.addHook("onReady", async () => trashSweeper.start());
   app.addHook("onClose", async () => trashSweeper.stop());

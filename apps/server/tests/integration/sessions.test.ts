@@ -138,10 +138,13 @@ describe("sessions routes", () => {
     const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
     const closeSession = vi.fn().mockResolvedValue(undefined);
     (app as any).pluginManager = { closeSession };
+    const closeTerminal = vi.fn().mockResolvedValue(undefined);
+    (app as any).terminalManager = { close: closeTerminal };
 
     const deleted = await app.inject({ method: "DELETE", url: `/api/sessions/${created.json().id}` });
 
     expect(deleted.statusCode).toBe(204);
     expect(closeSession).toHaveBeenCalledWith(created.json().id, { retainTombstone: true });
+    expect(closeTerminal).toHaveBeenCalledWith(created.json().id);
   });
 });
