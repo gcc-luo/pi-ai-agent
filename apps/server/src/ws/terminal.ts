@@ -47,7 +47,7 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
 }
 
 export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
-  app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/terminal/open", async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { instanceId?: unknown } }>("/api/sessions/:sessionId/terminal/open", async (request, reply) => {
     if (!isAllowedLocalOrigin(request.headers.origin)) {
       return reply.code(403).send({ error: "origin not allowed" });
     }
@@ -55,8 +55,10 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
     if (!session) return reply.code(404).send({ error: "session not found" });
     const project = app.projects.findById(session.projectId);
     if (!project) return reply.code(404).send({ error: "project not found" });
+    const instanceId = validTerminalInstanceId(request.body?.instanceId ?? "terminal");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
     try {
-      app.terminalManager.ensure(session.id, project.workdir);
+      app.terminalManager.ensure(terminalRuntimeId(session.id, instanceId), project.workdir);
       return { status: "open" as const };
     } catch (error) {
       request.log.warn({ sessionId: session.id, err: error }, "failed to open terminal PTY");
@@ -64,17 +66,19 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/terminal/close", async (request, reply) => {
+  app.post<{ Params: { sessionId: string }; Body: { instanceId?: unknown } }>("/api/sessions/:sessionId/terminal/close", async (request, reply) => {
     if (!isAllowedLocalOrigin(request.headers.origin)) {
       return reply.code(403).send({ error: "origin not allowed" });
     }
     // Close is intentionally idempotent and remains valid during session deletion.
-    await app.terminalManager.close(request.params.sessionId);
+    const instanceId = validTerminalInstanceId(request.body?.instanceId ?? "terminal");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+    await app.terminalManager.closeInstance(terminalRuntimeId(request.params.sessionId, instanceId));
     return { status: "closed" as const };
   });
 
   const prepareTerminal = async (
-    request: FastifyRequest<{ Params: { sessionId: string } }>,
+    request: FastifyRequest<{ Params: { sessionId: string }; Querystring: { instanceId?: string } }>,
     reply: FastifyReply,
   ) => {
     if (!isAllowedLocalOrigin(request.headers.origin)) {
@@ -84,14 +88,18 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
     if (!session) return reply.code(404).send({ error: "session not found" });
     const project = app.projects.findById(session.projectId);
     if (!project) return reply.code(404).send({ error: "project not found" });
-    if (!app.terminalManager.has(session.id)) return reply.code(409).send({ error: "terminal is not open" });
+    const instanceId = validTerminalInstanceId(request.query.instanceId ?? "terminal");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+    if (!app.terminalManager.has(terminalRuntimeId(session.id, instanceId))) return reply.code(409).send({ error: "terminal is not open" });
   };
 
-  app.get<{ Params: { sessionId: string } }>(
+  app.get<{ Params: { sessionId: string }; Querystring: { instanceId?: string } }>(
     "/ws/terminal/:sessionId",
     { websocket: true, preValidation: prepareTerminal },
     (client, request) => {
-      const sessionId = request.params.sessionId;
+      const session = request.params.sessionId;
+      const instanceId = validTerminalInstanceId(request.query.instanceId) ?? "terminal";
+      const sessionId = terminalRuntimeId(session, instanceId);
       const receiver = (client as unknown as { _receiver?: { _maxPayload: number } })._receiver;
       if (receiver) receiver._maxPayload = MAX_TERMINAL_MESSAGE_BYTES;
 
@@ -165,7 +173,7 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
           else if (message.type === "resize") app.terminalManager.resize(sessionId, message.cols, message.rows);
           else {
             cleanup();
-            void app.terminalManager.close(sessionId).then(() => closeSocket(client, 1000, "terminal closed"));
+            void app.terminalManager.closeInstance(sessionId).then(() => closeSocket(client, 1000, "terminal closed"));
           }
         } catch (error) {
           request.log.warn({ sessionId, err: error }, "terminal input handling failed");
@@ -187,3 +195,11 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
     },
   );
 };
+
+function validTerminalInstanceId(value: unknown): string | null {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value) ? value : null;
+}
+
+function terminalRuntimeId(sessionId: string, instanceId: string): string {
+  return instanceId === "terminal" ? sessionId : `${sessionId}::${instanceId}`;
+}

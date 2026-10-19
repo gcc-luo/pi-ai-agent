@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import type { KbCitationMeta } from "../utils/kb-context.js";
 
 export type WorkspaceToolKind = "files" | "browser" | "terminal";
-export type WorkspaceTabId = WorkspaceToolKind | "preview";
+export type WorkspaceTabId = string;
 export type WorkspacePreviewTarget =
   | { kind: "file"; path: string }
   | { kind: "citation"; citation: KbCitationMeta };
@@ -10,9 +10,9 @@ export type WorkspacePreviewTarget =
 export interface WorkspaceSessionPanel {
   projectId: string;
   visible: boolean;
-  tools: WorkspaceToolKind[];
+  tools: WorkspaceTabId[];
   activeTab: WorkspaceTabId | null;
-  returnTab: WorkspaceToolKind | null;
+  returnTab: WorkspaceTabId | null;
   preview: WorkspacePreviewTarget | null;
 }
 
@@ -22,9 +22,18 @@ export const WORKSPACE_TOOL_KINDS: WorkspaceToolKind[] = [
   "terminal",
 ];
 
+export function workspaceToolKind(tabId: WorkspaceTabId): WorkspaceToolKind | null {
+  if (tabId === "preview") return null;
+  const kind = tabId.split("--", 1)[0];
+  return WORKSPACE_TOOL_KINDS.includes(kind as WorkspaceToolKind)
+    ? kind as WorkspaceToolKind
+    : null;
+}
+
 export const useWorkspaceToolsStore = defineStore("workspace-tools", {
   state: () => ({
     panels: {} as Record<string, WorkspaceSessionPanel>,
+    nextTabInstance: 0,
   }),
   actions: {
     ensurePanel(sessionId: string, projectId: string): WorkspaceSessionPanel {
@@ -43,23 +52,26 @@ export const useWorkspaceToolsStore = defineStore("workspace-tools", {
       panel.visible = !panel.visible;
     },
 
-    openTool(sessionId: string, projectId: string, kind: WorkspaceToolKind) {
+    openTool(sessionId: string, projectId: string, kind: WorkspaceToolKind): WorkspaceTabId {
       const panel = this.ensurePanel(sessionId, projectId);
-      if (!panel.tools.includes(kind)) panel.tools.push(kind);
+      const existingCount = panel.tools.filter((tabId) => workspaceToolKind(tabId) === kind).length;
+      const tabId = existingCount === 0 ? kind : `${kind}--${++this.nextTabInstance}`;
+      panel.tools.push(tabId);
       panel.visible = true;
-      panel.activeTab = kind;
+      panel.activeTab = tabId;
+      return tabId;
     },
 
-    closeTool(sessionId: string, kind: WorkspaceToolKind) {
+    closeTool(sessionId: string, tabId: WorkspaceTabId) {
       const panel = this.panels[sessionId];
-      if (!panel || !panel.tools.includes(kind)) return;
+      if (!panel || !panel.tools.includes(tabId)) return;
 
-      panel.tools = panel.tools.filter((tool) => tool !== kind);
-      if (panel.returnTab === kind) {
+      panel.tools = panel.tools.filter((tool) => tool !== tabId);
+      if (panel.returnTab === tabId) {
         panel.returnTab = panel.tools.at(-1) ?? null;
       }
 
-      if (panel.activeTab === kind) {
+      if (panel.activeTab === tabId) {
         panel.activeTab = panel.preview ? "preview" : panel.tools.at(-1) ?? null;
       }
 

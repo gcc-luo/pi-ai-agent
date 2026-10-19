@@ -5,6 +5,7 @@ import WorkspaceToolSessionView from "./WorkspaceToolSessionView.vue";
 import {
   useWorkspaceToolsStore,
   WORKSPACE_TOOL_KINDS,
+  workspaceToolKind,
   type WorkspaceTabId,
   type WorkspaceToolKind,
 } from "../stores/workspace-tools.js";
@@ -33,7 +34,7 @@ const { t } = useI18n();
 const closeError = ref("");
 const panel = computed(() => store.panels[props.sessionId] ?? null);
 const registeredTools = computed(() => WORKSPACE_TOOL_KINDS.filter((kind) => props.toolComponents[kind]));
-const availableTools = computed(() => registeredTools.value.filter((kind) => !panel.value?.tools.includes(kind)));
+const availableTools = computed(() => registeredTools.value);
 const tabs = computed<WorkspaceTabId[]>(() => [
   ...(panel.value?.tools ?? []),
   ...(panel.value?.preview ? ["preview" as const] : []),
@@ -42,6 +43,16 @@ const sessionViewRef = ref<InstanceType<typeof WorkspaceToolSessionView> | null>
 
 function openTool(kind: WorkspaceToolKind) {
   store.openTool(props.sessionId, props.projectId, kind);
+}
+
+function tabTitle(tab: WorkspaceTabId): string {
+  if (tab === "preview") return t("workspaceTools.preview");
+  const kind = workspaceToolKind(tab);
+  if (!kind) return tab;
+  const ordinal = (panel.value?.tools ?? [])
+    .slice(0, (panel.value?.tools ?? []).indexOf(tab) + 1)
+    .filter((candidate) => workspaceToolKind(candidate) === kind).length;
+  return `${t(`workspaceTools.${kind}`)}${ordinal > 1 ? ` ${ordinal}` : ""}`;
 }
 
 async function closeTab(tab: WorkspaceTabId) {
@@ -102,12 +113,12 @@ defineExpose({ disposeAll });
             :data-test="`select-tab-${tab}`"
             @click="activateTab(tab)"
           >
-            {{ t(`workspaceTools.${tab}`) }}
+            {{ tabTitle(tab) }}
           </button>
           <button
             class="workspace-tool-tab-close"
             type="button"
-            :aria-label="`${t('workspaceTools.closeTab')} ${t(`workspaceTools.${tab}`)}`"
+            :aria-label="`${t('workspaceTools.closeTab')} ${tabTitle(tab)}`"
             :data-test="`close-tab-${tab}`"
             @click="closeTab(tab)"
           >

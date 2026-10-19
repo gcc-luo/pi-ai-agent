@@ -29,6 +29,7 @@ const defaultCommandRunner: CommandRunner = async (file, args, options) => {
 };
 
 const MAX_STREAM_PORT = 65_535;
+type PanelBrowserTab = { ref: string; createdByPanel: boolean };
 
 export interface BrowserSessionCloseOptions {
   retainTombstone?: boolean;
@@ -91,6 +92,7 @@ export class BrowserSessionManager {
   private readonly panelBrowserSessions = new Set<string>();
   private readonly panelPorts = new Map<string, number>();
   private readonly panelStarting = new Map<string, Promise<number>>();
+  private readonly panelTabs = new Map<string, Map<string, PanelBrowserTab>>();
   private readonly sessionOperations = new Map<string, Promise<void>>();
   private readonly forgetRetries = new Map<string, ForgetRetry>();
   private readonly closingSessions = new Set<string>();
@@ -119,6 +121,7 @@ export class BrowserSessionManager {
     return this.panelPorts.get(sessionId) ?? null;
   }
 
+  /** Legacy shared-page operations retained for existing internal callers. */
   async navigate(sessionId: string, url: string): Promise<void> {
     await this.withSessionLock(sessionId, async () => {
       await this.ensurePanelSessionLocked(sessionId);
@@ -127,23 +130,79 @@ export class BrowserSessionManager {
   }
 
   async back(sessionId: string): Promise<void> {
-    await this.withSessionLock(sessionId, async () => {
-      await this.ensurePanelSessionLocked(sessionId);
-      await this.runForSession(sessionId, ["back"]);
-    });
+    await this.runLegacyAction(sessionId, "back");
   }
 
   async forward(sessionId: string): Promise<void> {
-    await this.withSessionLock(sessionId, async () => {
-      await this.ensurePanelSessionLocked(sessionId);
-      await this.runForSession(sessionId, ["forward"]);
-    });
+    await this.runLegacyAction(sessionId, "forward");
   }
 
   async reload(sessionId: string): Promise<void> {
+    await this.runLegacyAction(sessionId, "reload");
+  }
+
+  private async runLegacyAction(sessionId: string, action: "back" | "forward" | "reload"): Promise<void> {
     await this.withSessionLock(sessionId, async () => {
       await this.ensurePanelSessionLocked(sessionId);
-      await this.runForSession(sessionId, ["reload"]);
+      await this.runForSession(sessionId, [action]);
+    });
+  }
+
+  async openPanelTab(sessionId: string, instanceId: string): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      await this.ensurePanelTabLocked(sessionId, instanceId);
+    });
+  }
+
+  async activatePanelTab(sessionId: string, instanceId: string): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      const tab = await this.ensurePanelTabLocked(sessionId, instanceId);
+      await this.runForSession(sessionId, ["tab", tab.ref]);
+    });
+  }
+
+  async navigatePanelTab(sessionId: string, instanceId: string, url: string): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      const tab = await this.ensurePanelTabLocked(sessionId, instanceId);
+      await this.runForSession(sessionId, ["tab", tab.ref]);
+      await this.runForSession(sessionId, ["open", url]);
+    });
+  }
+
+  async navigatePanelAction(sessionId: string, instanceId: string, action: "back" | "forward" | "reload"): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      const tab = await this.ensurePanelTabLocked(sessionId, instanceId);
+      await this.runForSession(sessionId, ["tab", tab.ref]);
+      await this.runForSession(sessionId, [action]);
+    });
+  }
+
+  async setPanelViewport(sessionId: string, instanceId: string, width: number, height: number): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      const tab = await this.ensurePanelTabLocked(sessionId, instanceId);
+      await this.runForSession(sessionId, ["tab", tab.ref]);
+      await this.runForSession(sessionId, ["set", "viewport", String(width), String(height), "2"]);
+    });
+  }
+
+  async closePanelTab(sessionId: string, instanceId: string): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      const tab = this.panelTabs.get(sessionId)?.get(instanceId);
+      if (!tab) return;
+      if (tab.createdByPanel) {
+        await this.runForSession(sessionId, ["tab", "close", tab.ref]);
+      }
+      const tabs = this.panelTabs.get(sessionId);
+      tabs?.delete(instanceId);
+      if (tabs?.size === 0) {
+        this.panelTabs.delete(sessionId);
+        await this.stopPanelSession(sessionId);
+      }
     });
   }
 
@@ -151,11 +210,46 @@ export class BrowserSessionManager {
     await this.withSessionLock(sessionId, () => this.stopPanelSession(sessionId));
   }
 
+  private async ensurePanelTabLocked(sessionId: string, instanceId: string): Promise<PanelBrowserTab> {
+    const tabs = this.panelTabs.get(sessionId) ?? new Map<string, PanelBrowserTab>();
+    this.panelTabs.set(sessionId, tabs);
+    const existing = tabs.get(instanceId);
+    if (existing) return existing;
+
+    let createdByPanel = tabs.size > 0;
+    if (createdByPanel) {
+      const label = `panel-${instanceId.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 48)}`;
+      await this.runForSession(sessionId, ["tab", "new", "--label", label]);
+    }
+    const result = parseJsonOutput(
+      await this.runForSession(sessionId, ["tab", "list", "--json"]),
+      "tab list",
+    );
+    const browserTabs = findTabs(result);
+    const selected = browserTabs?.find((value) => value && typeof value === "object"
+      && !Array.isArray(value)
+      && ((value as Record<string, unknown>).active === true
+        || (value as Record<string, unknown>).selected === true
+        || (value as Record<string, unknown>).isActive === true));
+    const candidate = selected ?? browserTabs?.at(-1);
+    const tabValue = candidate && typeof candidate === "object" && !Array.isArray(candidate)
+      ? candidate as Record<string, unknown>
+      : null;
+    const tabRef = [tabValue?.id, tabValue?.tabId, tabValue?.targetId]
+      .find((value): value is string => typeof value === "string" && value.length > 0);
+    if (!tabRef) throw new Error("agent-browser tab list 没有返回可用标签 ID");
+    const tab = { ref: tabRef, createdByPanel };
+    tabs.set(instanceId, tab);
+    return tab;
+  }
+
   private async stopPanelSession(sessionId: string): Promise<void> {
-    if (!this.panelSessions.has(sessionId)) return;
-    await this.runForSession(sessionId, ["stream", "disable"]);
+    if (this.panelSessions.has(sessionId)) {
+      await this.runForSession(sessionId, ["stream", "disable"]);
+    }
     this.panelSessions.delete(sessionId);
     this.panelPorts.delete(sessionId);
+    this.panelTabs.delete(sessionId);
   }
 
   status(sessionId: string, enabled: boolean): BrowserCapabilityDto {
@@ -213,6 +307,10 @@ export class BrowserSessionManager {
         status: "starting",
         error: null,
       });
+  }
+
+  isPendingBrowserCall(sessionId: string, toolCallId: string): boolean {
+    return this.pending.get(sessionId)?.get(toolCallId)?.browser === true;
   }
 
   report(
@@ -446,6 +544,7 @@ export class BrowserSessionManager {
       this.panelSessions.delete(sessionId);
       this.panelBrowserSessions.delete(sessionId);
       this.panelPorts.delete(sessionId);
+      this.panelTabs.delete(sessionId);
     } catch (error) {
       this.options.logger.warn(
         { sessionId, err: error },

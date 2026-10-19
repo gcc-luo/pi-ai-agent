@@ -54,43 +54,79 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     return app.browserManager.status(session.id, true);
   });
 
-  app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/open", async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { instanceId?: unknown } }>("/sessions/:id/browser-panel/open", async (req, reply) => {
     if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    await app.browserManager.ensurePanelSession(session.id);
+    const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+    await app.browserManager.openPanelTab(session.id, instanceId);
     return { status: "open" };
   });
 
-  app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/close", async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { instanceId?: unknown } }>("/sessions/:id/browser-panel/close", async (req, reply) => {
     if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
-    await app.browserManager.closePanelSession(session.id);
+    const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+    await app.browserManager.closePanelTab(session.id, instanceId);
     return { status: "closed" };
+  });
+
+  app.post<{ Params: { id: string }; Body: { instanceId?: unknown } }>("/sessions/:id/browser-panel/activate", async (req, reply) => {
+    if (rejectForeignOrigin(req.headers.origin, reply)) return;
+    const session = requireSession(req.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+    await app.browserManager.activatePanelTab(session.id, instanceId);
+    return { status: "open" };
   });
 
   app.post<{
     Params: { id: string };
-    Body: { url?: unknown };
+    Body: { instanceId?: unknown; width?: unknown; height?: unknown };
+  }>("/sessions/:id/browser-panel/viewport", async (req, reply) => {
+    if (rejectForeignOrigin(req.headers.origin, reply)) return;
+    const session = requireSession(req.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+    const { width, height } = req.body ?? {};
+    if (!instanceId || !Number.isInteger(width) || !Number.isInteger(height)
+      || Number(width) < 320 || Number(width) > 4096
+      || Number(height) < 240 || Number(height) > 4096) {
+      return reply.code(400).send({ error: "instanceId and valid viewport dimensions are required" });
+    }
+    await app.browserManager.setPanelViewport(session.id, instanceId, Number(width), Number(height));
+    return { status: "open" };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { url?: unknown; instanceId?: unknown };
   }>("/sessions/:id/browser-panel/navigate", async (req, reply) => {
     if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
     const url = req.body?.url;
+    const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+    if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
     if (typeof url !== "string" || url.length > 4_096 || !isAllowedPanelUrl(url)) {
       return reply.code(400).send({ error: "url must use http, https, or about:blank" });
     }
-    await app.browserManager.navigate(session.id, url);
+    await app.browserManager.navigatePanelTab(session.id, instanceId, url);
     return { status: "open" };
   });
 
   for (const action of ["back", "forward", "reload"] as const) {
-    app.post<{ Params: { id: string } }>(`/sessions/:id/browser-panel/${action}`, async (req, reply) => {
+    app.post<{ Params: { id: string }; Body: { instanceId?: unknown } }>(`/sessions/:id/browser-panel/${action}`, async (req, reply) => {
       if (rejectForeignOrigin(req.headers.origin, reply)) return;
       const session = requireSession(req.params.id);
       if (!session) return reply.code(404).send({ error: "session not found" });
-      await app.browserManager[action](session.id);
+      const instanceId = validPanelInstanceId(req.body?.instanceId ?? "browser");
+      if (!instanceId) return reply.code(400).send({ error: "instanceId is required" });
+      await app.browserManager.navigatePanelAction(session.id, instanceId, action);
       return { status: "open" };
     });
   }
@@ -108,4 +144,8 @@ function isAllowedPanelUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function validPanelInstanceId(value: unknown): string | null {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(value) ? value : null;
 }

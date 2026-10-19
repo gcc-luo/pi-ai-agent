@@ -73,22 +73,25 @@ describe("workspace tool panel shell", () => {
     wrapper.unmount();
   });
 
-  it("offers only unopened persistent tools in the add menu", async () => {
+  it("keeps every tool type available and adds another independent instance", async () => {
     const store = useWorkspaceToolsStore();
     store.openTool("session-1", "project-1", "files");
     const wrapper = mountPanel();
 
     await wrapper.get('[data-test="tool-add-menu"] summary').trigger("click");
     expect(wrapper.findAll('[data-test="add-tool-option"]').map((button) => button.text())).toEqual([
+      "workspaceTools.files",
       "workspaceTools.browser",
       "workspaceTools.terminal",
     ]);
     await wrapper.get('[data-test-option="browser"]').trigger("click");
     await nextTick();
-    expect(store.panels["session-1"]?.tools).toEqual(["files", "browser"]);
-    expect(store.panels["session-1"]?.activeTab).toBe("browser");
+    expect(store.panels["session-1"]?.tools).toEqual(["files", "browser", "browser--1"]);
+    expect(store.panels["session-1"]?.activeTab).toBe("browser--1");
     await wrapper.get('[data-test="tool-add-menu"] summary').trigger("click");
     expect(wrapper.findAll('[data-test="add-tool-option"]').map((button) => button.text())).toEqual([
+      "workspaceTools.files",
+      "workspaceTools.browser",
       "workspaceTools.terminal",
     ]);
     wrapper.unmount();

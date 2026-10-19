@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import WebSocket from "ws";
 import { isAllowedLocalOrigin } from "../security/local-origin.js";
+import { nativeBrowserBridge } from "../browser/native-browser-bridge.js";
 
 const MAX_CLIENT_MESSAGE_BYTES = 64 * 1024;
 const MAX_PROXY_BUFFERED_BYTES = 2 * 1024 * 1024;
@@ -217,23 +218,27 @@ async function proxyBrowserStream(
 
 export const browserWsRoutes: FastifyPluginAsync = async (app) => {
   const preparePanel = async (
-    request: FastifyRequest<{ Params: { sessionId: string } }>,
+    request: FastifyRequest<{ Params: { sessionId: string }; Querystring: { instanceId?: string } }>,
     reply: FastifyReply,
   ) => {
     const { sessionId } = request.params;
+    const instanceId = request.query.instanceId ?? "browser";
     if (!isAllowedLocalOrigin(request.headers.origin)) {
       return reply.code(403).send({ error: "origin not allowed" });
     }
     if (!app.sessions.findById(sessionId)) return reply.code(404).send({ error: "session not found" });
+    if (!instanceId || !/^[a-zA-Z0-9_-]{1,80}$/.test(instanceId)) {
+      return reply.code(400).send({ error: "instanceId is required" });
+    }
     try {
-      await app.browserManager.ensurePanelSession(sessionId);
+      await app.browserManager.activatePanelTab(sessionId, instanceId);
     } catch (error) {
       request.log.warn({ sessionId, err: error }, "failed to prepare browser panel stream");
       return reply.code(503).send({ error: "browser stream unavailable" });
     }
   };
 
-  app.get<{ Params: { sessionId: string } }>(
+  app.get<{ Params: { sessionId: string }; Querystring: { instanceId?: string } }>(
     "/ws/browser/:sessionId",
     { websocket: true, preValidation: preparePanel },
     (client, request) => {
@@ -249,6 +254,59 @@ export const browserWsRoutes: FastifyPluginAsync = async (app) => {
         return;
       }
       void proxyBrowserStream(client, sessionId, port, request.log);
+    },
+  );
+
+  app.get<{
+    Params: { sessionId: string };
+    Querystring: { instanceId?: string };
+  }>(
+    "/ws/native-browser/:sessionId",
+    {
+      websocket: true,
+      preValidation: async (request, reply) => {
+        if (!isAllowedLocalOrigin(request.headers.origin)) {
+          return reply.code(403).send({ error: "origin not allowed" });
+        }
+        if (!app.sessions.findById(request.params.sessionId)) {
+          return reply.code(404).send({ error: "session not found" });
+        }
+        const instanceId = request.query.instanceId;
+        if (!instanceId || !/^[a-zA-Z0-9_-]{1,80}$/.test(instanceId)) {
+          return reply.code(400).send({ error: "instanceId is required" });
+        }
+      },
+    },
+    (client, request) => {
+      const { sessionId } = request.params;
+      const instanceId = request.query.instanceId!;
+      const unregister = nativeBrowserBridge.register(sessionId, instanceId, client);
+      client.on("message", (data, isBinary) => {
+        if (isBinary) {
+          closeSocket(client, 1008, "binary browser response is not supported");
+          return;
+        }
+        const raw = toBuffer(data);
+        if (raw.byteLength > MAX_CLIENT_MESSAGE_BYTES) {
+          closeSocket(client, 1009, "browser response too large");
+          return;
+        }
+        try {
+          const value: unknown = JSON.parse(raw.toString("utf8"));
+          if (!isRecord(value)
+            || value.type !== "agent-browser-result"
+            || typeof value.requestId !== "string") return;
+          nativeBrowserBridge.resolve(sessionId, instanceId, {
+            requestId: value.requestId,
+            result: value.result,
+            error: typeof value.error === "string" ? value.error : undefined,
+          });
+        } catch {
+          request.log.debug({ sessionId }, "ignored invalid native browser response");
+        }
+      });
+      client.once("close", unregister);
+      client.once("error", unregister);
     },
   );
 };

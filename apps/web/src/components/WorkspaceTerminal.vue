@@ -6,7 +6,7 @@ import { closeTerminalSession, createTerminalSocket, openTerminalSession, parseT
 import { useI18n } from "../i18n/index.js";
 import "@xterm/xterm/css/xterm.css";
 
-const props = defineProps<{ sessionId: string; projectId: string; active: boolean }>();
+const props = withDefaults(defineProps<{ sessionId: string; projectId: string; instanceId?: string; active: boolean }>(), { instanceId: "terminal" });
 type State = "disconnected" | "connecting" | "connected" | "error" | "ended";
 const { t } = useI18n();
 const state = ref<State>("disconnected");
@@ -60,13 +60,13 @@ async function connect() {
   state.value = "connecting";
   error.value = "";
   try {
-    const pendingOpen = openingPromise ?? openTerminalSession(props.sessionId);
+    const pendingOpen = openingPromise ?? openTerminalSession(props.sessionId, props.instanceId);
     openingPromise = pendingOpen;
     try { await pendingOpen; }
     finally { if (openingPromise === pendingOpen) openingPromise = null; }
     if (attempt !== generation || !props.active || disposed) return;
 
-    const candidate = createTerminalSocket(props.sessionId);
+    const candidate = createTerminalSocket(props.sessionId, props.instanceId);
     socket = candidate;
     candidate.binaryType = "arraybuffer";
     candidate.onopen = () => {
@@ -119,7 +119,7 @@ async function restart() {
   state.value = "connecting";
   error.value = "";
   try {
-    await closeTerminalSession(props.sessionId);
+    await closeTerminalSession(props.sessionId, props.instanceId);
     await nextTick();
     await connect();
   } catch (cause) {
@@ -165,7 +165,7 @@ async function dispose(): Promise<void> {
   state.value = "disconnected";
   disposal = (async () => {
     await openingPromise?.catch(() => undefined);
-    await closeTerminalSession(props.sessionId);
+    await closeTerminalSession(props.sessionId, props.instanceId);
   })().catch((cause: unknown) => {
     disposal = undefined;
     error.value = cause instanceof Error ? cause.message : String(cause);

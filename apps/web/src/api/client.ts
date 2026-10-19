@@ -111,22 +111,26 @@ export const api = {
     request<BrowserCapabilityDto>("GET", `/sessions/${sessionId}/browser`),
   setBrowserCapability: (sessionId: string, enabled: boolean) =>
     request<BrowserCapabilityDto>("PUT", `/sessions/${sessionId}/browser`, { enabled }),
-  openBrowserPanel: (sessionId: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/open`),
-  closeBrowserPanel: (sessionId: string) =>
-    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/close`),
-  navigateBrowserPanel: (sessionId: string, url: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/navigate`, { url }),
-  backBrowserPanel: (sessionId: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/back`),
-  forwardBrowserPanel: (sessionId: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/forward`),
-  reloadBrowserPanel: (sessionId: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/reload`),
-  closeTerminalSession: (sessionId: string) =>
-    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/terminal/close`),
-  openTerminalSession: (sessionId: string) =>
-    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/terminal/open`),
+  openBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/open`, { instanceId }),
+  activateBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/activate`, { instanceId }),
+  setBrowserPanelViewport: (sessionId: string, instanceId: string, width: number, height: number) =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/viewport`, { instanceId, width, height }),
+  closeBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/close`, { instanceId }),
+  navigateBrowserPanel: (sessionId: string, url: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/navigate`, { url, instanceId }),
+  backBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/back`, { instanceId }),
+  forwardBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/forward`, { instanceId }),
+  reloadBrowserPanel: (sessionId: string, instanceId = "browser") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/reload`, { instanceId }),
+  closeTerminalSession: (sessionId: string, instanceId = "terminal") =>
+    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/terminal/close`, { instanceId }),
+  openTerminalSession: (sessionId: string, instanceId = "terminal") =>
+    request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/terminal/open`, { instanceId }),
   listPlugins: () => request<PluginDto[]>("GET", "/plugins"),
   updatePlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }) =>
     request<PluginDto>("PUT", `/plugins/${encodeURIComponent(id)}`, patch),

@@ -21,6 +21,8 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
+mod native_browser;
+
 struct ManagedServerProcess {
     child: CommandChild,
     terminated: Receiver<()>,
@@ -160,10 +162,18 @@ pub fn run() {
         .manage(ServerProcess::default())
         .manage(ServerPort::default())
         .manage(ServerStartupError::default())
+        .manage(native_browser::NativeBrowserViews::default())
         .invoke_handler(tauri::generate_handler![
             get_server_port,
             prepare_for_update,
-            show_native_notification
+            show_native_notification,
+            native_browser::native_browser_open,
+            native_browser::native_browser_set_bounds,
+            native_browser::native_browser_set_visible,
+            native_browser::native_browser_navigate,
+            native_browser::native_browser_reload,
+            native_browser::native_browser_eval,
+            native_browser::native_browser_close
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

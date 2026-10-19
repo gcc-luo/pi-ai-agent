@@ -19,12 +19,12 @@ describe("browser panel API", () => {
     await api.closeBrowserPanel("session / one");
 
     expect(fetchMock.mock.calls.map(([input, init]) => [String(input), init?.method, init?.body])).toEqual([
-      ["/api/sessions/session%20%2F%20one/browser-panel/open", "POST", undefined],
-      ["/api/sessions/session%20%2F%20one/browser-panel/navigate", "POST", JSON.stringify({ url: "https://example.test/path?q=1" })],
-      ["/api/sessions/session%20%2F%20one/browser-panel/back", "POST", undefined],
-      ["/api/sessions/session%20%2F%20one/browser-panel/forward", "POST", undefined],
-      ["/api/sessions/session%20%2F%20one/browser-panel/reload", "POST", undefined],
-      ["/api/sessions/session%20%2F%20one/browser-panel/close", "POST", undefined],
+      ["/api/sessions/session%20%2F%20one/browser-panel/open", "POST", JSON.stringify({ instanceId: "browser" })],
+      ["/api/sessions/session%20%2F%20one/browser-panel/navigate", "POST", JSON.stringify({ url: "https://example.test/path?q=1", instanceId: "browser" })],
+      ["/api/sessions/session%20%2F%20one/browser-panel/back", "POST", JSON.stringify({ instanceId: "browser" })],
+      ["/api/sessions/session%20%2F%20one/browser-panel/forward", "POST", JSON.stringify({ instanceId: "browser" })],
+      ["/api/sessions/session%20%2F%20one/browser-panel/reload", "POST", JSON.stringify({ instanceId: "browser" })],
+      ["/api/sessions/session%20%2F%20one/browser-panel/close", "POST", JSON.stringify({ instanceId: "browser" })],
     ]);
   });
 });
@@ -41,7 +41,7 @@ describe("terminal panel API", () => {
 
     await api.closeTerminalSession("session / one");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/close", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/close", expect.objectContaining({ method: "POST", body: JSON.stringify({ instanceId: "terminal" }) }));
   });
 
   it("opens the session terminal through its explicit lifecycle endpoint", async () => {
@@ -53,6 +53,6 @@ describe("terminal panel API", () => {
 
     await api.openTerminalSession("session / one");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/open", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/open", expect.objectContaining({ method: "POST", body: JSON.stringify({ instanceId: "terminal" }) }));
   });
 });

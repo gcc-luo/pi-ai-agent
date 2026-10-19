@@ -55,21 +55,24 @@ export type BrowserClientMessage =
       touchPoints: Array<{ id: number; x: number; y: number; force?: number }>;
     };
 
-export const openBrowserPanel = (sessionId: string) => api.openBrowserPanel(sessionId);
-export const closeBrowserPanel = (sessionId: string) => api.closeBrowserPanel(sessionId);
-export const navigateBrowserPanel = (sessionId: string, url: string) =>
-  api.navigateBrowserPanel(sessionId, url);
-export const backBrowserPanel = (sessionId: string) => api.backBrowserPanel(sessionId);
-export const forwardBrowserPanel = (sessionId: string) => api.forwardBrowserPanel(sessionId);
-export const reloadBrowserPanel = (sessionId: string) => api.reloadBrowserPanel(sessionId);
+export const openBrowserPanel = (sessionId: string, instanceId = "browser") => api.openBrowserPanel(sessionId, instanceId);
+export const activateBrowserPanel = (sessionId: string, instanceId = "browser") => api.activateBrowserPanel(sessionId, instanceId);
+export const setBrowserPanelViewport = (sessionId: string, instanceId: string, width: number, height: number) =>
+  api.setBrowserPanelViewport(sessionId, instanceId, width, height);
+export const closeBrowserPanel = (sessionId: string, instanceId = "browser") => api.closeBrowserPanel(sessionId, instanceId);
+export const navigateBrowserPanel = (sessionId: string, url: string, instanceId = "browser") =>
+  api.navigateBrowserPanel(sessionId, url, instanceId);
+export const backBrowserPanel = (sessionId: string, instanceId = "browser") => api.backBrowserPanel(sessionId, instanceId);
+export const forwardBrowserPanel = (sessionId: string, instanceId = "browser") => api.forwardBrowserPanel(sessionId, instanceId);
+export const reloadBrowserPanel = (sessionId: string, instanceId = "browser") => api.reloadBrowserPanel(sessionId, instanceId);
 
-export const closeTerminalSession = (sessionId: string) => api.closeTerminalSession(sessionId);
-export const openTerminalSession = (sessionId: string) => api.openTerminalSession(sessionId);
+export const closeTerminalSession = (sessionId: string, instanceId = "terminal") => api.closeTerminalSession(sessionId, instanceId);
+export const openTerminalSession = (sessionId: string, instanceId = "terminal") => api.openTerminalSession(sessionId, instanceId);
 
-export function createTerminalSocket(sessionId: string): WebSocket {
+export function createTerminalSocket(sessionId: string, instanceId = "terminal"): WebSocket {
   const token = authToken();
   const protocols = token ? ["pi-web-ui", token] : ["pi-web-ui"];
-  return new WebSocket(webSocketUrl(`/ws/terminal/${encodeURIComponent(sessionId)}`), protocols);
+  return new WebSocket(webSocketUrl(`/ws/terminal/${encodeURIComponent(sessionId)}?instanceId=${encodeURIComponent(instanceId)}`), protocols);
 }
 
 export type TerminalExitMessage = { type: "exit"; exitCode: number; signal: number };
@@ -90,10 +93,10 @@ export function parseTerminalServerMessage(data: unknown): TerminalExitMessage |
   }
 }
 
-export function createBrowserSocket(sessionId: string): WebSocket {
+export function createBrowserSocket(sessionId: string, instanceId = "browser"): WebSocket {
   const token = authToken();
   const protocols = token ? ["pi-web-ui", token] : ["pi-web-ui"];
-  return new WebSocket(webSocketUrl(`/ws/browser/${encodeURIComponent(sessionId)}`), protocols);
+  return new WebSocket(webSocketUrl(`/ws/browser/${encodeURIComponent(sessionId)}?instanceId=${encodeURIComponent(instanceId)}`), protocols);
 }
 
 export interface BrowserViewportRect {

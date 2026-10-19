@@ -79,22 +79,44 @@ export default function browserTools(pi: ExtensionAPI) {
               };
             let result;
             try {
-              result = await tool.execute(
-                toolCallId,
-                params,
-                signal,
-                onUpdate,
-                ctx,
-              );
-              const details =
-                result.details && typeof result.details === "object"
-                  ? (result.details as Record<string, unknown>)
+              if (tool.name === "agent_browser") {
+                const execution = await host(
+                  "execute",
+                  { toolCallId, toolName: tool.name, params },
+                  signal,
+                );
+                const native = execution.result && typeof execution.result === "object"
+                  ? execution.result as Record<string, unknown>
                   : {};
-              const hostArtifacts = await browserArtifacts(
-                details,
-                ctx.cwd,
-              ).catch(() => []);
-              result = { ...result, details: { ...details, hostArtifacts } };
+                const data = native.data && typeof native.data === "object"
+                  ? native.data as Record<string, unknown>
+                  : {};
+                result = {
+                  content: [{
+                    type: "text" as const,
+                    text: typeof native.text === "string" ? native.text : JSON.stringify(native.data ?? native),
+                  }],
+                  details: { ...native, data },
+                  ...("isError" in native ? { isError: native.isError === true } : {}),
+                };
+              } else {
+                result = await tool.execute(
+                  toolCallId,
+                  params,
+                  signal,
+                  onUpdate,
+                  ctx,
+                );
+                const details =
+                  result.details && typeof result.details === "object"
+                    ? (result.details as Record<string, unknown>)
+                    : {};
+                const hostArtifacts = await browserArtifacts(
+                  details,
+                  ctx.cwd,
+                ).catch(() => []);
+                result = { ...result, details: { ...details, hostArtifacts } };
+              }
             } catch (error) {
               result = {
                 content: [
@@ -148,6 +170,6 @@ export default function browserTools(pi: ExtensionAPI) {
   });
   agentBrowserExtension(adapter);
   pi.on("before_agent_start", async (event) => ({
-    systemPrompt: `${event.systemPrompt}\n\n浏览器操作使用 agent_browser。截图、下载等交付文件保存到当前项目 browser/ 目录；已有同名文件时使用新文件名。宿主默认按对话隔离浏览器，请不要自行更换 session 或 namespace，除非用户明确要求连接既有浏览器。启动本地开发服务器应后台运行并重定向日志，确认 URL 可访问后再打开。`,
+    systemPrompt: `${event.systemPrompt}\n\n浏览器操作使用 agent_browser。可用后端支持时，截图、下载等交付文件保存到当前项目 browser/ 目录；已有同名文件时使用新文件名。宿主默认按对话隔离浏览器，请不要自行更换 session 或 namespace，除非用户明确要求连接既有浏览器。如果宿主提示没有活动的右侧浏览器标签，请提示用户先打开右侧面板的浏览器标签，再重试；不要改用独立浏览器。启动本地开发服务器应后台运行并重定向日志，确认 URL 可访问后再打开。`,
   }));
 }

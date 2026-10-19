@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   backBrowserPanel,
+  activateBrowserPanel,
   closeBrowserPanel,
   createBrowserSocket,
   forwardBrowserPanel,
@@ -10,36 +11,59 @@ import {
   parseBrowserServerMessage,
   reloadBrowserPanel,
   scaleBrowserPoint,
+  setBrowserPanelViewport,
   type BrowserClientMessage,
   type BrowserFrameMessage,
 } from "../api/workspace-tools.js";
+import {
+  closeNativeBrowserView,
+  createNativeBrowserSocket,
+  navigateNativeBrowser,
+  openNativeBrowserView,
+  reloadNativeBrowser,
+  runNativeBrowserScript,
+  setNativeBrowserBounds,
+  setNativeBrowserVisible,
+} from "../api/native-browser.js";
+import { executeNativeBrowserAction } from "../api/native-browser-actions.js";
 import { useI18n } from "../i18n/index.js";
+import { isTauri } from "../utils/platform.js";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sessionId: string;
   projectId: string;
+  instanceId?: string;
   active: boolean;
-}>();
+}>(), { instanceId: "browser" });
 
 type BrowserConnectionState = "disconnected" | "connecting" | "connected" | "error" | "missing";
 
 const { t } = useI18n();
+const nativeHost = isTauri();
 const connectionState = ref<BrowserConnectionState>("disconnected");
 const address = ref("about:blank");
+const editingAddress = ref(false);
+const addressDraft = ref(address.value);
 const frameSource = ref<string | null>(null);
 const frameSize = ref({ width: 0, height: 0 });
-const runtimeStatus = ref<{ screencasting?: boolean; engine?: string } | null>(null);
 const errorMessage = ref("");
 const pendingAction = ref(false);
 const viewportRef = ref<HTMLElement | null>(null);
+const addressRef = ref<HTMLInputElement | null>(null);
 const connectionLabel = computed(() => t(`workspaceTools.browserStatus.${connectionState.value}`));
 const retryAvailable = computed(() => props.active && connectionState.value === "error");
+const secureAddress = computed(() => address.value.startsWith("https://"));
 
 let socket: WebSocket | null = null;
 let connectionGeneration = 0;
 let frameGeneration = 0;
 let disposed = false;
 let disposal: Promise<void> | undefined;
+let resizeObserver: ResizeObserver | null = null;
+let viewportTimer: number | null = null;
+let lastViewport = "";
+let nativeBrowserOpened = false;
+let nativeNavigationUnlisten: (() => void) | null = null;
 const touchPointers = new Map<number, { x: number; y: number; force?: number }>();
 let lastMousePoint: { x: number; y: number } | null = null;
 
@@ -125,31 +149,111 @@ function onSocketMessage(event: MessageEvent, frameSocket: WebSocket) {
     void renderFrame(message, frameSocket);
   } else if (message.type === "url") {
     address.value = message.url;
+    if (!editingAddress.value) addressDraft.value = message.url;
   } else if (message.type === "status") {
-    runtimeStatus.value = {
-      screencasting: typeof message.screencasting === "boolean" ? message.screencasting : undefined,
-      engine: typeof message.engine === "string" ? message.engine : undefined,
-    };
     if (message.error && typeof message.error === "string") errorMessage.value = message.error;
   }
 }
 
 function startConnection() {
   if (!props.active || disposed) return;
+  if (isTauri()) {
+    if (socket) closeStream();
+    const attempt = ++connectionGeneration;
+    connectionState.value = "connecting";
+    errorMessage.value = "";
+    void nextTick().then(async () => {
+      if (attempt !== connectionGeneration || !props.active || disposed) return;
+      const rect = viewportRef.value?.getBoundingClientRect();
+      if (!rect || rect.width < 1 || rect.height < 1) {
+        connectionState.value = "error";
+        errorMessage.value = t("workspaceTools.browserConnectionFailed");
+        return;
+      }
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        nativeNavigationUnlisten?.();
+        nativeNavigationUnlisten = await listen<{
+          sessionId: string;
+          instanceId: string;
+          url: string;
+        }>("native-browser-navigation", (event) => {
+          if (event.payload.sessionId !== props.sessionId || event.payload.instanceId !== props.instanceId) return;
+          address.value = event.payload.url;
+          if (!editingAddress.value) addressDraft.value = event.payload.url;
+        });
+        await openNativeBrowserView(
+          props.sessionId,
+          props.instanceId,
+          address.value,
+          { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        );
+        nativeBrowserOpened = true;
+        void setNativeBrowserVisible(props.sessionId, props.instanceId, true);
+        const candidate = createNativeBrowserSocket(props.sessionId, props.instanceId);
+        socket = candidate;
+        candidate.onopen = () => {
+          if (candidate !== socket || attempt !== connectionGeneration) return;
+          connectionState.value = "connected";
+          errorMessage.value = "";
+        };
+        candidate.onmessage = (event) => {
+          if (candidate !== socket || typeof event.data !== "string") return;
+          let message: unknown;
+          try { message = JSON.parse(event.data); } catch { return; }
+          if (!message || typeof message !== "object" || Array.isArray(message)) return;
+          const request = message as Record<string, unknown>;
+          if (request.type !== "agent-browser-action" || typeof request.requestId !== "string") return;
+          void (async () => {
+            try {
+              const params = request.params;
+              if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("invalid browser action");
+              const result = await executeNativeBrowserAction(props.sessionId, props.instanceId, params as Record<string, unknown>);
+              if (candidate.readyState === WebSocket.OPEN) candidate.send(JSON.stringify({ type: "agent-browser-result", requestId: request.requestId, result }));
+            } catch (error) {
+              if (candidate.readyState === WebSocket.OPEN) candidate.send(JSON.stringify({
+                type: "agent-browser-result",
+                requestId: request.requestId,
+                error: error instanceof Error ? error.message : String(error),
+              }));
+            }
+          })();
+        };
+        candidate.onerror = () => {
+          if (candidate !== socket) return;
+          setError(t("workspaceTools.browserConnectionFailed"));
+          candidate.close();
+        };
+        candidate.onclose = (event) => {
+          if (candidate !== socket) return;
+          socket = null;
+          if (attempt !== connectionGeneration || !props.active || disposed) return;
+          setError(event.reason || t("workspaceTools.browserConnectionFailed"));
+        };
+      } catch (error) {
+        if (attempt !== connectionGeneration || disposed) return;
+        setError(error instanceof Error ? error.message : String(error));
+      }
+    });
+    return;
+  }
   const attempt = ++connectionGeneration;
   const previous = socket;
   socket = null;
   if (previous && previous.readyState < WebSocket.CLOSING) previous.close(1000, "browser panel reconnecting");
   errorMessage.value = "";
   connectionState.value = "connecting";
-  runtimeStatus.value = null;
+  frameSource.value = null;
+  frameSize.value = { width: 0, height: 0 };
 
   void (async () => {
     try {
-      await openBrowserPanel(props.sessionId);
+      await openBrowserPanel(props.sessionId, props.instanceId);
+      if (attempt !== connectionGeneration || !props.active || disposed) return;
+      await activateBrowserPanel(props.sessionId, props.instanceId);
       if (attempt !== connectionGeneration || !props.active || disposed) return;
 
-      const candidate = createBrowserSocket(props.sessionId);
+      const candidate = createBrowserSocket(props.sessionId, props.instanceId);
       socket = candidate;
       candidate.onopen = () => {
         if (candidate !== socket || attempt !== connectionGeneration) return;
@@ -188,9 +292,46 @@ function startConnection() {
   })();
 }
 
+function scheduleViewportUpdate() {
+  if (viewportTimer !== null) window.clearTimeout(viewportTimer);
+  if (!props.active || disposed) return;
+  viewportTimer = window.setTimeout(() => {
+    viewportTimer = null;
+    const rect = viewportRef.value?.getBoundingClientRect();
+    if (!rect || rect.width < 320 || rect.height < 240) return;
+    const width = Math.min(4096, Math.round(rect.width));
+    const height = Math.min(4096, Math.round(rect.height));
+    if (isTauri()) {
+      const bounds = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      if (!nativeBrowserOpened) {
+        if (props.active) startConnection();
+        return;
+      }
+      void setNativeBrowserBounds(props.sessionId, props.instanceId, bounds).catch((error: unknown) => {
+        setError(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+    const key = `${width}x${height}`;
+    if (key === lastViewport) return;
+    lastViewport = key;
+    void setBrowserPanelViewport(props.sessionId, props.instanceId, width, height).catch(() => {
+      lastViewport = "";
+    });
+  }, 180);
+}
+
 function setActive(active: boolean) {
   if (active) {
     startConnection();
+    void nextTick().then(scheduleViewportUpdate);
+    return;
+  }
+  if (isTauri()) {
+    closeStream();
+    if (nativeBrowserOpened) void setNativeBrowserVisible(props.sessionId, props.instanceId, false);
+    connectionState.value = "disconnected";
+    errorMessage.value = "";
     return;
   }
   closeStream();
@@ -217,15 +358,18 @@ function normalizeAddress(raw: string): string | null {
 }
 
 async function navigate() {
-  const target = normalizeAddress(address.value);
+  const target = normalizeAddress(addressDraft.value);
   if (!target) {
     errorMessage.value = t("workspaceTools.browserInvalidUrl");
     return;
   }
+  editingAddress.value = false;
+  addressDraft.value = target;
   pendingAction.value = true;
   errorMessage.value = "";
   try {
-    await navigateBrowserPanel(props.sessionId, target);
+    if (isTauri()) await navigateNativeBrowser(props.sessionId, props.instanceId, target);
+    else await navigateBrowserPanel(props.sessionId, target, props.instanceId);
     address.value = target;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
@@ -234,13 +378,49 @@ async function navigate() {
   }
 }
 
+async function beginAddressEdit() {
+  addressDraft.value = address.value === "about:blank" ? "" : address.value;
+  editingAddress.value = true;
+  await nextTick();
+  addressRef.value?.focus();
+  addressRef.value?.select();
+}
+
+function cancelAddressEdit() {
+  addressDraft.value = address.value;
+  editingAddress.value = false;
+}
+
+function finishAddressEdit() {
+  if (normalizeAddress(addressDraft.value) === normalizeAddress(address.value)) {
+    editingAddress.value = false;
+    return;
+  }
+  void navigate();
+}
+
+function onAddressKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  cancelAddressEdit();
+}
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (!props.active || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "l") return;
+  event.preventDefault();
+  void beginAddressEdit();
+}
+
 async function runNavigationAction(action: "back" | "forward" | "reload") {
   pendingAction.value = true;
   errorMessage.value = "";
   try {
-    if (action === "back") await backBrowserPanel(props.sessionId);
-    else if (action === "forward") await forwardBrowserPanel(props.sessionId);
-    else await reloadBrowserPanel(props.sessionId);
+    if (isTauri()) {
+      if (action === "reload") await reloadNativeBrowser(props.sessionId, props.instanceId);
+      else await runNativeBrowserScript(props.sessionId, props.instanceId, `history.${action}(); true`);
+    } else if (action === "back") await backBrowserPanel(props.sessionId, props.instanceId);
+    else if (action === "forward") await forwardBrowserPanel(props.sessionId, props.instanceId);
+    else await reloadBrowserPanel(props.sessionId, props.instanceId);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -349,8 +529,18 @@ function dispose(): Promise<void> {
   if (disposal) return disposal;
   disposed = true;
   closeStream();
+  nativeNavigationUnlisten?.();
+  nativeNavigationUnlisten = null;
   connectionState.value = "disconnected";
-  disposal = closeBrowserPanel(props.sessionId).then(() => undefined).catch((error: unknown) => {
+  if (isTauri()) {
+    disposal = closeNativeBrowserView(props.sessionId, props.instanceId).then(() => undefined).catch((error: unknown) => {
+      disposal = undefined;
+      errorMessage.value = error instanceof Error ? error.message : String(error);
+      throw error;
+    });
+    return disposal;
+  }
+  disposal = closeBrowserPanel(props.sessionId, props.instanceId).then(() => undefined).catch((error: unknown) => {
     disposal = undefined;
     errorMessage.value = error instanceof Error ? error.message : String(error);
     throw error;
@@ -359,7 +549,17 @@ function dispose(): Promise<void> {
 }
 
 watch(() => props.active, setActive, { immediate: true });
+onMounted(() => {
+  window.addEventListener("keydown", onGlobalKeydown);
+  if (viewportRef.value && typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(scheduleViewportUpdate);
+    resizeObserver.observe(viewportRef.value);
+  }
+});
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onGlobalKeydown);
+  resizeObserver?.disconnect();
+  if (viewportTimer !== null) window.clearTimeout(viewportTimer);
   if (!disposed) closeStream();
 });
 
@@ -377,7 +577,9 @@ defineExpose({ dispose });
         :disabled="pendingAction"
         data-test="browser-back"
         @click="runNavigationAction('back')"
-      >‹</button>
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+      </button>
       <button
         type="button"
         class="browser-control"
@@ -386,7 +588,9 @@ defineExpose({ dispose });
         :disabled="pendingAction"
         data-test="browser-forward"
         @click="runNavigationAction('forward')"
-      >›</button>
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+      </button>
       <button
         type="button"
         class="browser-control"
@@ -395,34 +599,37 @@ defineExpose({ dispose });
         :disabled="pendingAction"
         data-test="browser-reload"
         @click="runNavigationAction('reload')"
-      >↻</button>
-      <input
-        v-model="address"
-        class="browser-address"
-        type="text"
-        inputmode="url"
-        autocomplete="off"
-        spellcheck="false"
-        :aria-label="t('workspaceTools.browserAddress')"
-        :placeholder="t('workspaceTools.browserAddressPlaceholder')"
-        data-test="browser-url"
       >
-      <button type="submit" class="browser-go" :disabled="pendingAction" data-test="browser-go">
-        {{ t('workspaceTools.browserGo') }}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 1-2.34-5.66L20 8" /><path d="M20 4v4h-4" /></svg>
+      </button>
+      <div class="browser-address-wrap" :class="{ editing: editingAddress }" :title="address">
+        <svg class="browser-security-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-if="secureAddress" d="M6 10V7a6 6 0 0 1 12 0v3M5 10h14v11H5z" />
+          <path v-else d="M5 10h14v11H5zM8 10V7a4 4 0 0 1 7.7-1.5" />
+        </svg>
+        <input
+          ref="addressRef"
+          :value="editingAddress ? addressDraft : address === 'about:blank' ? '' : address"
+          class="browser-address"
+          type="text"
+          inputmode="url"
+          autocomplete="off"
+          spellcheck="false"
+          :readonly="!editingAddress"
+          :aria-label="t('workspaceTools.browserAddress')"
+          :placeholder="t('workspaceTools.browserAddressPlaceholder')"
+          data-test="browser-url"
+          @focus="!editingAddress && beginAddressEdit()"
+          @input="addressDraft = ($event.target as HTMLInputElement).value"
+          @keydown="onAddressKeydown"
+          @blur="editingAddress && finishAddressEdit()"
+        >
+        <span class="browser-connection-dot" :class="connectionState" :title="connectionLabel" />
+      </div>
+      <button type="submit" class="browser-go" :disabled="pendingAction || !editingAddress" :aria-label="t('workspaceTools.browserGo')" :title="t('workspaceTools.browserGo')" data-test="browser-go" @mousedown.prevent>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
       </button>
     </form>
-
-    <div class="browser-statusline" aria-live="polite">
-      <span class="browser-status-dot" :class="connectionState" />
-      <span>{{ connectionLabel }}</span>
-      <span v-if="runtimeStatus?.screencasting === true">{{ t('workspaceTools.browserStreaming') }}</span>
-      <span v-else-if="runtimeStatus?.screencasting === false">{{ t('workspaceTools.browserWaiting') }}</span>
-      <span v-if="runtimeStatus?.engine" class="browser-engine">{{ runtimeStatus.engine }}</span>
-      <button v-if="retryAvailable" type="button" class="browser-retry" data-test="browser-retry" @click="retryConnection">
-        {{ t('workspaceTools.browserRetry') }}
-      </button>
-      <span v-if="errorMessage" class="browser-error" role="alert">{{ errorMessage }}</span>
-    </div>
 
     <div
       ref="viewportRef"
@@ -439,9 +646,23 @@ defineExpose({ dispose });
       @keydown="onKeyDown"
       @keyup="onKeyUp"
     >
-      <img v-if="frameSource" class="browser-frame" :src="frameSource" :alt="t('workspaceTools.browserFrameAlt')" data-test="browser-frame">
-      <div v-else class="browser-placeholder" data-test="browser-placeholder">
+      <img v-if="!nativeHost && frameSource" class="browser-frame" :src="frameSource" :alt="t('workspaceTools.browserFrameAlt')" data-test="browser-frame">
+      <div v-else-if="!nativeHost" class="browser-placeholder" data-test="browser-placeholder">
         {{ connectionState === 'connecting' ? t('workspaceTools.browserConnectingHint') : t('workspaceTools.browserEmptyHint') }}
+      </div>
+      <div
+        v-if="errorMessage || retryAvailable"
+        class="browser-notice"
+        aria-live="polite"
+        @pointerdown.stop
+        @pointermove.stop
+        @pointerup.stop
+        @wheel.stop
+      >
+        <span v-if="errorMessage" class="browser-error" role="alert">{{ errorMessage }}</span>
+        <button v-if="retryAvailable" type="button" class="browser-retry" data-test="browser-retry" @click="retryConnection">
+          {{ t('workspaceTools.browserRetry') }}
+        </button>
       </div>
     </div>
   </section>
@@ -461,10 +682,12 @@ defineExpose({ dispose });
 .browser-toolbar {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 8px;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  background: var(--bg-surface);
 }
 
 .browser-control,
@@ -474,19 +697,32 @@ defineExpose({ dispose });
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  min-width: 30px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
-.browser-control {
-  font-size: 17px;
-  line-height: 1;
+.browser-control svg,
+.browser-go svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.browser-control:hover:not(:disabled),
+.browser-go:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .browser-control:disabled,
@@ -495,52 +731,81 @@ defineExpose({ dispose });
   cursor: default;
 }
 
-.browser-address {
+.browser-address-wrap {
+  display: flex;
+  align-items: center;
   flex: 1;
-  min-width: 40px;
+  min-width: 0;
   height: 28px;
+  gap: 7px;
   padding: 0 9px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  outline: none;
+  border-radius: 999px;
   background: var(--bg-void);
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.browser-address-wrap:hover,
+.browser-address-wrap.editing,
+.browser-address-wrap:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+
+.browser-address-wrap.editing,
+.browser-address-wrap:focus-within {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.browser-security-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 11px;
+  text-overflow: ellipsis;
 }
 
-.browser-address:focus {
-  border-color: var(--accent);
+.browser-address[readonly] {
+  cursor: text;
+}
+
+.browser-connection-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.browser-connection-dot.connected { background: var(--green); }
+.browser-connection-dot.connecting { background: var(--amber); }
+.browser-connection-dot.error,
+.browser-connection-dot.missing { background: var(--rose); }
+
+.browser-connection-dot.disconnected {
+  opacity: 0.35;
 }
 
 .browser-go {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-size: 11px;
+  color: var(--text-secondary);
 }
-
-.browser-statusline {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 28px;
-  padding: 0 10px;
-  color: var(--text-muted);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
-.browser-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.browser-status-dot.connected { color: var(--green); }
-.browser-status-dot.connecting { color: var(--amber); }
-.browser-status-dot.error,
-.browser-status-dot.missing { color: var(--rose); }
 
 .browser-error {
   overflow: hidden;
@@ -549,20 +814,15 @@ defineExpose({ dispose });
   white-space: nowrap;
 }
 
-.browser-engine {
-  margin-left: auto;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-}
-
 .browser-retry {
-  min-width: 0;
-  height: 22px;
+  width: auto;
+  min-width: auto;
+  height: 26px;
+  padding: 0 9px;
   border: 0;
-  background: transparent;
+  background: var(--bg-surface);
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .browser-viewport {
@@ -575,9 +835,25 @@ defineExpose({ dispose });
   min-height: 0;
   overflow: hidden;
   outline: none;
-  background: #101217;
+  background: var(--bg-deep);
   touch-action: none;
   user-select: none;
+}
+
+.browser-notice {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 7px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  transform: translateX(-50%);
 }
 
 .browser-viewport:focus-visible {

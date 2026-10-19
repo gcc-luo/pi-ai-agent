@@ -86,8 +86,8 @@ describe("workspace browser", () => {
 
     const wrapper = mountBrowser();
     await flushPromises();
-    expect(openBrowserPanel).toHaveBeenCalledWith("session-1");
-    expect(createBrowserSocket).toHaveBeenCalledWith("session-1");
+    expect(openBrowserPanel).toHaveBeenCalledWith("session-1", "browser");
+    expect(createBrowserSocket).toHaveBeenCalledWith("session-1", "browser");
 
     const socket = sockets[0]!;
     socket.onopen?.(new Event("open"));
@@ -98,8 +98,7 @@ describe("workspace browser", () => {
     }));
     socket.receive({ type: "status", screencasting: true, engine: "chromium" });
     await flushPromises();
-    expect(wrapper.text()).toContain("workspaceTools.browserStreaming");
-    expect(wrapper.text()).toContain("chromium");
+    expect(wrapper.get(".browser-connection-dot").classes()).toContain("connected");
 
     socket.receive({ type: "url", url: "https://example.test/page" });
     await flushPromises();
@@ -129,7 +128,7 @@ describe("workspace browser", () => {
     expect(closeBrowserPanel).not.toHaveBeenCalled();
 
     await (wrapper.vm as unknown as { dispose: () => Promise<void> }).dispose();
-    expect(closeBrowserPanel).toHaveBeenCalledWith("session-1");
+    expect(closeBrowserPanel).toHaveBeenCalledWith("session-1", "browser");
     wrapper.unmount();
     vi.unstubAllGlobals();
   });
@@ -141,16 +140,16 @@ describe("workspace browser", () => {
     await wrapper.get('[data-test="browser-url"]').setValue("https://example.test/next");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
-    expect(navigateBrowserPanel).toHaveBeenCalledWith("session-1", "https://example.test/next");
+    expect(navigateBrowserPanel).toHaveBeenCalledWith("session-1", "https://example.test/next", "browser");
     await wrapper.get('[data-test="browser-back"]').trigger("click");
     await flushPromises();
     await wrapper.get('[data-test="browser-forward"]').trigger("click");
     await flushPromises();
     await wrapper.get('[data-test="browser-reload"]').trigger("click");
     await flushPromises();
-    expect(backBrowserPanel).toHaveBeenCalledWith("session-1");
-    expect(forwardBrowserPanel).toHaveBeenCalledWith("session-1");
-    expect(reloadBrowserPanel).toHaveBeenCalledWith("session-1");
+    expect(backBrowserPanel).toHaveBeenCalledWith("session-1", "browser");
+    expect(forwardBrowserPanel).toHaveBeenCalledWith("session-1", "browser");
+    expect(reloadBrowserPanel).toHaveBeenCalledWith("session-1", "browser");
     wrapper.unmount();
   });
 

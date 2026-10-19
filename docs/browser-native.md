@@ -22,9 +22,27 @@ Browser Use 直接加载 `pi-agent-browser-native` 的发布版入口。宿主�
 pnpm --filter @pi-web-ui/server browser:install
 ```
 
-默认打开可见浏览器，`PI_BROWSER_HEADLESS=true` 切换到无界面模式。
+Web 版本以无界面模式运行，并通过应用内浏览器面板显示浏览器流。
+Tauri 桌面版默认在右侧面板创建原生 WebView；Agent 浏览器操作通过本机桥接直接
+作用于当前活动面板页面，不启动第二个浏览器，也不以图像帧作为页面显示内容。
+桌面端的原生视图使用系统 WebView（Windows WebView2、macOS WKWebView、Linux WebKitGTK），
+同一面板中的网页交互和 Agent DOM 操作作用于同一页面。调试时设置
+`PI_BROWSER_HEADED=true` 可显式显示独立浏览器窗口；`PI_BROWSER_HEADLESS=true`
+始终优先并强制无界面模式。
 桌面安装包携带扩展和平台原生执行器，通过私有运行目录中的可执行文件接入 PATH，
 不要求用户全局安装 npm CLI。Chrome 的安装和更新仍由系统或上游安装命令负责。
+
+桌面版每个浏览器面板标签创建一个原生系统 WebView。活动标签通过本机 WebSocket
+接收 Agent 操作请求，并将 DOM 快照、定位、导航、点击和输入操作执行在该 WebView
+的页面中；标签失活时桥接断开，避免 Agent 请求误发到后台标签。浏览器标签之间
+独立保留页面状态，Agent 跟随当前活动的浏览器标签。Web 版本继续使用浏览器图像流，
+因为它无法访问 Tauri 桌面端的原生子 WebView。
+
+原生共享模式目前支持常用 `args` 页面操作、`semanticAction` 的点击/填表/勾选，
+以及基础 `qa` 页面检查。上游扩展中依赖 CDP 或文件系统的功能（例如完整 `script` /
+`job` 工作流、截图、下载和网络事件检查）尚未接入原生 WebView；调用时会返回明确的
+不支持错误，不会静默启动另一个浏览器。Tauri 多 WebView API 使用 unstable Cargo
+feature，后续 Tauri 升级需要复核该 API 的兼容性。
 
 ## 会话与操作确认
 

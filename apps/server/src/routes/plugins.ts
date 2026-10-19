@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { browserCallNeedsConfirmation } from "../browser/browser-permissions.js";
+import { nativeBrowserBridge } from "../browser/native-browser-bridge.js";
 import {
   BROWSER_PLUGIN_ID,
   COMPUTER_PLUGIN_ID,
@@ -201,6 +202,28 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
             action: "agent_browser", risk, approved: true, success: args.isError !== true,
             details: { toolCallId: args.toolCallId, phase: "complete" } });
           return { ok: true };
+        }
+        if (action === "execute") {
+          if (typeof args.toolCallId !== "string" || !args.toolCallId || args.toolName !== "agent_browser") {
+            return reply.code(400).send({ error: "invalid native browser operation" });
+          }
+          if (!app.processManager.validatePluginToken(session.id, BROWSER_PLUGIN_ID, token)
+            || !app.pluginManager.activeForSession(session.id).includes(BROWSER_PLUGIN_ID)) {
+            return reply.code(403).send({ error: "browser authorization expired" });
+          }
+          if (!app.browserManager.isPendingBrowserCall(session.id, args.toolCallId)) {
+            return reply.code(409).send({ error: "browser call was not authorized or already completed" });
+          }
+          const params = args.params;
+          if (!params || typeof params !== "object" || Array.isArray(params)) {
+            return reply.code(400).send({ error: "params must be an object" });
+          }
+          const result = await nativeBrowserBridge.execute(
+            session.id,
+            params as Record<string, unknown>,
+            controller.signal,
+          );
+          return { ok: true, result };
         }
         if (action !== "authorize") return reply.code(410).send({ error: "旧浏览器执行 API 已移除，请通过 agent_browser 扩展操作。" });
         if (typeof args.toolCallId !== "string" || !args.toolCallId || !["agent_browser", "agent_browser_web_search"].includes(String(args.toolName))) {

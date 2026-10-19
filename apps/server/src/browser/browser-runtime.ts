@@ -69,7 +69,12 @@ export function browserEnvironment(
     configPath,
     JSON.stringify({
       ...identity,
-      headed: process.env.PI_BROWSER_HEADLESS !== "true",
+      // The browser panel is the user's surface for this session. Keep the
+      // Chromium window hidden by default so opening the in-app tab does not
+      // unexpectedly launch a separate desktop browser. Explicitly opt in to
+      // a visible browser for debugging with PI_BROWSER_HEADED=true.
+      headed: process.env.PI_BROWSER_HEADLESS !== "true"
+        && process.env.PI_BROWSER_HEADED === "true",
     }),
     { mode: 0o600 },
   );
@@ -79,5 +84,8 @@ export function browserEnvironment(
     AGENT_BROWSER_SESSION: identity.session,
     AGENT_BROWSER_NAMESPACE: identity.namespace,
     AGENT_BROWSER_IDLE_TIMEOUT_MS: "900000",
+    // The in-app panel displays streamed JPEG frames. Use the highest encoder
+    // quality so text and fine UI details stay sharp after transport.
+    AGENT_BROWSER_STREAM_QUALITY: "100",
   };
 }

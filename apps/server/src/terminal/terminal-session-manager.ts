@@ -152,6 +152,13 @@ export class TerminalSessionManager {
   }
 
   async close(sessionId: string): Promise<void> {
+    const prefix = `${sessionId}::`;
+    await Promise.all([...this.sessions.keys()]
+      .filter((id) => id === sessionId || id.startsWith(prefix))
+      .map((id) => this.closeInstance(id)));
+  }
+
+  async closeInstance(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.closed = true;

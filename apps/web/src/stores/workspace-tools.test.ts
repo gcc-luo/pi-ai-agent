@@ -23,7 +23,7 @@ describe("workspace tool panels", () => {
     });
   });
 
-  it("opens each persistent tool once and selects the last remaining tool on close", () => {
+  it("opens multiple instances of each tool and selects the last remaining instance on close", () => {
     const store = useWorkspaceToolsStore();
 
     store.openTool("session-1", "project-1", "files");
@@ -31,8 +31,8 @@ describe("workspace tool panels", () => {
     store.openTool("session-1", "project-1", "files");
     store.closeTool("session-1", "browser");
 
-    expect(store.panels["session-1"]?.tools).toEqual(["files"]);
-    expect(store.panels["session-1"]?.activeTab).toBe("files");
+    expect(store.panels["session-1"]?.tools).toEqual(["files", "files--1"]);
+    expect(store.panels["session-1"]?.activeTab).toBe("files--1");
     expect(store.panels["session-1"]?.visible).toBe(true);
   });
 
