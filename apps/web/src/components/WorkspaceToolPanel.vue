@@ -289,7 +289,7 @@ defineExpose({ disposeAll });
   position: absolute;
   z-index: 3;
   top: calc(100% - 2px);
-  left: 4px;
+  right: 4px;
   display: grid;
   min-width: 140px;
   padding: 4px;
