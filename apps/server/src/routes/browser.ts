@@ -1,7 +1,13 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import { isAllowedLocalOrigin } from "../security/local-origin.js";
 
 export const browserRoutes: FastifyPluginAsync = async (app) => {
   const requireSession = (sessionId: string) => app.sessions.findById(sessionId);
+  const rejectForeignOrigin = (origin: string | undefined, reply: FastifyReply): boolean => {
+    if (isAllowedLocalOrigin(origin)) return false;
+    reply.code(403).send({ error: "origin not allowed" });
+    return true;
+  };
 
   app.get<{ Params: { id: string } }>("/sessions/:id/browser", async (req, reply) => {
     const session = app.sessions.findById(req.params.id);
@@ -49,6 +55,7 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/open", async (req, reply) => {
+    if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
     await app.browserManager.ensurePanelSession(session.id);
@@ -56,6 +63,7 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/close", async (req, reply) => {
+    if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
     await app.browserManager.closePanelSession(session.id);
@@ -66,6 +74,7 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     Params: { id: string };
     Body: { url?: unknown };
   }>("/sessions/:id/browser-panel/navigate", async (req, reply) => {
+    if (rejectForeignOrigin(req.headers.origin, reply)) return;
     const session = requireSession(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
     const url = req.body?.url;
@@ -78,6 +87,7 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
 
   for (const action of ["back", "forward", "reload"] as const) {
     app.post<{ Params: { id: string } }>(`/sessions/:id/browser-panel/${action}`, async (req, reply) => {
+      if (rejectForeignOrigin(req.headers.origin, reply)) return;
       const session = requireSession(req.params.id);
       if (!session) return reply.code(404).send({ error: "session not found" });
       await app.browserManager[action](session.id);

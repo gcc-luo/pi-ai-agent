@@ -98,6 +98,51 @@ async function closeServer(server: WebSocketServer) {
 }
 
 describe("browser panel HTTP routes", () => {
+  it("rejects foreign Origin on every browser panel operation before calling the manager", async () => {
+    const f = await fixture();
+    try {
+      const actions = ["open", "close", "navigate", "back", "forward", "reload"] as const;
+      for (const action of actions) {
+        const response = await f.app.inject({
+          method: "POST",
+          url: `/api/sessions/s/browser-panel/${action}`,
+          headers: { origin: "https://evil.example" },
+          ...(action === "navigate" ? { payload: { url: "https://example.test" } } : {}),
+        });
+        expect(response.statusCode).toBe(403);
+      }
+
+      expect(f.manager.ensurePanelSession).not.toHaveBeenCalled();
+      expect(f.manager.closePanelSession).not.toHaveBeenCalled();
+      expect(f.manager.navigate).not.toHaveBeenCalled();
+      expect(f.manager.back).not.toHaveBeenCalled();
+      expect(f.manager.forward).not.toHaveBeenCalled();
+      expect(f.manager.reload).not.toHaveBeenCalled();
+    } finally {
+      await f.app.close();
+    }
+  });
+
+  it.each(["http://localhost:5173", "http://127.0.0.1:1420", "http://tauri.localhost"]) (
+    "accepts local Origin %s on browser panel operations",
+    async (origin) => {
+      const f = await fixture();
+      try {
+        for (const action of ["open", "close", "navigate", "back", "forward", "reload"] as const) {
+          const response = await f.app.inject({
+            method: "POST",
+            url: `/api/sessions/s/browser-panel/${action}`,
+            headers: { origin },
+            ...(action === "navigate" ? { payload: { url: "https://example.test" } } : {}),
+          });
+          expect(response.statusCode).toBe(200);
+        }
+      } finally {
+        await f.app.close();
+      }
+    },
+  );
+
   it("opens and controls the panel without changing Agent browser permissions", async () => {
     const f = await fixture();
     try {
