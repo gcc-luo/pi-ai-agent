@@ -285,4 +285,40 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps permanent-delete tracking after close failure so shutdown can retry", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const closeCalls: string[][] = [];
+    let allowClose = false;
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44109 }), stderr: "" };
+      if (args[4] === "close") {
+        closeCalls.push(args);
+        if (!allowClose) throw new Error("mock close failure");
+      }
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await manager.ensurePanelSession("session-forget-failure");
+
+      await expect(manager.forgetSession("session-forget-failure")).rejects.toThrow("mock close failure");
+      expect((manager as any).terminalSessions.has("session-forget-failure")).toBe(true);
+      expect((manager as any).closingSessions.has("session-forget-failure")).toBe(true);
+      expect((manager as any).panelBrowserSessions.has("session-forget-failure")).toBe(true);
+      expect((manager as any).states.has("session-forget-failure")).toBe(true);
+      await expect(manager.ensurePanelSession("session-forget-failure")).rejects.toThrow(/closing/i);
+
+      allowClose = true;
+      await manager.shutdown();
+
+      expect(closeCalls).toHaveLength(2);
+      expect((manager as any).panelBrowserSessions.has("session-forget-failure")).toBe(false);
+      expect((manager as any).states.has("session-forget-failure")).toBe(false);
+    } finally {
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

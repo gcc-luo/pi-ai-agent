@@ -272,22 +272,20 @@ export class BrowserSessionManager {
   /** Permanently forget a purged session after all queued browser operations finish. */
   async forgetSession(sessionId: string): Promise<void> {
     this.closingSessions.add(sessionId);
+    // The database row is already gone, so this session must not be reused even
+    // if closing its browser daemon fails and cleanup has to be retried later.
+    this.terminalSessions.add(sessionId);
     this.pending.delete(sessionId);
     await this.withSessionLock(sessionId, async () => {
-      try {
-        await this.closeSessionResourcesLocked(sessionId);
-      } catch (error) {
-        this.options.logger.warn({ sessionId, err: error }, "browser cleanup failed while forgetting session");
-      } finally {
-        this.pending.delete(sessionId);
-        this.states.delete(sessionId);
-        this.panelSessions.delete(sessionId);
-        this.panelBrowserSessions.delete(sessionId);
-        this.panelPorts.delete(sessionId);
-        this.panelStarting.delete(sessionId);
-        this.terminalSessions.delete(sessionId);
-        this.closingSessions.delete(sessionId);
-      }
+      await this.closeSessionResourcesLocked(sessionId);
+      this.pending.delete(sessionId);
+      this.states.delete(sessionId);
+      this.panelSessions.delete(sessionId);
+      this.panelBrowserSessions.delete(sessionId);
+      this.panelPorts.delete(sessionId);
+      this.panelStarting.delete(sessionId);
+      this.terminalSessions.delete(sessionId);
+      this.closingSessions.delete(sessionId);
     });
   }
 
