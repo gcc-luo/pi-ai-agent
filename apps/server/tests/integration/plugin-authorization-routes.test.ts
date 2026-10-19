@@ -145,7 +145,9 @@ describe("shared plugin authorization boundary", () => {
       expect((await f.sendWechat(["/private/home/report.pdf"])).json()).toEqual({ ok: true });
       expect(f.authorization).toHaveBeenCalledTimes(2);
       expect(f.permission).not.toHaveBeenCalled();
-      expect(f.executeComputer).toHaveBeenCalledOnce();
+      expect(f.executeComputer).toHaveBeenCalledTimes(2);
+      expect(f.executeComputer.mock.calls[0]?.[0]).toMatchObject({ action: "focus_window" });
+      expect(f.executeComputer.mock.calls[1]?.[0]).toMatchObject({ action: "click" });
       expect(f.sendFiles).toHaveBeenCalledOnce();
     } finally {
       await f.app.close();

@@ -37,7 +37,8 @@ function windowId(window: Window): string {
 
 export function isUnsupportedWindowFocusError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /focusWindow|focus window/i.test(message) && /not implemented|unsupported/i.test(message);
+  return /focusWindow|focus window|method not implemented in libnut/i.test(message)
+    && /not implemented|unsupported/i.test(message);
 }
 
 async function bindableActiveWindow(): Promise<{ id: string; title: string }> {
@@ -311,19 +312,24 @@ export async function runComputerAction(
       }
       let focusUnavailable = false;
       try {
-        // macOS 直接尝试聚焦，避免额外依赖可能不可用的窗口恢复能力。
-        if (process.platform !== "darwin") await target.window.restore();
+        // nut-js/libnut 没有实现 restoreWindow；直接聚焦目标窗口。
         const focused = await target.window.focus();
         if (!focused) focusUnavailable = true;
       } catch (error) {
-        if (process.platform !== "darwin" || !isUnsupportedWindowFocusError(error)) throw error;
+        if (!isUnsupportedWindowFocusError(error)) throw error;
         focusUnavailable = true;
       }
 
       if (windowId(await getActiveWindow()) !== id) {
-        if (process.platform === "darwin" && focusUnavailable) {
+        if (focusUnavailable && process.platform === "darwin") {
           throw new Error(
             `macOS 当前桌面驱动无法主动激活“${target.record.title}”。`
+            + "请先将该窗口切换到前台，再调用 computer_focus_window 绑定当前活动窗口",
+          );
+        }
+        if (focusUnavailable) {
+          throw new Error(
+            `当前桌面驱动无法主动激活“${target.record.title}”。`
             + "请先将该窗口切换到前台，再调用 computer_focus_window 绑定当前活动窗口",
           );
         }

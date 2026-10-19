@@ -107,7 +107,7 @@ export default function computerTools(pi: ExtensionAPI) {
   const guidelines = [
     "Computer Use 适合操作 Word、微信、Navicat、系统设置等桌面应用；普通网页优先使用 Browser Use。",
     "操作前先调用 computer_list_windows 和 computer_screenshot；窗口列表会通过 isActive 标识当前活动窗口。",
-    "调用 computer_focus_window 绑定输入目标。目标已经在前台时可省略 windowId 绑定当前活动窗口；macOS 无法主动激活时，应提示用户先切换窗口再重试，不要声称 Computer Use 不可用。",
+    "首次桌面输入会在服务端自动绑定当前活动窗口；若目标窗口不是当前活动窗口，先调用 computer_focus_window 指定目标。macOS 无法主动激活时，应提示用户先切换窗口再重试，不要声称 Computer Use 不可用。",
     "每次关键操作后重新截图确认结果；坐标基于最近一次截图，不要凭空猜测。",
     "悬停控件可用 computer_move；上下文菜单可用 computer_click 的 right 按键，随后截图确认菜单内容。",
     "所有输入操作都要提供真实 intent；涉及发送、提交、删除、支付、覆盖或权限变更时，必须先获得用户明确确认。",

@@ -14,6 +14,9 @@ const COMPUTER_ACTIONS = new Set<ComputerAction>([
   "screenshot", "list_windows", "focus_window", "click", "move", "double_click",
   "type", "key", "scroll", "drag", "wait", "get_cursor_position",
 ]);
+const COMPUTER_INPUT_ACTIONS = new Set<ComputerAction>([
+  "click", "move", "double_click", "type", "key", "scroll", "drag",
+]);
 
 export const pluginsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/plugins", async () => app.pluginManager.list());
@@ -277,6 +280,19 @@ export const pluginsRoutes: FastifyPluginAsync = async (app) => {
             riskReason: risk.reason,
             message: "用户未确认或确认已超时，操作未执行。",
           };
+        }
+        if (COMPUTER_INPUT_ACTIONS.has(action as ComputerAction) && !computerState?.targetWindow) {
+          const binding = await app.computerManager.execute({
+            sessionId: session.id,
+            workdir: project.workdir,
+            action: "focus_window",
+            args: { intent: "桌面输入前绑定当前活动窗口" },
+            signal: controller.signal,
+          });
+          if (typeof binding.windowId === "string") {
+            auditDetails.windowId = binding.windowId;
+            auditDetails.windowTitle = binding.title;
+          }
         }
         const result = await app.computerManager.execute({
           sessionId: session.id,
