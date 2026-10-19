@@ -67,6 +67,10 @@ async function fixture() {
   return { app, manager, processes, url: `ws://127.0.0.1:${port}/ws/terminal/session` };
 }
 
+async function openTerminal(f: Awaited<ReturnType<typeof fixture>>, sessionId = "session") {
+  return f.app.inject({ method: "POST", url: `/api/sessions/${encodeURIComponent(sessionId)}/terminal/open` });
+}
+
 describe("terminal panel WebSocket", () => {
   const apps: ReturnType<typeof Fastify>[] = [];
   afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
@@ -89,9 +93,30 @@ describe("terminal panel WebSocket", () => {
     expect(f.processes[0]!.kills).toBe(1);
   });
 
+  it("does not spawn a PTY when a close wins before a late WebSocket handshake", async () => {
+    const f = await fixture();
+    apps.push(f.app);
+    const ensure = vi.spyOn(f.manager, "ensure");
+    const opened = await openTerminal(f);
+    expect(opened.statusCode).toBe(200);
+    expect(ensure).toHaveBeenCalledWith("session", "/server/project-root");
+    expect(f.processes).toHaveLength(1);
+    const closed = await f.app.inject({ method: "POST", url: "/api/sessions/session/terminal/close" });
+    expect(closed.statusCode).toBe(200);
+
+    const socket = new WebSocket(f.url);
+    const response = await new Promise<number>((resolve, reject) => {
+      socket.once("unexpected-response", (_request, res) => resolve(res.statusCode ?? 0));
+      socket.once("error", reject);
+    });
+    expect(response).toBe(409);
+    expect(f.processes).toHaveLength(1);
+  });
+
   it("uses the session's project workdir and forwards input, resize, and binary output", async () => {
     const f = await fixture();
     apps.push(f.app);
+    expect((await openTerminal(f)).statusCode).toBe(200);
     const socket = new WebSocket(f.url);
     await waitForOpen(socket);
     expect(f.processes).toHaveLength(1);
@@ -115,7 +140,7 @@ describe("terminal panel WebSocket", () => {
   it("replays buffered output before streaming new PTY data after reconnect", async () => {
     const f = await fixture();
     apps.push(f.app);
-    await f.manager.ensure("session", "/server/project-root");
+    expect((await openTerminal(f)).statusCode).toBe(200);
     f.processes[0]!.emitData("before reconnect\r\n");
 
     const socket = new WebSocket(f.url);
@@ -151,6 +176,7 @@ describe("terminal panel WebSocket", () => {
   it("kills only on an explicit close message and reports PTY exit", async () => {
     const f = await fixture();
     apps.push(f.app);
+    expect((await openTerminal(f)).statusCode).toBe(200);
     const socket = new WebSocket(f.url);
     await waitForOpen(socket);
     const exitPromise = waitForMessage(socket);
@@ -163,6 +189,7 @@ describe("terminal panel WebSocket", () => {
     expect(f.processes[0]!.kills).toBe(0);
 
     const second = new WebSocket(f.url);
+    expect((await openTerminal(f)).statusCode).toBe(200);
     await waitForOpen(second);
     second.send(JSON.stringify({ type: "close" }));
     await waitForClose(second);
@@ -172,6 +199,7 @@ describe("terminal panel WebSocket", () => {
   it("terminates attached sockets on server-side close and starts a fresh PTY on reopen", async () => {
     const f = await fixture();
     apps.push(f.app);
+    expect((await openTerminal(f)).statusCode).toBe(200);
     const first = new WebSocket(f.url);
     await waitForOpen(first);
 
@@ -180,6 +208,7 @@ describe("terminal panel WebSocket", () => {
     expect((await serverClose).code).toBe(1001);
     expect(f.processes[0]!.kills).toBe(1);
 
+    expect((await openTerminal(f)).statusCode).toBe(200);
     const reopened = new WebSocket(f.url);
     await waitForOpen(reopened);
     expect(f.processes).toHaveLength(2);
@@ -190,6 +219,7 @@ describe("terminal panel WebSocket", () => {
   it("closes malformed, oversized, and out-of-range messages without killing the PTY", async () => {
     const f = await fixture();
     apps.push(f.app);
+    expect((await openTerminal(f)).statusCode).toBe(200);
     const socket = new WebSocket(f.url);
     await waitForOpen(socket);
     const closed = waitForClose(socket);

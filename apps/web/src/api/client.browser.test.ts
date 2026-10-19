@@ -43,4 +43,16 @@ describe("terminal panel API", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/close", expect.objectContaining({ method: "POST" }));
   });
+
+  it("opens the session terminal through its explicit lifecycle endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response('{"status":"open"}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.openTerminalSession("session / one");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/open", expect.objectContaining({ method: "POST" }));
+  });
 });

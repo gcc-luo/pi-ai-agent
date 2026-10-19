@@ -65,6 +65,10 @@ export class TerminalSessionManager {
     this.spawnPty = options.spawn ?? nodePty.spawn;
   }
 
+  has(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
   ensure(sessionId: string, projectWorkdir: string): void {
     if (this.shuttingDown) throw new Error("terminal manager is shutting down");
     if (this.sessions.has(sessionId)) return;

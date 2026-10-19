@@ -64,6 +64,7 @@ export const forwardBrowserPanel = (sessionId: string) => api.forwardBrowserPane
 export const reloadBrowserPanel = (sessionId: string) => api.reloadBrowserPanel(sessionId);
 
 export const closeTerminalSession = (sessionId: string) => api.closeTerminalSession(sessionId);
+export const openTerminalSession = (sessionId: string) => api.openTerminalSession(sessionId);
 
 export function createTerminalSocket(sessionId: string): WebSocket {
   const token = authToken();

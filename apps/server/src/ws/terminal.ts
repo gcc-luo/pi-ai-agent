@@ -47,6 +47,23 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
 }
 
 export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
+  app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/terminal/open", async (request, reply) => {
+    if (!isAllowedLocalOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "origin not allowed" });
+    }
+    const session = app.sessions.findById(request.params.sessionId);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    const project = app.projects.findById(session.projectId);
+    if (!project) return reply.code(404).send({ error: "project not found" });
+    try {
+      app.terminalManager.ensure(session.id, project.workdir);
+      return { status: "open" as const };
+    } catch (error) {
+      request.log.warn({ sessionId: session.id, err: error }, "failed to open terminal PTY");
+      return reply.code(503).send({ error: "terminal unavailable" });
+    }
+  });
+
   app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/terminal/close", async (request, reply) => {
     if (!isAllowedLocalOrigin(request.headers.origin)) {
       return reply.code(403).send({ error: "origin not allowed" });
@@ -67,12 +84,7 @@ export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
     if (!session) return reply.code(404).send({ error: "session not found" });
     const project = app.projects.findById(session.projectId);
     if (!project) return reply.code(404).send({ error: "project not found" });
-    try {
-      app.terminalManager.ensure(session.id, project.workdir);
-    } catch (error) {
-      request.log.warn({ sessionId: session.id, err: error }, "failed to start terminal PTY");
-      return reply.code(503).send({ error: "terminal unavailable" });
-    }
+    if (!app.terminalManager.has(session.id)) return reply.code(409).send({ error: "terminal is not open" });
   };
 
   app.get<{ Params: { sessionId: string } }>(

@@ -2,7 +2,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { closeTerminalSession, createTerminalSocket, parseTerminalServerMessage } from "../api/workspace-tools.js";
+import { closeTerminalSession, createTerminalSocket, openTerminalSession, parseTerminalServerMessage } from "../api/workspace-tools.js";
 import { useI18n } from "../i18n/index.js";
 import "@xterm/xterm/css/xterm.css";
 
@@ -19,6 +19,7 @@ let fitAddon: FitAddon | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let inputSubscription: { dispose(): void } | null = null;
 let socket: WebSocket | null = null;
+let openingPromise: Promise<unknown> | null = null;
 let generation = 0;
 let disposed = false;
 let disposal: Promise<void> | undefined;
@@ -59,6 +60,12 @@ async function connect() {
   state.value = "connecting";
   error.value = "";
   try {
+    const pendingOpen = openingPromise ?? openTerminalSession(props.sessionId);
+    openingPromise = pendingOpen;
+    try { await pendingOpen; }
+    finally { if (openingPromise === pendingOpen) openingPromise = null; }
+    if (attempt !== generation || !props.active || disposed) return;
+
     const candidate = createTerminalSocket(props.sessionId);
     socket = candidate;
     candidate.binaryType = "arraybuffer";
@@ -156,7 +163,10 @@ async function dispose(): Promise<void> {
   send({ type: "close" });
   disconnect();
   state.value = "disconnected";
-  disposal = closeTerminalSession(props.sessionId).then(() => undefined).catch((cause: unknown) => {
+  disposal = (async () => {
+    await openingPromise?.catch(() => undefined);
+    await closeTerminalSession(props.sessionId);
+  })().catch((cause: unknown) => {
     disposal = undefined;
     error.value = cause instanceof Error ? cause.message : String(cause);
     throw cause;

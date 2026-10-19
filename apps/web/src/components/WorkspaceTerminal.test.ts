@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import WorkspaceTerminal from "./WorkspaceTerminal.vue";
-import { closeTerminalSession, createTerminalSocket } from "../api/workspace-tools.js";
+import { closeTerminalSession, createTerminalSocket, openTerminalSession } from "../api/workspace-tools.js";
 
 vi.mock("../i18n/index.js", () => ({ useI18n: () => ({ t: (key: string, args?: Record<string, unknown>) => args ? `${key}:${args.exitCode}` : key }) }));
 vi.mock("../api/workspace-tools.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/workspace-tools.js")>();
-  return { ...actual, closeTerminalSession: vi.fn(), createTerminalSocket: vi.fn() };
+  return { ...actual, closeTerminalSession: vi.fn(), createTerminalSocket: vi.fn(), openTerminalSession: vi.fn() };
 });
 
 class FakeSocket {
@@ -52,6 +52,7 @@ describe("workspace terminal", () => {
     sockets.length = 0;
     terminalMocks.instances.length = 0;
     vi.mocked(closeTerminalSession).mockReset().mockResolvedValue({ status: "closed" });
+    vi.mocked(openTerminalSession).mockReset().mockResolvedValue({ status: "open" });
     vi.mocked(createTerminalSocket).mockReset().mockImplementation(() => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -162,6 +163,29 @@ describe("workspace terminal", () => {
     await flushPromises();
     sockets[0]!.readyState = WebSocket.CONNECTING;
     await (wrapper.vm as unknown as { dispose: () => Promise<void> }).dispose();
+    expect(closeTerminalSession).toHaveBeenCalledWith("session-1");
+    wrapper.unmount();
+  });
+
+  it("waits for terminal open to settle before closing and never starts a late socket", async () => {
+    let finishOpening!: () => void;
+    vi.mocked(openTerminalSession).mockImplementation(() => new Promise((resolve) => {
+      finishOpening = () => resolve({ status: "open" });
+    }));
+    const wrapper = mountTerminal();
+    await flushPromises();
+    expect(openTerminalSession).toHaveBeenCalledWith("session-1");
+    expect(createTerminalSocket).not.toHaveBeenCalled();
+
+    let disposed = false;
+    const disposal = (wrapper.vm as unknown as { dispose: () => Promise<void> }).dispose().then(() => { disposed = true; });
+    await flushPromises();
+    expect(closeTerminalSession).not.toHaveBeenCalled();
+    expect(disposed).toBe(false);
+
+    finishOpening();
+    await disposal;
+    expect(createTerminalSocket).not.toHaveBeenCalled();
     expect(closeTerminalSession).toHaveBeenCalledWith("session-1");
     wrapper.unmount();
   });
