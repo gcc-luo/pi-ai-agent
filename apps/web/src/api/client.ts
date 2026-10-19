@@ -123,6 +123,8 @@ export const api = {
     request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/forward`),
   reloadBrowserPanel: (sessionId: string) =>
     request<{ status: "open" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/browser-panel/reload`),
+  closeTerminalSession: (sessionId: string) =>
+    request<{ status: "closed" }>("POST", `/sessions/${encodeURIComponent(sessionId)}/terminal/close`),
   listPlugins: () => request<PluginDto[]>("GET", "/plugins"),
   updatePlugin: (id: string, patch: { enabled?: boolean; settings?: Record<string, unknown> }) =>
     request<PluginDto>("PUT", `/plugins/${encodeURIComponent(id)}`, patch),

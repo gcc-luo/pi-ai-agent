@@ -47,6 +47,15 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
 }
 
 export const terminalWsRoutes: FastifyPluginAsync = async (app) => {
+  app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/terminal/close", async (request, reply) => {
+    if (!isAllowedLocalOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "origin not allowed" });
+    }
+    // Close is intentionally idempotent and remains valid during session deletion.
+    await app.terminalManager.close(request.params.sessionId);
+    return { status: "closed" as const };
+  });
+
   const prepareTerminal = async (
     request: FastifyRequest<{ Params: { sessionId: string } }>,
     reply: FastifyReply,

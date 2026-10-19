@@ -246,23 +246,23 @@ pnpm --filter @pi-web-ui/web typecheck
 - 修改：`apps/web/src/components/WorkspaceToolPanel.vue`
 - 修改：`apps/web/src/i18n/messages.ts`
 
-- [ ] **步骤 1：添加 xterm.js 及尺寸适配依赖**
+- [x] **步骤 1：添加 xterm.js 及尺寸适配依赖**
 
 运行：`pnpm --filter @pi-web-ui/web add @xterm/xterm @xterm/addon-fit`
 
-- [ ] **步骤 2：初始化终端并适配面板尺寸**
+- [x] **步骤 2：初始化终端并适配面板尺寸**
 
 组件中创建 `Terminal({ convertEol: true, cursorBlink: true })`，载入 `FitAddon`，在容器挂载后 `open()` 并 `fit()`；ResizeObserver 回调重新 `fit()` 后发送 `{type:"resize", cols:term.cols, rows:term.rows}`。组件销毁时 dispose xterm 和 observer。
 
-- [ ] **步骤 3：连接和终止远端 PTY**
+- [x] **步骤 3：连接和终止远端 PTY**
 
 使用 `workspace-tools.ts` 连接 `/ws/terminal/:sessionId`，认证子协议与浏览器相同。将 `term.onData()` 发送为 input JSON，将 text/binary 输出帧写入 `term.write()`；连接重建时按 session ID 重新连接旧 PTY，并先重放 manager 的有界输出缓冲。显式关闭标签时发送 `{type:"close"}` 并关闭 socket；工具切换、面板隐藏和 session 切换都保留组件与 socket，以便 xterm 累积完整输出。
 
-- [ ] **步骤 4：注册终端组件并完成文案**
+- [x] **步骤 4：注册终端组件并完成文案**
 
 注册 `terminal: WorkspaceTerminal`，使空状态和 `+` 菜单显示三个工具；close 操作调用组件的 `dispose()`。添加终端连接中、重连、已结束、重开等中英文状态提示。
 
-- [ ] **步骤 5：运行前端类型检查**
+- [x] **步骤 5：运行前端类型检查**
 
 运行：`pnpm --filter @pi-web-ui/web typecheck`
 

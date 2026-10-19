@@ -28,3 +28,19 @@ describe("browser panel API", () => {
     ]);
   });
 });
+
+describe("terminal panel API", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("targets the session-scoped terminal close endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response('{"status":"closed"}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.closeTerminalSession("session / one");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%20%2F%20one/terminal/close", expect.objectContaining({ method: "POST" }));
+  });
+});

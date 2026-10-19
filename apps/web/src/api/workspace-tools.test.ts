@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBrowserSocket, parseBrowserServerMessage, scaleBrowserPoint } from "./workspace-tools.js";
+import { createBrowserSocket, createTerminalSocket, parseTerminalServerMessage, parseBrowserServerMessage, scaleBrowserPoint } from "./workspace-tools.js";
 
 const mockAuthToken = vi.fn<[], string | undefined>(() => "test-token");
 const mockWebSocketUrl = vi.fn((path: string) => `ws://localhost${path}`);
+const WebSocketMock = vi.fn();
 
 vi.mock("./endpoints.js", () => ({
   authToken: () => mockAuthToken(),
@@ -10,8 +11,6 @@ vi.mock("./endpoints.js", () => ({
 }));
 
 describe("workspace browser helpers", () => {
-  const WebSocketMock = vi.fn();
-
   beforeEach(() => {
     mockAuthToken.mockReturnValue("test-token");
     mockWebSocketUrl.mockImplementation((path) => `ws://localhost${path}`);
@@ -69,5 +68,34 @@ describe("workspace browser helpers", () => {
     expect(parseBrowserServerMessage("not json")).toBeNull();
     expect(parseBrowserServerMessage(JSON.stringify({ type: "unknown" }))).toBeNull();
     expect(parseBrowserServerMessage(JSON.stringify({ type: "frame", seq: -1, data: "!!!!" }))).toBeNull();
+  });
+});
+
+describe("workspace terminal helpers", () => {
+  beforeEach(() => {
+    mockAuthToken.mockReturnValue("test-token");
+    mockWebSocketUrl.mockImplementation((path) => `ws://localhost${path}`);
+    WebSocketMock.mockClear();
+    vi.stubGlobal("WebSocket", WebSocketMock);
+  });
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("creates an authenticated socket for the encoded session path", () => {
+    createTerminalSocket("session / one");
+
+    expect(mockWebSocketUrl).toHaveBeenCalledWith("/ws/terminal/session%20%2F%20one");
+    expect(WebSocketMock).toHaveBeenCalledWith(
+      "ws://localhost/ws/terminal/session%20%2F%20one",
+      ["pi-web-ui", "test-token"],
+    );
+  });
+
+  it("parses only terminal exit messages and accepts binary output as a separate frame", () => {
+    expect(parseTerminalServerMessage(JSON.stringify({ type: "exit", exitCode: 0, signal: 0 })))
+      .toEqual({ type: "exit", exitCode: 0, signal: 0 });
+    expect(parseTerminalServerMessage(JSON.stringify({ type: "exit", exitCode: "0", signal: 0 }))).toBeNull();
+    expect(parseTerminalServerMessage("not json")).toBeNull();
+    expect(parseTerminalServerMessage(new ArrayBuffer(2))).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import ChatPanel from "./components/ChatPanel.vue";
 import WorkspaceToolPanel from "./components/WorkspaceToolPanel.vue";
 const WorkspaceFileBrowser = defineAsyncComponent(() => import("./components/WorkspaceFileBrowser.vue"));
 const WorkspaceBrowser = defineAsyncComponent(() => import("./components/WorkspaceBrowser.vue"));
+const WorkspaceTerminal = defineAsyncComponent(() => import("./components/WorkspaceTerminal.vue"));
 const WorkspacePreviewTab = defineAsyncComponent(() => import("./components/WorkspacePreviewTab.vue"));
 // Lazy-loaded so the whole preview pipeline (highlight.js, mammoth, xlsx and
 // the 10 preview SFCs) lives in its own chunk and never lands in the main
@@ -53,6 +54,7 @@ const selectedSessionId = ref<string | null>(null);
 const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {
   files: WorkspaceFileBrowser,
   browser: WorkspaceBrowser,
+  terminal: WorkspaceTerminal,
 };
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);

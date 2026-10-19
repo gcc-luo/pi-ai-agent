@@ -63,6 +63,32 @@ export const backBrowserPanel = (sessionId: string) => api.backBrowserPanel(sess
 export const forwardBrowserPanel = (sessionId: string) => api.forwardBrowserPanel(sessionId);
 export const reloadBrowserPanel = (sessionId: string) => api.reloadBrowserPanel(sessionId);
 
+export const closeTerminalSession = (sessionId: string) => api.closeTerminalSession(sessionId);
+
+export function createTerminalSocket(sessionId: string): WebSocket {
+  const token = authToken();
+  const protocols = token ? ["pi-web-ui", token] : ["pi-web-ui"];
+  return new WebSocket(webSocketUrl(`/ws/terminal/${encodeURIComponent(sessionId)}`), protocols);
+}
+
+export type TerminalExitMessage = { type: "exit"; exitCode: number; signal: number };
+
+export function parseTerminalServerMessage(data: unknown): TerminalExitMessage | null {
+  if (typeof data !== "string") return null;
+  try {
+    const value: unknown = JSON.parse(data);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const message = value as Record<string, unknown>;
+    return message.type === "exit"
+      && Number.isInteger(message.exitCode)
+      && Number.isInteger(message.signal)
+      ? message as TerminalExitMessage
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createBrowserSocket(sessionId: string): WebSocket {
   const token = authToken();
   const protocols = token ? ["pi-web-ui", token] : ["pi-web-ui"];

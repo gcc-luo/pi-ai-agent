@@ -71,6 +71,24 @@ describe("terminal panel WebSocket", () => {
   const apps: ReturnType<typeof Fastify>[] = [];
   afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
 
+  it("supports an idempotent local HTTP close fallback", async () => {
+    const f = await fixture();
+    apps.push(f.app);
+    await f.manager.ensure("session", "/server/project-root");
+    const first = await f.app.inject({ method: "POST", url: "/api/sessions/session/terminal/close" });
+    const second = await f.app.inject({ method: "POST", url: "/api/sessions/session/terminal/close" });
+    const foreignOrigin = await f.app.inject({
+      method: "POST",
+      url: "/api/sessions/session/terminal/close",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ status: "closed" });
+    expect(second.statusCode).toBe(200);
+    expect(foreignOrigin.statusCode).toBe(403);
+    expect(f.processes[0]!.kills).toBe(1);
+  });
+
   it("uses the session's project workdir and forwards input, resize, and binary output", async () => {
     const f = await fixture();
     apps.push(f.app);
