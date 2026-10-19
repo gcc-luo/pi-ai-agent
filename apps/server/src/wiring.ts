@@ -30,6 +30,7 @@ import { filesRoutes } from "./routes/files.js";
 import { configRoutes } from "./routes/config.js";
 import { modelsRoutes } from "./routes/models.js";
 import { agentRoutes } from "./ws/agent.js";
+import { browserWsRoutes } from "./ws/browser.js";
 import { fsRoutes } from "./routes/fs.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { skillStoreRoutes } from "./routes/skill-store.js";
@@ -308,6 +309,7 @@ export async function buildConfiguredApp(config: Config) {
   await app.register(kbSearchRoutes, { prefix: "/api" });
   await app.register(sessionKbBindingsRoutes, { prefix: "/api" });
   await app.register(browserRoutes, { prefix: "/api" });
+  await app.register(browserWsRoutes);
   await app.register(pluginsRoutes, { prefix: "/api" });
   await app.register(authorizationRoutes, { prefix: "/api" });
   await app.register(trashRoutes, { prefix: "/api/trash" });

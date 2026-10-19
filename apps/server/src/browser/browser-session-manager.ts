@@ -11,6 +11,68 @@ import {
 
 const run = promisify(execFile);
 type Report = { isError?: boolean; details?: Record<string, unknown> };
+type CommandOptions = {
+  env: NodeJS.ProcessEnv;
+  timeout: number;
+  maxBuffer: number;
+  windowsHide: boolean;
+};
+type CommandRunner = (
+  file: string,
+  args: string[],
+  options: CommandOptions,
+) => Promise<{ stdout: string; stderr: string }>;
+
+const defaultCommandRunner: CommandRunner = async (file, args, options) => {
+  const result = await run(file, args, options);
+  return { stdout: String(result.stdout), stderr: String(result.stderr) };
+};
+
+const MAX_STREAM_PORT = 65_535;
+
+function parseJsonOutput(output: string, label: string): Record<string, unknown> {
+  let value: unknown;
+  try {
+    value = JSON.parse(output);
+  } catch {
+    throw new Error(`无法解析 agent-browser ${label} 响应`);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`agent-browser ${label} 响应格式无效`);
+  }
+  const root = value as Record<string, unknown>;
+  if (root.ok === false) {
+    throw new Error(typeof root.error === "string" ? root.error : `agent-browser ${label} 失败`);
+  }
+  return root;
+}
+
+function findTabs(value: Record<string, unknown>): unknown[] | null {
+  if (Array.isArray(value.tabs)) return value.tabs;
+  const data = value.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const nestedTabs = (data as Record<string, unknown>).tabs;
+    if (Array.isArray(nestedTabs)) return nestedTabs;
+  }
+  return null;
+}
+
+function isBrowserNotRunning(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /no (?:active )?(?:browser|tab|page)|browser.*(?:not running|not open|not found)|daemon.*not running|ECONNREFUSED|connection refused/i.test(message);
+}
+
+function streamStatus(value: Record<string, unknown>): { enabled: boolean; port: number | null } {
+  const data = value.data && typeof value.data === "object" && !Array.isArray(value.data)
+    ? value.data as Record<string, unknown>
+    : value;
+  const enabled = data.enabled === true || data.status === "running";
+  const port = typeof data.port === "number" && Number.isInteger(data.port)
+    && data.port > 0 && data.port <= MAX_STREAM_PORT
+    ? data.port
+    : null;
+  return { enabled, port };
+}
 
 /** Product state only. Page observation and interaction belongs to the Pi extension. */
 export class BrowserSessionManager {
@@ -19,12 +81,64 @@ export class BrowserSessionManager {
     Map<string, { risk: "normal" | "sensitive"; browser: boolean }>
   >();
   private readonly states = new Map<string, BrowserCapabilityDto>();
+  private readonly panelSessions = new Set<string>();
+  private readonly panelPorts = new Map<string, number>();
+  private readonly panelStarting = new Map<string, Promise<number>>();
+  private readonly runCommand: CommandRunner;
   constructor(
     private readonly options: {
       logger: FastifyBaseLogger;
       sessionRoot: string;
+      runCommand?: CommandRunner;
     },
-  ) {}
+  ) {
+    this.runCommand = options.runCommand ?? defaultCommandRunner;
+  }
+
+  /** Start the stream for the same agent-browser session without changing Agent permissions. */
+  async ensurePanelSession(sessionId: string): Promise<number> {
+    const current = this.panelStarting.get(sessionId);
+    if (current) return current;
+    const starting = this.startPanelSession(sessionId);
+    this.panelStarting.set(sessionId, starting);
+    try {
+      return await starting;
+    } finally {
+      if (this.panelStarting.get(sessionId) === starting) this.panelStarting.delete(sessionId);
+    }
+  }
+
+  getPanelStreamPort(sessionId: string): number | null {
+    return this.panelPorts.get(sessionId) ?? null;
+  }
+
+  async navigate(sessionId: string, url: string): Promise<void> {
+    await this.ensurePanelSession(sessionId);
+    await this.runForSession(sessionId, ["open", url]);
+  }
+
+  async back(sessionId: string): Promise<void> {
+    await this.ensurePanelSession(sessionId);
+    await this.runForSession(sessionId, ["back"]);
+  }
+
+  async forward(sessionId: string): Promise<void> {
+    await this.ensurePanelSession(sessionId);
+    await this.runForSession(sessionId, ["forward"]);
+  }
+
+  async reload(sessionId: string): Promise<void> {
+    await this.ensurePanelSession(sessionId);
+    await this.runForSession(sessionId, ["reload"]);
+  }
+
+  async closePanelSession(sessionId: string): Promise<void> {
+    await this.panelStarting.get(sessionId)?.catch(() => undefined);
+    if (!this.panelSessions.has(sessionId)) return;
+    await this.runForSession(sessionId, ["stream", "disable"]);
+    this.panelSessions.delete(sessionId);
+    this.panelPorts.delete(sessionId);
+  }
 
   status(sessionId: string, enabled: boolean): BrowserCapabilityDto {
     if (!enabled)
@@ -128,29 +242,21 @@ export class BrowserSessionManager {
   async close(sessionId: string): Promise<void> {
     // Close only this host's default daemon, never a user-owned session or namespace.
     this.pending.delete(sessionId);
-    if (!this.states.has(sessionId)) return;
-    const identity = browserIdentity(this.options.sessionRoot, sessionId);
+    await this.panelStarting.get(sessionId)?.catch(() => undefined);
+    const shouldCloseBrowser = this.states.has(sessionId) || this.panelSessions.has(sessionId);
     try {
-      await run(
-        browserBinary(),
-        [
-          "--namespace",
-          identity.namespace,
-          "--session",
-          identity.session,
-          "close",
-        ],
-        {
-          env: {
-            ...process.env,
-            ...browserEnvironment(this.options.sessionRoot, sessionId),
-          },
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-          windowsHide: true,
-        },
-      );
+      await this.closePanelSession(sessionId);
+    } catch (error) {
+      // Closing the session daemon below also releases a stream that could not
+      // be disabled on its own.
+      this.options.logger.warn({ sessionId, err: error }, "browser panel stream cleanup failed");
+    }
+    if (!shouldCloseBrowser) return;
+    try {
+      await this.runForSession(sessionId, ["close"]);
       this.states.delete(sessionId);
+      this.panelSessions.delete(sessionId);
+      this.panelPorts.delete(sessionId);
     } catch (error) {
       this.options.logger.warn(
         { sessionId, err: error },
@@ -167,7 +273,68 @@ export class BrowserSessionManager {
 
   async shutdown(): Promise<void> {
     await Promise.allSettled(
-      [...this.states.keys()].map((id) => this.close(id)),
+      [...new Set([...this.states.keys(), ...this.panelSessions, ...this.panelStarting.keys()])].map((id) => this.close(id)),
     );
+  }
+
+  private async startPanelSession(sessionId: string): Promise<number> {
+    const prefix = this.commandPrefix(sessionId);
+    try {
+      const { stdout } = await this.runCommand(
+        browserBinary(),
+        [...prefix, "tab", "list", "--json"],
+        this.commandOptions(sessionId),
+      );
+      const tabs = findTabs(parseJsonOutput(stdout, "tab list"));
+      if (!tabs) throw new Error("agent-browser tab list 响应中缺少 tabs");
+      if (tabs.length === 0) await this.runForSession(sessionId, ["open", "about:blank"]);
+    } catch (error) {
+      if (!isBrowserNotRunning(error)) throw error;
+      await this.runForSession(sessionId, ["open", "about:blank"]);
+    }
+    // Mark the daemon as a panel resource before enabling the stream so later
+    // session cleanup still releases it if stream startup fails midway.
+    this.panelSessions.add(sessionId);
+
+    let status = streamStatus(parseJsonOutput(
+      (await this.runCommand(browserBinary(), [...prefix, "stream", "status", "--json"], this.commandOptions(sessionId))).stdout,
+      "stream status",
+    ));
+    if (!status.enabled || status.port === null) {
+      await this.runForSession(sessionId, ["stream", "enable"]);
+      status = streamStatus(parseJsonOutput(
+        (await this.runCommand(browserBinary(), [...prefix, "stream", "status", "--json"], this.commandOptions(sessionId))).stdout,
+        "stream status",
+      ));
+    }
+    if (!status.enabled || status.port === null) throw new Error("agent-browser stream 未返回有效的本机端口");
+    this.panelPorts.set(sessionId, status.port);
+    return status.port;
+  }
+
+  private commandPrefix(sessionId: string): string[] {
+    const identity = browserIdentity(this.options.sessionRoot, sessionId);
+    return ["--namespace", identity.namespace, "--session", identity.session];
+  }
+
+  private commandOptions(sessionId: string): CommandOptions {
+    return {
+      env: {
+        ...process.env,
+        ...browserEnvironment(this.options.sessionRoot, sessionId),
+      },
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    };
+  }
+
+  private async runForSession(sessionId: string, args: string[]): Promise<string> {
+    const { stdout } = await this.runCommand(
+      browserBinary(),
+      [...this.commandPrefix(sessionId), ...args],
+      this.commandOptions(sessionId),
+    );
+    return stdout;
   }
 }

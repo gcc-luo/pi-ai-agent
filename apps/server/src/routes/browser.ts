@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 
 export const browserRoutes: FastifyPluginAsync = async (app) => {
+  const requireSession = (sessionId: string) => app.sessions.findById(sessionId);
+
   app.get<{ Params: { id: string } }>("/sessions/:id/browser", async (req, reply) => {
     const session = app.sessions.findById(req.params.id);
     if (!session) return reply.code(404).send({ error: "session not found" });
@@ -46,7 +48,54 @@ export const browserRoutes: FastifyPluginAsync = async (app) => {
     return app.browserManager.status(session.id, true);
   });
 
+  app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/open", async (req, reply) => {
+    const session = requireSession(req.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    await app.browserManager.ensurePanelSession(session.id);
+    return { status: "open" };
+  });
+
+  app.post<{ Params: { id: string } }>("/sessions/:id/browser-panel/close", async (req, reply) => {
+    const session = requireSession(req.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    await app.browserManager.closePanelSession(session.id);
+    return { status: "closed" };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { url?: unknown };
+  }>("/sessions/:id/browser-panel/navigate", async (req, reply) => {
+    const session = requireSession(req.params.id);
+    if (!session) return reply.code(404).send({ error: "session not found" });
+    const url = req.body?.url;
+    if (typeof url !== "string" || url.length > 4_096 || !isAllowedPanelUrl(url)) {
+      return reply.code(400).send({ error: "url must use http, https, or about:blank" });
+    }
+    await app.browserManager.navigate(session.id, url);
+    return { status: "open" };
+  });
+
+  for (const action of ["back", "forward", "reload"] as const) {
+    app.post<{ Params: { id: string } }>(`/sessions/:id/browser-panel/${action}`, async (req, reply) => {
+      const session = requireSession(req.params.id);
+      if (!session) return reply.code(404).send({ error: "session not found" });
+      await app.browserManager[action](session.id);
+      return { status: "open" };
+    });
+  }
+
   // Keep the old URL explicit rather than silently starting a second browser backend.
   app.post("/internal/browser/:id/action", async (_req, reply) =>
     reply.code(410).send({ error: "请通过 agent_browser 扩展操作浏览器。" }));
 };
+
+function isAllowedPanelUrl(value: string): boolean {
+  if (value === "about:blank") return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}

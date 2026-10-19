@@ -59,7 +59,7 @@ async function fixture(options: {
   app.decorate("authorization", { authorize: authorization } as never);
   app.decorate("sessionStates", new Map([["s", { send: vi.fn() }]]) as never);
   app.decorate("browserManager", new BrowserSessionManager({ logger: app.log, sessionRoot: "/tmp/pi-auth-route-tests" }) as never);
-  const executeComputer = vi.fn(async () => ({ ok: true }));
+  const executeComputer = vi.fn(async (_input: unknown) => ({ ok: true }));
   app.decorate("computerManager", { sessionStatus: () => null, execute: executeComputer } as never);
   app.decorate("wechatFileTransfers", { sendFiles } as never);
   await app.register(pluginsRoutes);
