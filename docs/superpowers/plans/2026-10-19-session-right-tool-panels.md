@@ -288,11 +288,11 @@ pnpm --filter @pi-web-ui/web typecheck
 
 在 `App.vue` 以当前 session id、其 project id 驱动面板；`openTool()` 和 `showPreview()` 首次初始化该 session 状态时保存 project id，因此即使当前项目切换、sessionStore 载入另一项目的会话列表，旧 session view 仍有正确项目路径。会话切换只切换可见的 session view。文件与引用事件传入当前 session 的 `showPreview()`；session 删除时调用已打开组件的 `dispose()`，再从 store 移除其状态并卸载工具视图。
 
-- [ ] **步骤 3：保留桌面 sidecar 对 native 依赖的部署方式**
+- [x] **步骤 3：保留桌面 sidecar 对 native 依赖的部署方式**
 
 检查 `apps/desktop/scripts/prepare-sidecar.mjs` 的 `pnpm deploy --prod` 会包含服务端 `node-pty` 依赖；`runtime-files.mjs` 会在 pnpm 重装和归档前复制、恢复所有 `.node` 原生文件。该流程无需依赖 allowlist。桌面打包构建命令为 `pnpm --filter @pi-web-ui/desktop build:debug`。
 
-部分验证记录：production deploy 列表包含 `node-pty@1.1.0`；`.node` 全量备份恢复测试通过，node-pty 持续运行 shell smoke 与失败清理测试在本地 runtime 通过。完整 `build:debug` 因 Windows 构建环境 C 盘空间耗尽（`ENOSPC`）未完成，未确认最终桌面打包产物。
+验证记录：production deploy 列表包含 `node-pty@1.1.0`；`.node` 全量备份恢复测试通过，node-pty 持续运行 shell smoke 与失败清理测试在本地 runtime 通过。完整 debug 构建改在 D 盘独立工作树执行，临时目录与 `CARGO_TARGET_DIR` 均指向 D 盘；服务端、sidecar、前端、Rust debug 可执行文件及 MSI/NSIS 安装包均生成成功。命令最后在 Tauri updater 签名阶段因缺少 `TAURI_SIGNING_PRIVATE_KEY` 返回失败，因此未验证已签名 updater 产物。构建工作树：`D:\codex-build\session-right-tool-panels\workspace`；产物目录：`D:\codex-build\session-right-tool-panels\cargo-target\debug`。
 
 - [x] **步骤 4：运行服务端和前端类型检查**
 
