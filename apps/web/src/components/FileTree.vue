@@ -11,6 +11,7 @@ import FileTypeIcon from "./FileTypeIcon.vue";
 const props = withDefaults(defineProps<{ projectId: string; readOnly?: boolean }>(), { readOnly: false });
 const emit = defineEmits<{
   (e: "select", path: string): void;
+  (e: "select-file", path: string): void;
   (e: "load-error", message: string): void;
   (e: "load-success"): void;
 }>();
@@ -159,6 +160,7 @@ function handleSelect(keys: string[]) {
   const node = findNode(treeData.value, keys[0]);
   selectedNode.value = node;
   emit("select", keys[0]);
+  if (node?.type === "file") emit("select-file", keys[0]);
 }
 
 function findNode(nodes: TreeOption[], path: string): FileNodeDto | null {

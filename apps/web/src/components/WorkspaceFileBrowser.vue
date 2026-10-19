@@ -67,7 +67,7 @@ defineExpose({ refresh: refreshFiles });
           ref="fileTreeRef"
           :project-id="projectId"
           :read-only="true"
-          @select="selectedPath = $event"
+          @select-file="selectedPath = $event"
           @load-error="onListError"
           @load-success="onListSuccess"
         />

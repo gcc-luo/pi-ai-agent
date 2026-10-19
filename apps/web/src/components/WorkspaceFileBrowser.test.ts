@@ -10,7 +10,7 @@ vi.mock("../i18n/index.js", () => ({ useI18n: () => ({ t: (key: string) => key }
 const FileTreeStub = defineComponent({
   name: "FileTree",
   props: ["projectId", "readOnly"],
-  emits: ["select", "load-error"],
+  emits: ["select", "select-file", "load-error"],
   setup(_, { expose }) {
     expose({ refresh: refreshTree });
     return () => h("button", { "data-test": "mock-file", onClick: () => undefined });
@@ -33,7 +33,11 @@ describe("WorkspaceFileBrowser", () => {
       global: { stubs: { FileTree: FileTreeStub, FileViewer: FileViewerStub } },
     });
 
-    wrapper.getComponent(FileTreeStub).vm.$emit("select", "src/main.ts");
+    wrapper.getComponent(FileTreeStub).vm.$emit("select", "src");
+    await flushPromises();
+    expect(wrapper.getComponent(FileViewerStub).props("path")).toBeNull();
+
+    wrapper.getComponent(FileTreeStub).vm.$emit("select-file", "src/main.ts");
     await flushPromises();
     expect(wrapper.getComponent(FileViewerStub).props()).toMatchObject({
       projectId: "project-1",

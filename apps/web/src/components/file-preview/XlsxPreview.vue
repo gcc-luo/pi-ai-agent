@@ -7,14 +7,19 @@ import { useI18n } from "../../i18n/index.js";
 // use so its ~700KB never lands in the main bundle for users who never open
 // a spreadsheet.
 
-const props = defineProps<{ projectId: string; path: string }>();
+const props = defineProps<{ projectId: string; path: string; reloadKey?: number }>();
 
 interface SheetView { name: string; html: string; }
 const sheets = ref<SheetView[]>([]);
 const activeSheet = ref(0);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const retryVersion = ref(0);
 const { t } = useI18n();
+
+function retry() {
+  retryVersion.value++;
+}
 
 async function load() {
   loading.value = true;
@@ -41,7 +46,8 @@ async function load() {
   }
 }
 
-watch(() => [props.projectId, props.path], load, { immediate: true });
+watch(() => [props.projectId, props.path, props.reloadKey, retryVersion.value], load, { immediate: true });
+defineExpose({ retry });
 </script>
 
 <template>
@@ -56,7 +62,10 @@ watch(() => [props.projectId, props.path], load, { immediate: true });
       >{{ s.name }}</button>
     </div>
     <div v-if="loading" class="state">{{ t('viewer.rendering') }}</div>
-    <div v-else-if="error" class="state error">{{ error }}</div>
+    <div v-else-if="error" class="state error">
+      <span>{{ error }}</span>
+      <button type="button" data-test="retry-xlsx" @click="retry">{{ t('chat.retry') }}</button>
+    </div>
     <div v-else-if="sheets.length" class="sheet-wrap" v-html="sheets[activeSheet]?.html ?? ''" />
     <div v-else class="state">{{ t('viewer.emptyWorkbook') }}</div>
   </div>
@@ -118,5 +127,14 @@ watch(() => [props.projectId, props.path], load, { immediate: true });
   color: var(--text-muted);
   font-size: 12px;
 }
-.state.error { color: var(--rose); }
+.state.error { flex-direction: column; gap: 8px; color: var(--rose); }
+.state.error button {
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.state.error button:hover { border-color: var(--accent); color: var(--text-primary); }
 </style>

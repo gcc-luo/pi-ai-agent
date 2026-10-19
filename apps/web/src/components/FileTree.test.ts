@@ -78,4 +78,26 @@ describe("FileTree read-only mode", () => {
     wrapper.unmount();
     consoleError.mockRestore();
   });
+
+  it("keeps the legacy select event while identifying file selections separately", async () => {
+    vi.mocked(api.listFiles).mockResolvedValue([
+      { name: "src", path: "src", type: "directory", children: [
+        { name: "main.ts", path: "src/main.ts", type: "file" },
+      ] },
+    ] as never);
+    const wrapper = mountTree(true);
+    await flushPromises();
+    const tree = wrapper.getComponent(NTree);
+
+    tree.vm.$emit("update:selected-keys", ["src"]);
+    await flushPromises();
+    expect(wrapper.emitted("select")?.at(-1)).toEqual(["src"]);
+    expect(wrapper.emitted("select-file")).toBeUndefined();
+
+    tree.vm.$emit("update:selected-keys", ["src/main.ts"]);
+    await flushPromises();
+    expect(wrapper.emitted("select")?.at(-1)).toEqual(["src/main.ts"]);
+    expect(wrapper.emitted("select-file")?.at(-1)).toEqual(["src/main.ts"]);
+    wrapper.unmount();
+  });
 });

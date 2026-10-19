@@ -7,12 +7,17 @@ import { useI18n } from "../../i18n/index.js";
 // the ~270KB library never lands in the main bundle for users who never
 // open a .docx. Vite resolves its `browser` field automatically.
 
-const props = defineProps<{ projectId: string; path: string }>();
+const props = defineProps<{ projectId: string; path: string; reloadKey?: number }>();
 
 const html = ref<string>("");
 const loading = ref(false);
 const error = ref<string | null>(null);
+const retryVersion = ref(0);
 const { t } = useI18n();
+
+function retry() {
+  retryVersion.value++;
+}
 
 async function load() {
   loading.value = true;
@@ -32,13 +37,17 @@ async function load() {
   }
 }
 
-watch(() => [props.projectId, props.path], load, { immediate: true });
+watch(() => [props.projectId, props.path, props.reloadKey, retryVersion.value], load, { immediate: true });
+defineExpose({ retry });
 </script>
 
 <template>
   <div class="docx-preview">
     <div v-if="loading" class="state">{{ t('viewer.rendering') }}</div>
-    <div v-else-if="error" class="state error">{{ error }}</div>
+    <div v-else-if="error" class="state error">
+      <span>{{ error }}</span>
+      <button type="button" data-test="retry-docx" @click="retry">{{ t('chat.retry') }}</button>
+    </div>
     <div v-else class="docx-html" v-html="html" />
   </div>
 </template>
@@ -82,5 +91,14 @@ watch(() => [props.projectId, props.path], load, { immediate: true });
   color: var(--text-muted);
   font-size: 12px;
 }
-.state.error { color: var(--rose); }
+.state.error { flex-direction: column; gap: 8px; color: var(--rose); }
+.state.error button {
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.state.error button:hover { border-color: var(--accent); color: var(--text-primary); }
 </style>
