@@ -32,7 +32,7 @@ vi.mock("@xterm/xterm", () => ({
     writes: unknown[] = [];
     open = vi.fn();
     write = vi.fn((data: unknown) => this.writes.push(data));
-    reset = vi.fn();
+    reset = vi.fn(() => { this.writes.length = 0; });
     dispose = vi.fn();
     loadAddon = vi.fn();
     onData = vi.fn((callback: (data: string) => void) => { this.onDataCallback = callback; return { dispose: vi.fn() }; });
@@ -114,6 +114,27 @@ describe("workspace terminal", () => {
     await flushPromises();
     expect(createTerminalSocket).toHaveBeenCalledTimes(2);
     expect(terminalMocks.instances).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("clears old screen output before reconnect replay to avoid duplicates", async () => {
+    const wrapper = mountTerminal();
+    await flushPromises();
+    const original = sockets[0]!;
+    original.onopen?.(new Event("open"));
+    original.receive(new Uint8Array([104, 105, 13, 10]).buffer);
+    expect(terminalMocks.instances[0]!.writes).toHaveLength(1);
+
+    original.onclose?.({ code: 1006, reason: "connection lost" } as CloseEvent);
+    await flushPromises();
+    await wrapper.get('[data-test="terminal-retry"]').trigger("click");
+    await flushPromises();
+    const reconnected = sockets[1]!;
+    reconnected.onopen?.(new Event("open"));
+    reconnected.receive(new Uint8Array([104, 105, 13, 10]).buffer);
+
+    expect(terminalMocks.instances[0]!.reset).toHaveBeenCalledTimes(1);
+    expect(terminalMocks.instances[0]!.writes).toHaveLength(1);
     wrapper.unmount();
   });
 

@@ -23,6 +23,7 @@ let generation = 0;
 let disposed = false;
 let disposal: Promise<void> | undefined;
 let lastSize = "";
+let hasConnected = false;
 
 function send(message: Record<string, unknown>) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -52,6 +53,10 @@ function disconnect() {
 
 async function connect() {
   if (!props.active || disposed || state.value === "ended") return;
+  if (hasConnected) {
+    terminal?.reset();
+    lastSize = "";
+  }
   disconnect();
   const attempt = generation;
   state.value = "connecting";
@@ -63,6 +68,7 @@ async function connect() {
     candidate.onopen = () => {
       if (candidate !== socket || attempt !== generation) return;
       state.value = "connected";
+      hasConnected = true;
       error.value = "";
       lastSize = "";
       reportSize();
@@ -109,8 +115,6 @@ async function restart() {
   error.value = "";
   try {
     await closeTerminalSession(props.sessionId);
-    terminal?.reset();
-    lastSize = "";
     await nextTick();
     await connect();
   } catch (cause) {
