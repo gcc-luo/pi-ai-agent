@@ -29,6 +29,7 @@ import {
   backupNativeArtifacts,
   copyRuntimeTree,
   restoreNativeArtifacts,
+  smokeTestNodePtyRuntime,
 } from "./runtime-files.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -36,7 +37,7 @@ const root = resolve(scriptDir, "../../..");
 const serverDir = resolve(root, "apps/server");
 const binariesDir = resolve(scriptDir, "../src-tauri/binaries");
 const resourcesDir = resolve(scriptDir, "../resources");
-const deployDir = mkdtempSync(path.join(scriptDir, ".deploy-"));
+const deployDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-deploy-"));
 const runtimeArchive = resolve(resourcesDir, "server-runtime.tar.gz");
 const runtimeChecksum = resolve(resourcesDir, "server-runtime.sha256");
 
@@ -102,7 +103,7 @@ const deploymentPackagePath = resolve(deployDir, "package.json");
 const deploymentPackage = JSON.parse(readFileSync(deploymentPackagePath, "utf8"));
 delete deploymentPackage.dependencies?.["@pi-web-ui/shared"];
 writeFileSync(deploymentPackagePath, `${JSON.stringify(deploymentPackage, null, 2)}\n`);
-const nativeBackupDir = mkdtempSync(path.join(scriptDir, ".native-"));
+const nativeBackupDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-native-"));
 backupNativeArtifacts(deployDir, nativeBackupDir);
 console.log("\nHoisting production dependencies...");
 execFileSync(
@@ -174,6 +175,8 @@ console.log("\nStarting packaged server smoke test...");
 await smokeTestServer(nodeSidecarPath, serverEntry, runtimeDir);
 
 console.log("\nArchiving server runtime...");
+smokeTestNodePtyRuntime(nodeSidecarPath, runtimeDir);
+console.log("Verified packaged node-pty shell spawn, output, and PTY kill.");
 mkdirSync(resourcesDir, { recursive: true });
 rmSync(runtimeArchive, { force: true });
 execFileSync(

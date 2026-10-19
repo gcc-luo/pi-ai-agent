@@ -88,6 +88,13 @@ test("bundles a verified PortableGit runtime for the Windows shell fallback", ()
   assert.doesNotMatch(tauriBuildScript, /File::create/);
 });
 
+test("uses a short temporary path for pnpm deployment on Windows", () => {
+  const sidecarRuntimeScript = readFileSync(sidecarRuntimeScriptPath, "utf8");
+
+  assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-deploy-"\)\)/);
+  assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-native-"\)\)/);
+});
+
 test("configures an NSIS hook that only stops the sidecar in the install directory", () => {
   const config = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
   const hooks = readFileSync(installerHooksPath, "utf8");

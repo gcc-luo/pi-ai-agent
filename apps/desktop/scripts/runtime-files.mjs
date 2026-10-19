@@ -5,7 +5,49 @@ import {
   readdirSync,
   realpathSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
+
+/** Load node-pty from the runtime, run a shell command, then terminate its PTY. */
+export function smokeTestNodePtyRuntime(nodePath, runtimeDir) {
+  const smokeScript = `
+    import * as nodePty from 'node-pty';
+    const marker = 'PI_TERMINAL_SMOKE_OK';
+    const shell = process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/sh');
+    const command = process.platform === 'win32'
+      ? ['/d', '/c', 'echo ' + marker]
+      : ['-c', "printf '" + marker + "\\n'"];
+    const pty = nodePty.spawn(shell, command, {
+      cwd: process.cwd(), cols: 80, rows: 24, name: 'xterm-256color',
+      env: { ...process.env, TERM: 'xterm-256color' },
+    });
+    let output = '';
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { pty.kill(); reject(new Error('terminal smoke timed out')); }, 15000);
+      pty.onData((data) => {
+        output += data;
+        if (output.includes(marker)) pty.kill();
+      });
+      pty.onExit(() => {
+        clearTimeout(timer);
+        if (output.includes(marker)) resolve();
+        else reject(new Error('terminal shell exited without output: ' + output));
+      });
+    });
+    process.stdout.write(output);
+  `;
+  const output = execFileSync(nodePath, ["--input-type=module", "--eval", smokeScript], {
+    cwd: runtimeDir,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 20_000,
+    windowsHide: true,
+  });
+  if (!output.includes("PI_TERMINAL_SMOKE_OK")) {
+    throw new Error("Packaged node-pty did not return the expected shell output");
+  }
+  return "PI_TERMINAL_SMOKE_OK";
+}
 
 /**
  * Copy a hoisted pnpm deployment into an archive-safe directory. Windows tar

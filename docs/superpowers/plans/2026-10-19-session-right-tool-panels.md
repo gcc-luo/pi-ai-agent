@@ -280,11 +280,11 @@ pnpm --filter @pi-web-ui/web typecheck
 - 修改：`apps/server/src/routes/projects.ts`
 - 修改：`apps/server/src/index.ts`
 
-- [ ] **步骤 1：统一 session 资源销毁路径**
+- [x] **步骤 1：统一 session 资源销毁路径**
 
 删除会话、永久清空回收站、删除项目时，对受影响 session 调用 `terminalManager.close(sessionId)`；浏览器清理继续由已有 `browserManager.close(sessionId)` 负责。Fastify `onClose` 钩子等待 `terminalManager.shutdown()` 完成。临时断开 WebSocket 不触发 PTY 清理。
 
-- [ ] **步骤 2：接入当前会话 UI 与临时预览**
+- [x] **步骤 2：接入当前会话 UI 与临时预览**
 
 在 `App.vue` 以当前 session id、其 project id 驱动面板；`openTool()` 和 `showPreview()` 首次初始化该 session 状态时保存 project id，因此即使当前项目切换、sessionStore 载入另一项目的会话列表，旧 session view 仍有正确项目路径。会话切换只切换可见的 session view。文件与引用事件传入当前 session 的 `showPreview()`；session 删除时调用已打开组件的 `dispose()`，再从 store 移除其状态并卸载工具视图。
 
@@ -292,7 +292,9 @@ pnpm --filter @pi-web-ui/web typecheck
 
 检查 `apps/desktop/scripts/prepare-sidecar.mjs` 的 `pnpm deploy --prod` 会包含服务端 `node-pty` 依赖；`runtime-files.mjs` 会在 pnpm 重装和归档前复制、恢复所有 `.node` 原生文件。该流程无需依赖 allowlist。桌面打包构建命令为 `pnpm --filter @pi-web-ui/desktop build:debug`。
 
-- [ ] **步骤 4：运行服务端和前端类型检查**
+验证记录：production deploy 列表包含 `node-pty@1.1.0`，并已对实际打包 runtime 目录运行 PTY shell smoke 成功；完整 `build:debug` 最终因 Windows 构建环境 C 盘空间耗尽（`ENOSPC`）未完成。
+
+- [x] **步骤 4：运行服务端和前端类型检查**
 
 运行：
 
