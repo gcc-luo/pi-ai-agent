@@ -256,7 +256,7 @@ pnpm --filter @pi-web-ui/web typecheck
 
 - [x] **步骤 3：连接和终止远端 PTY**
 
-使用 `workspace-tools.ts` 连接 `/ws/terminal/:sessionId`，认证子协议与浏览器相同。将 `term.onData()` 发送为 input JSON，将 text/binary 输出帧写入 `term.write()`；连接重建时按 session ID 重新连接旧 PTY，并先重放 manager 的有界输出缓冲。显式关闭标签时发送 `{type:"close"}` 并关闭 socket；工具切换、面板隐藏和 session 切换都保留组件与 socket，以便 xterm 累积完整输出。
+先调用 `POST /api/sessions/:id/terminal/open`，服务端从 session/project 关系派生 cwd 并启动独立 PTY；成功后再通过 `workspace-tools.ts` 连接 `/ws/terminal/:sessionId`，认证子协议与浏览器相同。WebSocket 路由只连接已打开的 PTY，不在握手中创建进程。将 `term.onData()` 发送为 input JSON，将 text/binary 输出帧写入 `term.write()`；重连时复用 session ID 对应的 PTY，并先重放 manager 的有界输出缓冲。断开 socket 本身不终止 PTY；显式关闭标签时发送 `{type:"close"}`，并通过 `POST /api/sessions/:id/terminal/close` 兜底清理；若打开请求仍在进行，dispose 等它结束后再调用 REST close。工具切换、面板隐藏和 session 切换都保留组件与 socket，以便 xterm 累积完整输出。
 
 - [x] **步骤 4：注册终端组件并完成文案**
 
@@ -292,7 +292,7 @@ pnpm --filter @pi-web-ui/web typecheck
 
 检查 `apps/desktop/scripts/prepare-sidecar.mjs` 的 `pnpm deploy --prod` 会包含服务端 `node-pty` 依赖；`runtime-files.mjs` 会在 pnpm 重装和归档前复制、恢复所有 `.node` 原生文件。该流程无需依赖 allowlist。桌面打包构建命令为 `pnpm --filter @pi-web-ui/desktop build:debug`。
 
-验证记录：production deploy 列表包含 `node-pty@1.1.0`，并已对实际打包 runtime 目录运行 PTY shell smoke 成功；完整 `build:debug` 最终因 Windows 构建环境 C 盘空间耗尽（`ENOSPC`）未完成。
+部分验证记录：production deploy 列表包含 `node-pty@1.1.0`；`.node` 全量备份恢复测试通过，node-pty 持续运行 shell smoke 与失败清理测试在本地 runtime 通过。完整 `build:debug` 因 Windows 构建环境 C 盘空间耗尽（`ENOSPC`）未完成，未确认最终桌面打包产物。
 
 - [x] **步骤 4：运行服务端和前端类型检查**
 

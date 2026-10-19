@@ -4,49 +4,69 @@ import {
   mkdirSync,
   readdirSync,
   realpathSync,
+  rmSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-/** Load node-pty from the runtime, run a shell command, then terminate its PTY. */
+/** Load node-pty, verify shell output, request a kill, and await the PTY exit. */
 export function smokeTestNodePtyRuntime(nodePath, runtimeDir) {
   const smokeScript = `
     import * as nodePty from 'node-pty';
     const marker = 'PI_TERMINAL_SMOKE_OK';
     const shell = process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/sh');
     const command = process.platform === 'win32'
-      ? ['/d', '/c', 'echo ' + marker]
-      : ['-c', "printf '" + marker + "\\n'"];
+      ? ['/d', '/c', 'echo ' + marker + ' & ping -n 31 127.0.0.1 >nul']
+      : ['-c', "printf '" + marker + "\\n'; sleep 30"];
     const pty = nodePty.spawn(shell, command, {
       cwd: process.cwd(), cols: 80, rows: 24, name: 'xterm-256color',
       env: { ...process.env, TERM: 'xterm-256color' },
     });
     let output = '';
+    let markerReceived = false;
+    let killRequested = false;
+    let exitedAfterKill = false;
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pty.kill(); reject(new Error('terminal smoke timed out')); }, 15000);
       pty.onData((data) => {
         output += data;
-        if (output.includes(marker)) pty.kill();
+        if (!markerReceived && output.includes(marker)) {
+          markerReceived = true;
+          killRequested = true;
+          pty.kill();
+        }
       });
       pty.onExit(() => {
+        exitedAfterKill = markerReceived && killRequested;
         clearTimeout(timer);
-        if (output.includes(marker)) resolve();
+        if (exitedAfterKill) resolve();
         else reject(new Error('terminal shell exited without output: ' + output));
       });
     });
-    process.stdout.write(output);
+    process.stdout.write(JSON.stringify({ markerReceived, killRequested, exitedAfterKill }));
   `;
-  const output = execFileSync(nodePath, ["--input-type=module", "--eval", smokeScript], {
+  const resultText = execFileSync(nodePath, ["--input-type=module", "--eval", smokeScript], {
     cwd: runtimeDir,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 20_000,
     windowsHide: true,
   });
-  if (!output.includes("PI_TERMINAL_SMOKE_OK")) {
-    throw new Error("Packaged node-pty did not return the expected shell output");
+  const result = JSON.parse(resultText);
+  if (result.markerReceived !== true || result.killRequested !== true || result.exitedAfterKill !== true) {
+    throw new Error("Packaged node-pty did not complete the expected shell output and kill lifecycle");
   }
-  return "PI_TERMINAL_SMOKE_OK";
+  return result;
+}
+
+/** Ensure failed packaging smoke runs do not strand a large runtime tree. */
+export function smokeTestNodePtyRuntimeOrCleanup(nodePath, runtimeDir) {
+  try {
+    return smokeTestNodePtyRuntime(nodePath, runtimeDir);
+  } catch (error) {
+    rmSync(runtimeDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 /**

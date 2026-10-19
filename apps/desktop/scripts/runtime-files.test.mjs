@@ -19,6 +19,7 @@ import {
   copyRuntimeTree,
   restoreNativeArtifacts,
   smokeTestNodePtyRuntime,
+  smokeTestNodePtyRuntimeOrCleanup,
 } from "./runtime-files.mjs";
 
 test("copies pnpm deployment links into real directories", () => {
@@ -81,7 +82,19 @@ test("backs up and restores every native addon from the pnpm virtual store", () 
 
 test("loads node-pty from the runtime, captures shell output, and kills the PTY", () => {
   const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../server");
-  assert.equal(smokeTestNodePtyRuntime(process.execPath, serverDir), "PI_TERMINAL_SMOKE_OK");
+  assert.deepEqual(smokeTestNodePtyRuntime(process.execPath, serverDir), {
+    markerReceived: true,
+    killRequested: true,
+    exitedAfterKill: true,
+  });
+});
+
+test("removes the production runtime directory when PTY smoke fails", () => {
+  const runtimeDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-runtime-failed-smoke-"));
+  writeFileSync(path.join(runtimeDir, "runtime-placeholder"), "runtime");
+
+  assert.throws(() => smokeTestNodePtyRuntimeOrCleanup("missing-node-sidecar.exe", runtimeDir));
+  assert.equal(existsSync(runtimeDir), false);
 });
 
 function expectNativeArtifact(root, artifact, expected) {

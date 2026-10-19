@@ -93,6 +93,7 @@ test("uses a short temporary path for pnpm deployment on Windows", () => {
 
   assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-deploy-"\)\)/);
   assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-native-"\)\)/);
+  assert.match(sidecarRuntimeScript, /smokeTestNodePtyRuntimeOrCleanup\(nodeSidecarPath, runtimeDir\)/);
 });
 
 test("configures an NSIS hook that only stops the sidecar in the install directory", () => {

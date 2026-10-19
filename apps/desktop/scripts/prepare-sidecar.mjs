@@ -29,7 +29,7 @@ import {
   backupNativeArtifacts,
   copyRuntimeTree,
   restoreNativeArtifacts,
-  smokeTestNodePtyRuntime,
+  smokeTestNodePtyRuntimeOrCleanup,
 } from "./runtime-files.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -175,8 +175,8 @@ console.log("\nStarting packaged server smoke test...");
 await smokeTestServer(nodeSidecarPath, serverEntry, runtimeDir);
 
 console.log("\nArchiving server runtime...");
-smokeTestNodePtyRuntime(nodeSidecarPath, runtimeDir);
-console.log("Verified packaged node-pty shell spawn, output, and PTY kill.");
+smokeTestNodePtyRuntimeOrCleanup(nodeSidecarPath, runtimeDir);
+console.log("Verified packaged node-pty shell output, kill request, and exit.");
 mkdirSync(resourcesDir, { recursive: true });
 rmSync(runtimeArchive, { force: true });
 execFileSync(
