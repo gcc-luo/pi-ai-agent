@@ -196,6 +196,7 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     // File viewer
     "viewer.selectFile": "Select a file to view",
+    "viewer.loadFailed": "File preview could not be loaded",
     "viewer.unsupportedHint": "Preview not available for this file type.",
     "viewer.download": "Download",
     "viewer.tooLarge": "File too large to preview",
@@ -1103,6 +1104,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "chat.copied": "已复制",
 
     "viewer.selectFile": "选择一个文件查看",
+    "viewer.loadFailed": "文件预览加载失败",
     "viewer.unsupportedHint": "此文件类型暂不支持预览。",
     "viewer.download": "下载",
     "viewer.tooLarge": "文件过大，无法预览",
