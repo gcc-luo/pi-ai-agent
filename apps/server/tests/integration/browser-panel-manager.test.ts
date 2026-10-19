@@ -104,4 +104,55 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps daemon cleanup tracking after panel close and reuses the shared page on reopen", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1", url: "https://agent.test/" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44103 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await manager.ensurePanelSession("session-reopen");
+      await manager.closePanelSession("session-reopen");
+      expect(manager.getPanelStreamPort("session-reopen")).toBeNull();
+      expect(calls.some((args) => args[4] === "close")).toBe(false);
+
+      await manager.ensurePanelSession("session-reopen");
+      expect(calls.filter((args) => args[4] === "tab" && args[5] === "list")).toHaveLength(2);
+      expect(calls.filter((args) => args[4] === "open")).toHaveLength(0);
+      expect(manager.getPanelStreamPort("session-reopen")).toBe(44103);
+      await manager.closePanelSession("session-reopen");
+
+      await manager.shutdown();
+      expect(calls.some((args) => args[4] === "close")).toBe(true);
+      expect(manager.getPanelStreamPort("session-reopen")).toBeNull();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("closes a tracked daemon when its session is deleted after the panel closed", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44104 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await manager.ensurePanelSession("session-deleted");
+      await manager.closePanelSession("session-deleted");
+      await manager.close("session-deleted");
+      expect(calls.some((args) => args[4] === "close")).toBe(true);
+      expect(manager.getPanelStreamPort("session-deleted")).toBeNull();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

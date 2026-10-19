@@ -82,6 +82,7 @@ export class BrowserSessionManager {
   >();
   private readonly states = new Map<string, BrowserCapabilityDto>();
   private readonly panelSessions = new Set<string>();
+  private readonly panelBrowserSessions = new Set<string>();
   private readonly panelPorts = new Map<string, number>();
   private readonly panelStarting = new Map<string, Promise<number>>();
   private readonly runCommand: CommandRunner;
@@ -243,7 +244,9 @@ export class BrowserSessionManager {
     // Close only this host's default daemon, never a user-owned session or namespace.
     this.pending.delete(sessionId);
     await this.panelStarting.get(sessionId)?.catch(() => undefined);
-    const shouldCloseBrowser = this.states.has(sessionId) || this.panelSessions.has(sessionId);
+    const shouldCloseBrowser = this.states.has(sessionId)
+      || this.panelSessions.has(sessionId)
+      || this.panelBrowserSessions.has(sessionId);
     try {
       await this.closePanelSession(sessionId);
     } catch (error) {
@@ -256,6 +259,7 @@ export class BrowserSessionManager {
       await this.runForSession(sessionId, ["close"]);
       this.states.delete(sessionId);
       this.panelSessions.delete(sessionId);
+      this.panelBrowserSessions.delete(sessionId);
       this.panelPorts.delete(sessionId);
     } catch (error) {
       this.options.logger.warn(
@@ -273,7 +277,12 @@ export class BrowserSessionManager {
 
   async shutdown(): Promise<void> {
     await Promise.allSettled(
-      [...new Set([...this.states.keys(), ...this.panelSessions, ...this.panelStarting.keys()])].map((id) => this.close(id)),
+      [...new Set([
+        ...this.states.keys(),
+        ...this.panelSessions,
+        ...this.panelBrowserSessions,
+        ...this.panelStarting.keys(),
+      ])].map((id) => this.close(id)),
     );
   }
 
@@ -295,6 +304,7 @@ export class BrowserSessionManager {
     // Mark the daemon as a panel resource before enabling the stream so later
     // session cleanup still releases it if stream startup fails midway.
     this.panelSessions.add(sessionId);
+    this.panelBrowserSessions.add(sessionId);
 
     let status = streamStatus(parseJsonOutput(
       (await this.runCommand(browserBinary(), [...prefix, "stream", "status", "--json"], this.commandOptions(sessionId))).stdout,
