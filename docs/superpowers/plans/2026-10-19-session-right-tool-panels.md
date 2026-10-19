@@ -135,7 +135,7 @@ interface WorkspaceSessionPanel {
 
 - [x] **步骤 1：让面板启动与 Agent 使用相同实例**
 
-在 `BrowserSessionManager` 增加按 session ID 的 `ensurePanelSession()`、`navigate()`、`back()`、`forward()`、`reload()` 和 `closePanelSession()`。所有 CLI 调用使用已有 `browserIdentity()` 和 `browserEnvironment()`；确保实例时使用同一个 namespace/session，缺少活动页面时执行 `agent-browser open about:blank`，之后执行 `stream enable` 和 `stream status --json` 并保存本机流端口。将面板启动的实例纳入现有 manager 状态及 `close()`/`shutdown()` 清理路径。
+在 `BrowserSessionManager` 增加按 session ID 的 `ensurePanelSession()`、`navigate()`、`back()`、`forward()`、`reload()` 和 `closePanelSession()`。所有 CLI 调用使用已有 `browserIdentity()` 和 `browserEnvironment()`；确保实例时使用同一个 namespace/session，缺少活动页面时执行 `agent-browser open about:blank`，之后执行 `stream enable` 和 `stream status --json` 并保存本机流端口。将面板启动的实例纳入现有 manager 状态及 `close()`/`shutdown()` 清理路径；永久删除后的清理若失败，按每会话指数退避重试，成功、会话恢复或服务关闭时清除 retry 状态。
 
 - [x] **步骤 2：保持现有浏览器启动模式**
 
@@ -143,7 +143,7 @@ interface WorkspaceSessionPanel {
 
 - [x] **步骤 3：增加面板控制 API**
 
-在 `browserRoutes` 中增加会话存在性校验后的面板启动/关闭/导航操作；这些用户操作不能调用现有 `PUT /sessions/:id/browser`，因为该路由会改变 Agent 插件启用状态并重启 Agent。导航 URL 只接受 `http:`、`https:` 和 `about:blank`。
+在 `browserRoutes` 中增加会话存在性校验后的面板启动/关闭/导航操作；这些用户操作不能调用现有 `PUT /sessions/:id/browser`，因为该路由会改变 Agent 插件启用状态并重启 Agent。所有面板 POST 先执行本机 Origin 校验，外站 Origin 返回 403。导航 URL 只接受 `http:`、`https:` 和 `about:blank`。
 
 - [x] **步骤 4：代理实时流并隔离会话**
 
