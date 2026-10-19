@@ -322,6 +322,87 @@ describe("browser panel session manager", () => {
     }
   });
 
+  it("automatically retries failed forget cleanup and clears its retry tracking on success", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    let closeCalls = 0;
+    const logger = { warn: vi.fn() };
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44111 }), stderr: "" };
+      if (args[4] === "close" && ++closeCalls < 4) throw new Error("transient close failure");
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({
+      logger: logger as never,
+      sessionRoot: root,
+      runCommand,
+      forgetRetryBaseMs: 10,
+      forgetRetryMaxMs: 20,
+    });
+    try {
+      await manager.ensurePanelSession("session-forget-retry");
+      vi.useFakeTimers();
+      await expect(manager.forgetSession("session-forget-retry")).rejects.toThrow("transient close failure");
+      expect(closeCalls).toBe(1);
+      expect((manager as any).forgetRetries.get("session-forget-retry")?.timer).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(10);
+      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(closeCalls).toBe(4);
+      expect((manager as any).forgetRetries.has("session-forget-retry")).toBe(false);
+
+      const retryWarnings = logger.warn.mock.calls.filter(([, message]) => String(message).includes("retry"));
+      expect(retryWarnings.map(([fields]) => [fields.sessionId, fields.attempt, fields.delayMs])).toEqual([
+        ["session-forget-retry", 1, 10],
+        ["session-forget-retry", 2, 20],
+        ["session-forget-retry", 3, 20],
+      ]);
+      expect((manager as any).terminalSessions.has("session-forget-retry")).toBe(false);
+      expect((manager as any).closingSessions.has("session-forget-retry")).toBe(false);
+      expect((manager as any).panelBrowserSessions.has("session-forget-retry")).toBe(false);
+      expect((manager as any).states.has("session-forget-retry")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cancels pending forget retries during shutdown", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    let failClose = true;
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44112 }), stderr: "" };
+      if (args[4] === "close" && failClose) throw new Error("transient close failure");
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({
+      logger: Fastify({ logger: false }).log,
+      sessionRoot: root,
+      runCommand,
+      forgetRetryBaseMs: 60_000,
+      forgetRetryMaxMs: 60_000,
+    } as never);
+    try {
+      await manager.ensurePanelSession("session-forget-shutdown");
+      vi.useFakeTimers();
+      await expect(manager.forgetSession("session-forget-shutdown")).rejects.toThrow("transient close failure");
+      expect((manager as any).forgetRetries.get("session-forget-shutdown")?.timer).toBeTruthy();
+
+      failClose = false;
+      await manager.shutdown();
+
+      expect((manager as any).forgetRetries.size).toBe(0);
+      expect(runCommand.mock.calls.filter(([, args]) => args[4] === "close")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("allows the panel to reopen after closing all active browser resources", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
     const calls: string[][] = [];

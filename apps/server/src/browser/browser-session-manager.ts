@@ -34,6 +34,8 @@ export interface BrowserSessionCloseOptions {
   retainTombstone?: boolean;
 }
 
+type ForgetRetry = { attempt: number; timer: ReturnType<typeof setTimeout> | null };
+
 function parseJsonOutput(output: string, label: string): Record<string, unknown> {
   let value: unknown;
   try {
@@ -90,6 +92,7 @@ export class BrowserSessionManager {
   private readonly panelPorts = new Map<string, number>();
   private readonly panelStarting = new Map<string, Promise<number>>();
   private readonly sessionOperations = new Map<string, Promise<void>>();
+  private readonly forgetRetries = new Map<string, ForgetRetry>();
   private readonly closingSessions = new Set<string>();
   private readonly terminalSessions = new Set<string>();
   private shuttingDown = false;
@@ -100,6 +103,8 @@ export class BrowserSessionManager {
       logger: FastifyBaseLogger;
       sessionRoot: string;
       runCommand?: CommandRunner;
+      forgetRetryBaseMs?: number;
+      forgetRetryMaxMs?: number;
     },
   ) {
     this.runCommand = options.runCommand ?? defaultCommandRunner;
@@ -272,28 +277,36 @@ export class BrowserSessionManager {
 
   /** Permanently forget a purged session after all queued browser operations finish. */
   async forgetSession(sessionId: string): Promise<void> {
+    this.clearForgetRetry(sessionId);
     this.closingSessions.add(sessionId);
     // The database row is already gone, so this session must not be reused even
     // if closing its browser daemon fails and cleanup has to be retried later.
     this.terminalSessions.add(sessionId);
     this.pending.delete(sessionId);
-    await this.withSessionLock(sessionId, async () => {
-      await this.closeSessionResourcesLocked(sessionId);
-      this.pending.delete(sessionId);
-      this.states.delete(sessionId);
-      this.panelSessions.delete(sessionId);
-      this.panelBrowserSessions.delete(sessionId);
-      this.panelPorts.delete(sessionId);
-      this.panelStarting.delete(sessionId);
-      this.terminalSessions.delete(sessionId);
-      this.closingSessions.delete(sessionId);
-    });
+    try {
+      await this.withSessionLock(sessionId, async () => {
+        await this.closeSessionResourcesLocked(sessionId);
+        this.pending.delete(sessionId);
+        this.states.delete(sessionId);
+        this.panelSessions.delete(sessionId);
+        this.panelBrowserSessions.delete(sessionId);
+        this.panelPorts.delete(sessionId);
+        this.panelStarting.delete(sessionId);
+        this.terminalSessions.delete(sessionId);
+        this.closingSessions.delete(sessionId);
+      });
+      this.clearForgetRetry(sessionId, true);
+    } catch (error) {
+      this.scheduleForgetRetry(sessionId, error);
+      throw error;
+    }
   }
 
   async resumeSession(sessionId: string): Promise<void> {
     if (this.shuttingDown) throw new Error("browser manager is shutting down");
     await this.withSessionLock(sessionId, async () => {
       if (this.shuttingDown) throw new Error("browser manager is shutting down");
+      this.clearForgetRetry(sessionId, true);
       this.terminalSessions.delete(sessionId);
       this.closingSessions.delete(sessionId);
     });
@@ -319,7 +332,36 @@ export class BrowserSessionManager {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    for (const sessionId of this.forgetRetries.keys()) this.clearForgetRetry(sessionId, true);
     await this.closeAll();
+  }
+
+  private clearForgetRetry(sessionId: string, clearAttempt = false): void {
+    const retry = this.forgetRetries.get(sessionId);
+    if (!retry) return;
+    if (retry.timer) clearTimeout(retry.timer);
+    if (clearAttempt) this.forgetRetries.delete(sessionId);
+    else retry.timer = null;
+  }
+
+  private scheduleForgetRetry(sessionId: string, error: unknown): void {
+    if (this.shuttingDown) return;
+    const retry = this.forgetRetries.get(sessionId) ?? { attempt: 0, timer: null };
+    if (retry.timer) clearTimeout(retry.timer);
+    retry.attempt += 1;
+    const baseMs = Math.max(1, this.options.forgetRetryBaseMs ?? 1_000);
+    const maxMs = Math.max(baseMs, this.options.forgetRetryMaxMs ?? 60_000);
+    const delayMs = Math.min(maxMs, baseMs * (2 ** Math.min(retry.attempt - 1, 30)));
+    retry.timer = setTimeout(() => {
+      if (this.shuttingDown || this.forgetRetries.get(sessionId) !== retry) return;
+      retry.timer = null;
+      void this.forgetSession(sessionId).catch(() => undefined);
+    }, delayMs);
+    this.forgetRetries.set(sessionId, retry);
+    this.options.logger.warn(
+      { sessionId, attempt: retry.attempt, delayMs, err: error },
+      "browser cleanup failed; scheduling retry",
+    );
   }
 
   private async startPanelSession(sessionId: string): Promise<number> {
@@ -412,7 +454,7 @@ export class BrowserSessionManager {
       this.states.set(sessionId, {
         ...this.status(sessionId, true),
         status: "error",
-        error: "浏览器清理失败，空闲超时将再次回收。",
+        error: "浏览器清理失败，资源仍待回收。",
       });
       throw error;
     }
