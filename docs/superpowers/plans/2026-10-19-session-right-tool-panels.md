@@ -133,29 +133,29 @@ interface WorkspaceSessionPanel {
 - 修改：`apps/server/src/wiring.ts`
 - 修改：`apps/server/src/types/fastify.d.ts`
 
-- [ ] **步骤 1：让面板启动与 Agent 使用相同实例**
+- [x] **步骤 1：让面板启动与 Agent 使用相同实例**
 
 在 `BrowserSessionManager` 增加按 session ID 的 `ensurePanelSession()`、`navigate()`、`back()`、`forward()`、`reload()` 和 `closePanelSession()`。所有 CLI 调用使用已有 `browserIdentity()` 和 `browserEnvironment()`；确保实例时使用同一个 namespace/session，缺少活动页面时执行 `agent-browser open about:blank`，之后执行 `stream enable` 和 `stream status --json` 并保存本机流端口。将面板启动的实例纳入现有 manager 状态及 `close()`/`shutdown()` 清理路径。
 
-- [ ] **步骤 2：保持现有浏览器启动模式**
+- [x] **步骤 2：保持现有浏览器启动模式**
 
 检查 `browserEnvironment()` 对 `PI_BROWSER_HEADLESS`、`AGENT_BROWSER_CONFIG`、session 和 namespace 的配置，面板启动、流代理与 Agent 扩展全部调用现有同一份会话配置；不修改 `headed` 默认值，不新建第二个 browser identity。
 
-- [ ] **步骤 3：增加面板控制 API**
+- [x] **步骤 3：增加面板控制 API**
 
 在 `browserRoutes` 中增加会话存在性校验后的面板启动/关闭/导航操作；这些用户操作不能调用现有 `PUT /sessions/:id/browser`，因为该路由会改变 Agent 插件启用状态并重启 Agent。导航 URL 只接受 `http:`、`https:` 和 `about:blank`。
 
-- [ ] **步骤 4：代理实时流并隔离会话**
+- [x] **步骤 4：代理实时流并隔离会话**
 
 新增 `/ws/browser/:sessionId` Fastify WebSocket 路由。用 `app.sessions.findById(sessionId)` 验证会话，再以 `BrowserSessionManager` 返回的 `127.0.0.1` 流端口建立服务端 WebSocket。双向转发 agent-browser 消息；客户端帧必须是 JSON 对象，只允许已知消息类型 `input_mouse`、`input_keyboard`、`input_touch`、`config`、`ack`，校验数字字段为有限值并限制文本帧为 64 KiB；在任一侧关闭时关闭另一侧连接。
 
 agent-browser 服务端帧包括 `frame`、`status`、`tabs`、`url`；使用其 `pacing=ack` 机制限制浏览器帧积压。浏览器进程端口保持 loopback，前端不直接连接本机随机端口。
 
-- [ ] **步骤 5：注册路由及服务装饰**
+- [x] **步骤 5：注册路由及服务装饰**
 
 在 `wiring.ts` 注册 browser WebSocket route 并装饰已存在的 `browserManager`；更新 `types/fastify.d.ts` 使新路由可以调用 `ensurePanelSession()` 和 stream proxy 所需的状态查询。
 
-- [ ] **步骤 6：运行服务端类型检查**
+- [x] **步骤 6：运行服务端类型检查**
 
 运行：`pnpm --filter @pi-web-ui/server typecheck`
 
