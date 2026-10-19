@@ -1,3 +1,5 @@
+import { expertAvatarAppearance } from "./expert-avatar.js";
+
 export type ComposerTokenKind = "file" | "image" | "skill" | "plugin" | "expert" | "knowledge_base" | "connector";
 
 export interface ComposerResourceSelection {
@@ -68,9 +70,17 @@ export function insertComposerToken(
   const icon = doc.createElement("span");
   icon.className = "composer-resource-token-icon";
   icon.setAttribute("aria-hidden", "true");
-  if (token.icon.startsWith("/connector-icons/")) {
+  if (token.kind === "expert") {
+    const appearance = expertAvatarAppearance(token.resourceId ?? token.label, token.label);
+    const badge = doc.createElement("span");
+    badge.className = "composer-expert-monogram";
+    badge.textContent = appearance.initial;
+    badge.style.backgroundColor = appearance.background;
+    badge.style.color = appearance.clothing;
+    icon.append(badge);
+  } else if (token.kind === "plugin" || token.icon.startsWith("/connector-icons/")) {
     const image = doc.createElement("img");
-    image.src = token.icon;
+    image.src = token.kind === "plugin" ? "/capability-icons/plugin.svg" : token.icon;
     image.alt = "";
     icon.append(image);
   } else {

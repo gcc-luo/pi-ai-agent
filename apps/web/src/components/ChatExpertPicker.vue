@@ -5,6 +5,7 @@ import { NPopover } from "naive-ui";
 import { useExpertStore } from "../stores/expert.js";
 import { useSessionStore } from "../stores/session.js";
 import { useI18n } from "../i18n/index.js";
+import ResourceKindIcon from "./ResourceKindIcon.vue";
 import type { ExpertDto } from "@pi-web-ui/shared";
 
 const props = defineProps<{
@@ -89,7 +90,7 @@ const filteredExperts = computed(() => expertStore.experts.filter((item) => matc
         :class="{ active: selectedExpert }"
         :title="selectedExpert ? t('expert.chat.active', { name: selectedExpert.name }) : t('expert.chat.pick')"
       >
-        <span v-if="selectedExpert" class="expert-trigger-icon">{{ selectedExpert.icon }}</span>
+        <span v-if="selectedExpert" class="expert-trigger-icon"><ResourceKindIcon kind="expert" :expert-id="selectedExpert.id" :name="selectedExpert.name" :size="16" /></span>
         <svg v-else width="14" height="14" viewBox="0 0 18 18" fill="none" aria-hidden="true">
           <circle cx="9" cy="5.5" r="3" stroke="currentColor" stroke-width="1.35" />
           <path d="M3.5 15c.6-3 2.5-4.6 5.5-4.6s4.9 1.6 5.5 4.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
@@ -122,7 +123,7 @@ const filteredExperts = computed(() => expertStore.experts.filter((item) => matc
           :disabled="saving"
           @click="selectExpert(expert)"
         >
-          <span class="expert-item-icon">{{ expert.icon }}</span>
+          <span class="expert-item-icon"><ResourceKindIcon kind="expert" :expert-id="expert.id" :name="expert.name" :size="22" /></span>
           <span class="expert-item-copy">
             <span class="expert-item-name">{{ expert.name }}</span>
             <span class="expert-item-description">{{ expert.description }}</span>
@@ -157,7 +158,7 @@ const filteredExperts = computed(() => expertStore.experts.filter((item) => matc
         :disabled="saving"
         @click="selectExpert(expert)"
       >
-        <span class="expert-item-icon">{{ expert.icon }}</span>
+        <span class="expert-item-icon"><ResourceKindIcon kind="expert" :expert-id="expert.id" :name="expert.name" :size="22" /></span>
         <span class="expert-item-copy">
           <span class="expert-item-name">{{ expert.name }}</span>
           <span class="expert-item-description">{{ expert.description }}</span>
@@ -169,7 +170,7 @@ const filteredExperts = computed(() => expertStore.experts.filter((item) => matc
     </div>
   </div>
   <span v-if="!props.inline && selectedExpert" class="active-expert-chip" :title="t('expert.chat.active', { name: selectedExpert.name })">
-    <span>{{ selectedExpert.icon }}</span>{{ selectedExpert.name }}
+    <ResourceKindIcon kind="expert" :expert-id="selectedExpert.id" :name="selectedExpert.name" :size="16" />{{ selectedExpert.name }}
     <button class="active-expert-clear" :disabled="saving" :title="t('expert.chat.clear')" @click="clearExpert">×</button>
   </span>
 </template>

@@ -4,6 +4,7 @@ import { NButton, NEmpty, NInput, NModal, NSwitch, NSpin } from "naive-ui";
 import type { PluginDto } from "@pi-web-ui/shared";
 import { usePluginStore } from "../stores/plugin.js";
 import { useI18n } from "../i18n/index.js";
+import ResourceKindIcon from "./ResourceKindIcon.vue";
 
 const plugins = usePluginStore();
 const { t } = useI18n();
@@ -83,7 +84,7 @@ function manifestText(
         <section v-else-if="filteredPlugins.length" class="plugin-grid">
           <article v-for="plugin in filteredPlugins" :key="plugin.id" class="plugin-card">
             <div class="card-head">
-              <div class="plugin-icon">{{ plugin.icon }}</div>
+              <div class="plugin-icon"><ResourceKindIcon kind="plugin" :plugin-id="plugin.id" :name="plugin.name" :size="32" /></div>
               <div class="plugin-heading">
                 <div class="plugin-title-row">
                   <h2>{{ plugin.name }}</h2>
@@ -256,11 +257,9 @@ function manifestText(
 .plugin-icon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: var(--accent-dim);
-  font-size: 19px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
 }
 
 .plugin-heading {

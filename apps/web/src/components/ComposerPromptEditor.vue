@@ -239,6 +239,25 @@ defineExpose({ clear, focus, getUserText, insertToken, removeTokens, saveSelecti
   object-fit: contain;
 }
 
+.composer-prompt-editor :deep(.composer-resource-token-icon svg) {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.composer-prompt-editor :deep(.composer-expert-monogram) {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .composer-prompt-editor :deep(.composer-resource-token-label) {
   min-width: 0;
   overflow: hidden;

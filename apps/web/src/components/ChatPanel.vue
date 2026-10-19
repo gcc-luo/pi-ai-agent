@@ -16,6 +16,7 @@ import { useConnectorStore } from "../stores/connector.js";
 import { removeComposerSelection } from "../utils/composer-selection.js";
 import ChatCapabilityToolbar from "./ChatCapabilityToolbar.vue";
 import ConnectorIcon from "./ConnectorIcon.vue";
+import ResourceKindIcon from "./ResourceKindIcon.vue";
 import ChatKbBanner from "./ChatKbBanner.vue";
 import ChatKbCallCard from "./ChatKbCallCard.vue";
 import type { KbCallState } from "./ChatKbCallCard.vue";
@@ -1565,7 +1566,7 @@ defineExpose({ revealNotificationMessage });
               class="composer-selected-resource"
               :title="selectedExpertToken.label"
             >
-              <span aria-hidden="true">{{ selectedExpertToken.icon }}</span>
+              <ResourceKindIcon kind="expert" :expert-id="selectedExpertToken.resourceId" :name="selectedExpertToken.label" :size="18" />
               <span class="composer-selected-resource-label">{{ selectedExpertToken.label }}</span>
             </span>
             <button

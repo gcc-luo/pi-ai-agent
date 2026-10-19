@@ -8,6 +8,7 @@ import { useI18n } from "../i18n/index.js";
 import type { ExpertCategory } from "@pi-web-ui/shared";
 import CreateExpertDialog from "./CreateExpertDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import ResourceKindIcon from "./ResourceKindIcon.vue";
 
 const expertStore = useExpertStore();
 const projectStore = useProjectStore();
@@ -135,7 +136,7 @@ async function handleSummon(expertId: string) {
     <div v-else class="expert-grid">
       <div v-for="expert in expertStore.filteredExperts" :key="expert.id" class="expert-card">
         <div class="expert-card-header">
-          <span class="expert-icon">{{ expert.icon }}</span>
+          <span class="expert-icon"><ResourceKindIcon kind="expert" :expert-id="expert.id" :name="expert.name" :size="36" /></span>
           <div class="expert-card-title">
             <span class="expert-name">{{ expert.name }}</span>
             <NTag size="tiny" :bordered="false" type="info">{{ categoryLabel(expert.category) }}</NTag>

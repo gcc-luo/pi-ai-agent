@@ -5,6 +5,7 @@ import { NPopover } from "naive-ui";
 import type { PluginDto } from "@pi-web-ui/shared";
 import { usePluginStore } from "../stores/plugin.js";
 import { useI18n } from "../i18n/index.js";
+import ResourceKindIcon from "./ResourceKindIcon.vue";
 
 const props = defineProps<{
   sessionId?: string;
@@ -130,7 +131,7 @@ const filteredPlugins = computed(() => availablePlugins.value.filter((item) => m
             @click="togglePlugin(plugin.id)"
           >
             <span class="plugin-item-copy">
-              <span class="plugin-item-name">{{ plugin.icon }} {{ plugin.name }}</span>
+              <span class="plugin-item-name"><ResourceKindIcon kind="plugin" :plugin-id="plugin.id" :name="plugin.name" :size="20" />{{ plugin.name }}</span>
               <span class="plugin-item-description">{{ pluginDescription(plugin) }}</span>
             </span>
             <svg v-if="isSelected(plugin.id)" class="plugin-selected-mark" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -165,7 +166,7 @@ const filteredPlugins = computed(() => availablePlugins.value.filter((item) => m
           @click="togglePlugin(plugin.id)"
         >
           <span class="plugin-item-copy">
-            <span class="plugin-item-name">{{ plugin.icon }} {{ plugin.name }}</span>
+            <span class="plugin-item-name"><ResourceKindIcon kind="plugin" :plugin-id="plugin.id" :name="plugin.name" :size="20" />{{ plugin.name }}</span>
             <span class="plugin-item-description">{{ pluginDescription(plugin) }}</span>
           </span>
           <svg v-if="isSelected(plugin.id)" class="plugin-selected-mark" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -180,7 +181,7 @@ const filteredPlugins = computed(() => availablePlugins.value.filter((item) => m
       class="active-plugin-chip"
       :title="selectedPlugins.map((plugin) => plugin.name).join(', ')"
     >
-      <span>{{ primarySelectedPlugin.icon }}</span>
+      <ResourceKindIcon kind="plugin" :plugin-id="primarySelectedPlugin.id" :name="primarySelectedPlugin.name" :size="18" />
       <span class="active-plugin-label">
         {{ selectedPlugins.length === 1 ? primarySelectedPlugin.name : t('plugins.selectedCount', { count: selectedPlugins.length }) }}
       </span>
@@ -300,6 +301,10 @@ const filteredPlugins = computed(() => availablePlugins.value.filter((item) => m
   gap: 2px;
 }
 .plugin-item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
   font-size: 12px;
