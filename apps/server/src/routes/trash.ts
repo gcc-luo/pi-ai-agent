@@ -50,8 +50,12 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.kind === "project") {
       app.projects.restore(body.id);
+      await Promise.all(app.sessions.listByProject(body.id).map((session) =>
+        app.browserManager.resumeSession(session.id),
+      ));
     } else if (body.kind === "session") {
       app.sessions.restore(body.id);
+      await app.browserManager.resumeSession(body.id);
     } else {
       return reply.code(400).send({ error: "invalid kind" });
     }
@@ -80,8 +84,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         app.sessionStates.delete(state.sessionId);
       }
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
-        app.pluginManager?.closeSession(sessionId)
-          ?? app.browserManager?.close(sessionId)
+        app.pluginManager?.closeSession(sessionId, { retainTombstone: true })
+          ?? app.browserManager?.closeSession(sessionId, { retainTombstone: true })
           ?? Promise.resolve(),
       ));
       app.projects.destroyPermanently(body.id);
@@ -94,8 +98,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(body.id);
       }
-      if (app.pluginManager) await app.pluginManager.closeSession(body.id);
-      else if (app.browserManager) await app.browserManager.close(body.id);
+      if (app.pluginManager) await app.pluginManager.closeSession(body.id, { retainTombstone: true });
+      else if (app.browserManager) await app.browserManager.closeSession(body.id, { retainTombstone: true });
       app.sessions.destroyPermanently(body.id);
     } else {
       return reply.code(400).send({ error: "invalid kind" });
@@ -121,8 +125,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         app.sessionStates.delete(state.sessionId);
       }
       await Promise.allSettled(projectSessionIds.map((sessionId) =>
-        app.pluginManager?.closeSession(sessionId)
-          ?? app.browserManager?.close(sessionId)
+        app.pluginManager?.closeSession(sessionId, { retainTombstone: true })
+          ?? app.browserManager?.closeSession(sessionId, { retainTombstone: true })
           ?? Promise.resolve(),
       ));
       app.projects.destroyPermanently(p.id);
@@ -138,8 +142,8 @@ export const trashRoutes: FastifyPluginAsync = async (app) => {
         state.process.kill();
         app.sessionStates.delete(s.id);
       }
-      if (app.pluginManager) await app.pluginManager.closeSession(s.id);
-      else if (app.browserManager) await app.browserManager.close(s.id);
+      if (app.pluginManager) await app.pluginManager.closeSession(s.id, { retainTombstone: true });
+      else if (app.browserManager) await app.browserManager.closeSession(s.id, { retainTombstone: true });
       app.sessions.destroyPermanently(s.id);
     }
 

@@ -4,6 +4,7 @@ import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import { Config } from "./config.js";
 import { isLoopbackHost } from "./config.js";
+import { isAllowedLocalOrigin } from "./security/local-origin.js";
 
 export interface AppDeps {
   config?: Config;
@@ -38,15 +39,7 @@ export async function buildApp(config: Config, deps?: AppDeps): Promise<FastifyI
     origin(origin, callback) {
       // The server is a local desktop sidecar. Do not let arbitrary websites
       // read or mutate its unauthenticated local APIs through the browser.
-      if (!origin) return callback(null, true);
-      try {
-        const url = new URL(origin);
-        const localHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-        const tauriHost = url.hostname === "tauri.localhost";
-        callback(null, localHost || tauriHost);
-      } catch {
-        callback(null, false);
-      }
+      callback(null, isAllowedLocalOrigin(origin));
     },
     credentials: true,
     allowedHeaders: ["content-type", "authorization", "x-pi-web-ui-token"],

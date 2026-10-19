@@ -1,6 +1,6 @@
 import type { PluginDto, PluginStatus } from "@pi-web-ui/shared";
 import { BROWSER_EXTENSION_VERSION } from "../browser/browser-runtime.js";
-import type { BrowserSessionManager } from "../browser/browser-session-manager.js";
+import type { BrowserSessionCloseOptions, BrowserSessionManager } from "../browser/browser-session-manager.js";
 import type { ComputerSessionManager } from "../computer/computer-session-manager.js";
 import type { PluginRepository } from "../db/repositories/plugin.js";
 
@@ -132,9 +132,9 @@ export class PluginManager {
     if (pluginId === COMPUTER_PLUGIN_ID) this.computer.closeSession(sessionId);
   }
 
-  async closeSession(sessionId: string): Promise<void> {
+  async closeSession(sessionId: string, options: BrowserSessionCloseOptions = {}): Promise<void> {
     await Promise.allSettled([
-      this.browser.close(sessionId),
+      this.browser.closeSession(sessionId, options),
       Promise.resolve(this.computer.closeSession(sessionId)),
     ]);
   }

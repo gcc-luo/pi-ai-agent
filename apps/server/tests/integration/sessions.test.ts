@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs"; import path from "node:path"; import os from "node:os";
 import { buildApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
@@ -132,5 +132,16 @@ describe("sessions routes", () => {
 
     const after = await app.inject({ method: "GET", url: "/api/notifications/unread-count" });
     expect(after.json()).toEqual({ count: 0 });
+  });
+
+  it("retains a browser tombstone while a session is in trash", async () => {
+    const created = await app.inject({ method: "POST", url: `/api/projects/${projectId}/sessions`, payload: {} });
+    const closeSession = vi.fn().mockResolvedValue(undefined);
+    (app as any).pluginManager = { closeSession };
+
+    const deleted = await app.inject({ method: "DELETE", url: `/api/sessions/${created.json().id}` });
+
+    expect(deleted.statusCode).toBe(204);
+    expect(closeSession).toHaveBeenCalledWith(created.json().id, { retainTombstone: true });
   });
 });

@@ -106,8 +106,11 @@ export const sessionsRoutes: FastifyPluginAsync = async (app) => {
     app.processManager.revokePluginToken(req.params.id);
     app.sessionStates.get(req.params.id)?.process.kill();
     app.sessionStates.delete(req.params.id);
-    if (app.pluginManager) await app.pluginManager.closeSession(req.params.id);
-    else if (app.browserManager) await app.browserManager.close(req.params.id);
+    if (app.pluginManager) {
+      await app.pluginManager.closeSession(req.params.id, { retainTombstone: true });
+    } else if (app.browserManager) {
+      await app.browserManager.closeSession(req.params.id, { retainTombstone: true });
+    }
     app.sessions.delete(req.params.id);
     return reply.code(204).send();
   });

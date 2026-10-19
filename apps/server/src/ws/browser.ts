@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import WebSocket from "ws";
+import { isAllowedLocalOrigin } from "../security/local-origin.js";
 
 const MAX_CLIENT_MESSAGE_BYTES = 64 * 1024;
+const MAX_PROXY_BUFFERED_BYTES = 2 * 1024 * 1024;
 const MAX_STRING_LENGTH = 4_096;
 const MAX_JSON_DEPTH = 8;
 
@@ -89,6 +91,21 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
   }
 }
 
+function isValidCloseCode(code: number): boolean {
+  return code === 1000
+    || (code >= 1001 && code <= 1014 && ![1004, 1005, 1006].includes(code))
+    || (code >= 3000 && code <= 4999);
+}
+
+function fitCloseReason(reason: Buffer): string {
+  let value = "";
+  for (const character of reason.toString("utf8")) {
+    if (Buffer.byteLength(value + character) > 123) break;
+    value += character;
+  }
+  return value;
+}
+
 async function proxyBrowserStream(
   client: WebSocket,
   sessionId: string,
@@ -98,7 +115,7 @@ async function proxyBrowserStream(
   const receiver = (client as unknown as { _receiver?: { _maxPayload: number } })._receiver;
   if (receiver) receiver._maxPayload = MAX_CLIENT_MESSAGE_BYTES;
 
-  const upstream = new WebSocket(`ws://127.0.0.1:${port}`, { perMessageDeflate: false });
+  const upstream = new WebSocket(`ws://127.0.0.1:${port}/?pacing=ack&maxFps=10`, { perMessageDeflate: false });
   let closed = false;
   let pendingBytes = 0;
   const pendingMessages: Buffer[] = [];
@@ -139,6 +156,10 @@ async function proxyBrowserStream(
       return;
     }
     if (upstream.readyState === WebSocket.OPEN) {
+      if (upstream.bufferedAmount + raw.byteLength > MAX_PROXY_BUFFERED_BYTES) {
+        cleanup(1013, "browser input backlog");
+        return;
+      }
       upstream.send(raw, { binary: false });
       return;
     }
@@ -150,20 +171,36 @@ async function proxyBrowserStream(
     cleanup(1011, "browser stream unavailable");
   };
 
-  const onClientClose = (code: number) => cleanup(code === 1000 ? 1000 : 1011, "browser panel disconnected");
+  const onClientClose = (code: number, rawReason: Buffer) => {
+    cleanup(isValidCloseCode(code) ? code : 1011, fitCloseReason(rawReason));
+  };
   const onClientError = (error: Error) => {
     log.warn({ sessionId, err: error }, "browser panel client WebSocket failed");
     cleanup(1011, "browser stream failed");
   };
   const onUpstreamOpen = () => {
+    if (upstream.bufferedAmount + pendingBytes > MAX_PROXY_BUFFERED_BYTES) {
+      cleanup(1013, "browser input backlog");
+      return;
+    }
     for (const message of pendingMessages) upstream.send(message, { binary: false });
     pendingMessages.length = 0;
     pendingBytes = 0;
   };
   const onUpstreamMessage = (data: WebSocket.RawData, isBinary: boolean) => {
-    if (client.readyState === WebSocket.OPEN) client.send(data, { binary: isBinary });
+    if (client.readyState !== WebSocket.OPEN) return;
+    const size = toBuffer(data).byteLength;
+    if (client.bufferedAmount + size > MAX_PROXY_BUFFERED_BYTES) {
+      cleanup(1013, "browser panel client is too slow");
+      return;
+    }
+    client.send(data, { binary: isBinary });
   };
-  const onUpstreamClose = () => cleanup(1011, "browser stream closed");
+  const onUpstreamClose = (code: number, rawReason: Buffer) => {
+    const reason = fitCloseReason(rawReason);
+    const validCode = isValidCloseCode(code);
+    cleanup(validCode ? code : 1011, reason || (validCode ? "" : "browser stream closed"));
+  };
   const onUpstreamError = (error: Error) => {
     log.warn({ sessionId, err: error }, "browser stream WebSocket failed");
     cleanup(1011, "browser stream failed");
@@ -184,6 +221,9 @@ export const browserWsRoutes: FastifyPluginAsync = async (app) => {
     reply: FastifyReply,
   ) => {
     const { sessionId } = request.params;
+    if (!isAllowedLocalOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "origin not allowed" });
+    }
     if (!app.sessions.findById(sessionId)) return reply.code(404).send({ error: "session not found" });
     try {
       await app.browserManager.ensurePanelSession(sessionId);

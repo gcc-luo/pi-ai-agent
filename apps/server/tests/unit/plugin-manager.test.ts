@@ -10,6 +10,7 @@ describe("PluginManager", () => {
   let repository: PluginRepository;
   let manager: PluginManager;
   let sessionId: string;
+  let browser: { runtimeStatus: () => { status: string; error: null }; close: ReturnType<typeof vi.fn>; closeSession: ReturnType<typeof vi.fn>; shutdown: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     const db = new Database(":memory:");
@@ -20,9 +21,10 @@ describe("PluginManager", () => {
     sessionId = sessions.create({
       projectId: projects.create({ name: "p", workdir: "/tmp/p" }).id,
     }).id;
-    const browser = {
+    browser = {
       runtimeStatus: () => ({ status: "enabled", error: null }),
       close: vi.fn(),
+      closeSession: vi.fn(),
       shutdown: vi.fn(),
     };
     const computer = {
@@ -46,5 +48,10 @@ describe("PluginManager", () => {
 
     manager.setEnabled("computer-use", false);
     expect(manager.activeForSession(sessionId)).toEqual(["browser-use"]);
+  });
+
+  it("forwards terminal tombstone options to browser session cleanup", async () => {
+    await manager.closeSession(sessionId, { retainTombstone: true });
+    expect(browser.closeSession).toHaveBeenCalledWith(sessionId, { retainTombstone: true });
   });
 });

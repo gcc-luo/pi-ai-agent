@@ -30,6 +30,10 @@ const defaultCommandRunner: CommandRunner = async (file, args, options) => {
 
 const MAX_STREAM_PORT = 65_535;
 
+export interface BrowserSessionCloseOptions {
+  retainTombstone?: boolean;
+}
+
 function parseJsonOutput(output: string, label: string): Record<string, unknown> {
   let value: unknown;
   try {
@@ -85,6 +89,10 @@ export class BrowserSessionManager {
   private readonly panelBrowserSessions = new Set<string>();
   private readonly panelPorts = new Map<string, number>();
   private readonly panelStarting = new Map<string, Promise<number>>();
+  private readonly sessionOperations = new Map<string, Promise<void>>();
+  private readonly closingSessions = new Set<string>();
+  private readonly terminalSessions = new Set<string>();
+  private shuttingDown = false;
   private readonly runCommand: CommandRunner;
   constructor(
     private readonly options: {
@@ -98,15 +106,7 @@ export class BrowserSessionManager {
 
   /** Start the stream for the same agent-browser session without changing Agent permissions. */
   async ensurePanelSession(sessionId: string): Promise<number> {
-    const current = this.panelStarting.get(sessionId);
-    if (current) return current;
-    const starting = this.startPanelSession(sessionId);
-    this.panelStarting.set(sessionId, starting);
-    try {
-      return await starting;
-    } finally {
-      if (this.panelStarting.get(sessionId) === starting) this.panelStarting.delete(sessionId);
-    }
+    return this.withSessionLock(sessionId, () => this.ensurePanelSessionLocked(sessionId));
   }
 
   getPanelStreamPort(sessionId: string): number | null {
@@ -114,27 +114,38 @@ export class BrowserSessionManager {
   }
 
   async navigate(sessionId: string, url: string): Promise<void> {
-    await this.ensurePanelSession(sessionId);
-    await this.runForSession(sessionId, ["open", url]);
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      await this.runForSession(sessionId, ["open", url]);
+    });
   }
 
   async back(sessionId: string): Promise<void> {
-    await this.ensurePanelSession(sessionId);
-    await this.runForSession(sessionId, ["back"]);
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      await this.runForSession(sessionId, ["back"]);
+    });
   }
 
   async forward(sessionId: string): Promise<void> {
-    await this.ensurePanelSession(sessionId);
-    await this.runForSession(sessionId, ["forward"]);
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      await this.runForSession(sessionId, ["forward"]);
+    });
   }
 
   async reload(sessionId: string): Promise<void> {
-    await this.ensurePanelSession(sessionId);
-    await this.runForSession(sessionId, ["reload"]);
+    await this.withSessionLock(sessionId, async () => {
+      await this.ensurePanelSessionLocked(sessionId);
+      await this.runForSession(sessionId, ["reload"]);
+    });
   }
 
   async closePanelSession(sessionId: string): Promise<void> {
-    await this.panelStarting.get(sessionId)?.catch(() => undefined);
+    await this.withSessionLock(sessionId, () => this.stopPanelSession(sessionId));
+  }
+
+  private async stopPanelSession(sessionId: string): Promise<void> {
     if (!this.panelSessions.has(sessionId)) return;
     await this.runForSession(sessionId, ["stream", "disable"]);
     this.panelSessions.delete(sessionId);
@@ -242,46 +253,70 @@ export class BrowserSessionManager {
 
   async close(sessionId: string): Promise<void> {
     // Close only this host's default daemon, never a user-owned session or namespace.
+    return this.closeSession(sessionId);
+  }
+
+  async closeSession(sessionId: string, options: BrowserSessionCloseOptions = {}): Promise<void> {
+    this.closingSessions.add(sessionId);
+    if (options.retainTombstone) this.terminalSessions.add(sessionId);
     this.pending.delete(sessionId);
-    await this.panelStarting.get(sessionId)?.catch(() => undefined);
-    const shouldCloseBrowser = this.states.has(sessionId)
-      || this.panelSessions.has(sessionId)
-      || this.panelBrowserSessions.has(sessionId);
-    try {
-      await this.closePanelSession(sessionId);
-    } catch (error) {
-      // Closing the session daemon below also releases a stream that could not
-      // be disabled on its own.
-      this.options.logger.warn({ sessionId, err: error }, "browser panel stream cleanup failed");
-    }
-    if (!shouldCloseBrowser) return;
-    try {
-      await this.runForSession(sessionId, ["close"]);
-      this.states.delete(sessionId);
-      this.panelSessions.delete(sessionId);
-      this.panelBrowserSessions.delete(sessionId);
-      this.panelPorts.delete(sessionId);
-    } catch (error) {
-      this.options.logger.warn(
-        { sessionId, err: error },
-        "browser cleanup failed",
-      );
-      this.states.set(sessionId, {
-        ...this.status(sessionId, true),
-        status: "error",
-        error: "浏览器清理失败，空闲超时将再次回收。",
-      });
-      throw error;
-    }
+    await this.withSessionLock(sessionId, async () => {
+      try {
+        const shouldCloseBrowser = this.states.has(sessionId)
+          || this.panelSessions.has(sessionId)
+          || this.panelBrowserSessions.has(sessionId);
+        try {
+          await this.stopPanelSession(sessionId);
+        } catch (error) {
+          // Closing the session daemon below also releases a stream that could not
+          // be disabled on its own.
+          this.options.logger.warn({ sessionId, err: error }, "browser panel stream cleanup failed");
+        }
+        if (!shouldCloseBrowser) return;
+        try {
+          await this.runForSession(sessionId, ["close"]);
+          this.states.delete(sessionId);
+          this.panelSessions.delete(sessionId);
+          this.panelBrowserSessions.delete(sessionId);
+          this.panelPorts.delete(sessionId);
+        } catch (error) {
+          this.options.logger.warn(
+            { sessionId, err: error },
+            "browser cleanup failed",
+          );
+          this.states.set(sessionId, {
+            ...this.status(sessionId, true),
+            status: "error",
+            error: "浏览器清理失败，空闲超时将再次回收。",
+          });
+          throw error;
+        }
+      } finally {
+        if (!options.retainTombstone && !this.terminalSessions.has(sessionId)) {
+          this.closingSessions.delete(sessionId);
+        }
+      }
+    });
+  }
+
+  async resumeSession(sessionId: string): Promise<void> {
+    if (this.shuttingDown) throw new Error("browser manager is shutting down");
+    await this.withSessionLock(sessionId, async () => {
+      if (this.shuttingDown) throw new Error("browser manager is shutting down");
+      this.terminalSessions.delete(sessionId);
+      this.closingSessions.delete(sessionId);
+    });
   }
 
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     await Promise.allSettled(
       [...new Set([
         ...this.states.keys(),
         ...this.panelSessions,
         ...this.panelBrowserSessions,
         ...this.panelStarting.keys(),
+        ...this.sessionOperations.keys(),
       ])].map((id) => this.close(id)),
     );
   }
@@ -320,6 +355,33 @@ export class BrowserSessionManager {
     if (!status.enabled || status.port === null) throw new Error("agent-browser stream 未返回有效的本机端口");
     this.panelPorts.set(sessionId, status.port);
     return status.port;
+  }
+
+  private async ensurePanelSessionLocked(sessionId: string): Promise<number> {
+    if (this.shuttingDown || this.closingSessions.has(sessionId) || this.terminalSessions.has(sessionId)) {
+      throw new Error("browser session is closing");
+    }
+    const existingPort = this.panelPorts.get(sessionId);
+    if (this.panelSessions.has(sessionId) && existingPort !== undefined) return existingPort;
+
+    const starting = this.startPanelSession(sessionId);
+    this.panelStarting.set(sessionId, starting);
+    try {
+      return await starting;
+    } finally {
+      if (this.panelStarting.get(sessionId) === starting) this.panelStarting.delete(sessionId);
+    }
+  }
+
+  private withSessionLock<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.sessionOperations.get(sessionId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const queued = result.then(() => undefined, () => undefined);
+    this.sessionOperations.set(sessionId, queued);
+    void queued.then(() => {
+      if (this.sessionOperations.get(sessionId) === queued) this.sessionOperations.delete(sessionId);
+    });
+    return result;
   }
 
   private commandPrefix(sessionId: string): string[] {

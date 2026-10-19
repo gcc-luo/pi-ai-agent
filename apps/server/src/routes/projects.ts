@@ -61,8 +61,8 @@ export const projectsRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     await Promise.allSettled(projectSessionIds.map((sessionId) =>
-      app.pluginManager?.closeSession(sessionId)
-        ?? app.browserManager?.close(sessionId)
+      app.pluginManager?.closeSession(sessionId, { retainTombstone: true })
+        ?? app.browserManager?.closeSession(sessionId, { retainTombstone: true })
         ?? Promise.resolve(),
     ));
     app.projects.delete(projectId);

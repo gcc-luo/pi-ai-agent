@@ -155,4 +155,90 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("serializes first startup with session close and refuses an ensure after closing starts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    let releaseTabList: (() => void) | undefined;
+    let markTabListStarted: (() => void) | undefined;
+    const tabListStarted = new Promise<void>((resolve) => { markTabListStarted = resolve; });
+    const waitForTabList = new Promise<void>((resolve) => { releaseTabList = resolve; });
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) {
+        markTabListStarted?.();
+        await waitForTabList;
+        return { stdout: JSON.stringify({ tabs: [] }), stderr: "" };
+      }
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44105 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      const startup = manager.ensurePanelSession("session-race");
+      await tabListStarted;
+      const closing = manager.closeSession("session-race", { retainTombstone: true });
+      const lateStartup = manager.ensurePanelSession("session-race");
+      releaseTabList?.();
+      await expect(startup).resolves.toBe(44105);
+      await closing;
+      await expect(lateStartup).rejects.toThrow(/closing/i);
+
+      expect(calls.map((args) => args[4]).at(-1)).toBe("close");
+      expect(manager.getPanelStreamPort("session-race")).toBeNull();
+      await expect(manager.ensurePanelSession("session-race")).rejects.toThrow(/closing/i);
+      expect(calls.filter((args) => args[4] === "open")).toHaveLength(1);
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+      await manager.shutdown();
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+    } finally {
+      releaseTabList?.();
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("allows an explicitly restored session to start its panel again", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44106 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await manager.closeSession("session-restored", { retainTombstone: true });
+      await expect(manager.ensurePanelSession("session-restored")).rejects.toThrow(/closing/i);
+      await manager.resumeSession("session-restored");
+      await expect(manager.ensurePanelSession("session-restored")).resolves.toBe(44106);
+      expect(calls.filter((args) => args[4] === "tab" && args[5] === "list")).toHaveLength(1);
+    } finally {
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not retain a closing tombstone for an ordinary browser close", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44107 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await manager.ensurePanelSession("session-ordinary-close");
+      await manager.close("session-ordinary-close");
+      await expect(manager.ensurePanelSession("session-ordinary-close")).resolves.toBe(44107);
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+      await manager.close("session-ordinary-close");
+    } finally {
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

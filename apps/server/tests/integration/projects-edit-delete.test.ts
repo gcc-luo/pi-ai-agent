@@ -37,6 +37,7 @@ describe("projects edit/delete routes", () => {
   });
   afterEach(async () => {
     await app.close();
+    app.db.close();
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
     fs.rmSync(workdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
   });
@@ -91,7 +92,7 @@ describe("projects edit/delete routes", () => {
     expect(got.statusCode).toBe(404);
   });
 
-  it("DELETE kills agent processes for the project's sessions and clears sessionStates", async () => {
+  it("DELETE kills agent processes, clears sessionStates, and tombstones browser sessions", async () => {
     const { id } = await createProject();
     // Create a session via the sessions route
     const s1 = await app.inject({ method: "POST", url: `/api/projects/${id}/sessions` });
@@ -109,6 +110,9 @@ describe("projects edit/delete routes", () => {
     const otherKill = vi.fn();
     store.set("other-session", { projectId: "other", kill: otherKill } as any, {} as any);
 
+    const closeSession = vi.fn().mockResolvedValue(undefined);
+    (app as any).pluginManager = { closeSession };
+
     const res = await app.inject({ method: "DELETE", url: `/api/projects/${id}` });
     expect(res.statusCode).toBe(204);
     expect(kill1).toHaveBeenCalledTimes(1);
@@ -117,6 +121,8 @@ describe("projects edit/delete routes", () => {
     expect(store.get(sessionId1)).toBeUndefined();
     expect(store.get(sessionId2)).toBeUndefined();
     expect(store.get("other-session")).toBeDefined();
+    expect(closeSession).toHaveBeenCalledWith(sessionId1, { retainTombstone: true });
+    expect(closeSession).toHaveBeenCalledWith(sessionId2, { retainTombstone: true });
   });
 
   it("DELETE returns 404 for unknown id", async () => {

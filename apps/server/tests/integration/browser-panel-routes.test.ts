@@ -69,6 +69,10 @@ function waitForClose(socket: WebSocket): Promise<number> {
   return new Promise((resolve) => socket.once("close", (code) => resolve(code)));
 }
 
+function waitForCloseDetails(socket: WebSocket): Promise<{ code: number; reason: string }> {
+  return new Promise((resolve) => socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() })));
+}
+
 function waitForMessage(socket: WebSocket): Promise<{ data: Buffer; binary: boolean }> {
   return new Promise((resolve) => socket.once("message", (data, binary) => {
     const buffer = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer);
@@ -186,7 +190,8 @@ describe("browser panel WebSocket proxy", () => {
     const upstreamB = await startUpstream();
     let upstreamClientA: WebSocket | undefined;
     let upstreamClientB: WebSocket | undefined;
-    const upstreamReadyA = new Promise<void>((resolve) => upstreamA.server.once("connection", (client) => { upstreamClientA = client; resolve(); }));
+    let upstreamPathA = "";
+    const upstreamReadyA = new Promise<void>((resolve) => upstreamA.server.once("connection", (client, request) => { upstreamClientA = client; upstreamPathA = request.url ?? ""; resolve(); }));
     const upstreamReadyB = new Promise<void>((resolve) => upstreamB.server.once("connection", (client) => { upstreamClientB = client; resolve(); }));
     const f = await fixture({ a: upstreamA.port, b: upstreamB.port });
     const clientA = new WebSocket(`ws://127.0.0.1:${f.port}/ws/browser/a`);
@@ -195,6 +200,7 @@ describe("browser panel WebSocket proxy", () => {
       await Promise.all([waitForOpen(clientA), waitForOpen(clientB), upstreamReadyA, upstreamReadyB]);
       expect(upstreamClientA).toBeDefined();
       expect(upstreamClientB).toBeDefined();
+      expect(upstreamPathA).toBe("/?pacing=ack&maxFps=10");
       const rawServerFrame = '{ "type" : "status", "title" : "shared" }';
       const received = waitForMessage(clientA);
       upstreamClientA!.send(rawServerFrame);
@@ -237,6 +243,73 @@ describe("browser panel WebSocket proxy", () => {
     } finally {
       await f.app.close();
       await closeServer(upstream.server);
+    }
+  });
+
+  it("allows missing and Tauri desktop Origins and rejects an untrusted browser Origin", async () => {
+    const upstream = await startUpstream();
+    const f = await fixture({ s: upstream.port });
+    let upstreamConnections = 0;
+    const waitForUpstreamConnection = () => new Promise<void>((resolve) => upstream.server.once("connection", () => {
+      upstreamConnections++;
+      resolve();
+    }));
+    try {
+      for (const origin of [undefined, "http://localhost:60589", "http://127.0.0.1:60589", "tauri://tauri.localhost"]) {
+        const upstreamReady = waitForUpstreamConnection();
+        const client = origin
+          ? new WebSocket(`ws://127.0.0.1:${f.port}/ws/browser/s`, { headers: { Origin: origin } })
+          : new WebSocket(`ws://127.0.0.1:${f.port}/ws/browser/s`);
+        await Promise.all([waitForOpen(client), upstreamReady]);
+        client.close();
+        await waitForClose(client);
+      }
+      expect(upstreamConnections).toBe(4);
+
+      const untrusted = new WebSocket(`ws://127.0.0.1:${f.port}/ws/browser/s`, { headers: { Origin: "https://evil.example" } });
+      const response = await new Promise<number>((resolve, reject) => {
+        untrusted.once("unexpected-response", (_request, res) => resolve(res.statusCode ?? 0));
+        untrusted.once("error", reject);
+      });
+      expect(response).toBe(403);
+      expect(f.manager.ensurePanelSession).toHaveBeenCalledTimes(4);
+    } finally {
+      await f.app.close();
+      await closeServer(upstream.server);
+    }
+  });
+
+  it("preserves legal upstream close codes and maps abnormal closure to 1011", async () => {
+    const normalUpstream = await startUpstream();
+    const normalReady = new Promise<WebSocket>((resolve) => normalUpstream.server.once("connection", (socket) => resolve(socket)));
+    const normalFixture = await fixture({ normal: normalUpstream.port });
+    const normalClient = new WebSocket(`ws://127.0.0.1:${normalFixture.port}/ws/browser/normal`);
+    try {
+      await waitForOpen(normalClient);
+      const normalServerClient = await normalReady;
+      const normalClosed = waitForCloseDetails(normalClient);
+      normalServerClient.close(1001, "stream shutting down");
+      await expect(normalClosed).resolves.toEqual({ code: 1001, reason: "stream shutting down" });
+    } finally {
+      normalClient.terminate();
+      await normalFixture.app.close();
+      await closeServer(normalUpstream.server);
+    }
+
+    const abnormalUpstream = await startUpstream();
+    const abnormalReady = new Promise<WebSocket>((resolve) => abnormalUpstream.server.once("connection", (socket) => resolve(socket)));
+    const abnormalFixture = await fixture({ abnormal: abnormalUpstream.port });
+    const abnormalClient = new WebSocket(`ws://127.0.0.1:${abnormalFixture.port}/ws/browser/abnormal`);
+    try {
+      await waitForOpen(abnormalClient);
+      const abnormalServerClient = await abnormalReady;
+      const abnormalClosed = waitForCloseDetails(abnormalClient);
+      abnormalServerClient.terminate();
+      await expect(abnormalClosed).resolves.toEqual({ code: 1011, reason: "browser stream closed" });
+    } finally {
+      abnormalClient.terminate();
+      await abnormalFixture.app.close();
+      await closeServer(abnormalUpstream.server);
     }
   });
 
