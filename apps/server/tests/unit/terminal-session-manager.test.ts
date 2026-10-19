@@ -89,6 +89,21 @@ describe("TerminalSessionManager", () => {
     expect(pty.kills).toBe(0);
   });
 
+  it("starts replay at a complete UTF-8 code point when trimming the output limit", async () => {
+    for (const prefix of ["¢", "€", "🙂"]) {
+      const { manager, processes } = fixture();
+      await manager.ensure("session-a", "/project");
+      const pty = processes[0]!;
+      const trailing = "a".repeat(256 * 1024 + 1 - Buffer.byteLength(prefix));
+      pty.emitData(prefix + trailing);
+
+      const recent = manager.recentOutput("session-a");
+      expect(recent.byteLength).toBeLessThanOrEqual(256 * 1024);
+      expect(recent.toString("utf8").startsWith("a")).toBe(true);
+      expect(recent.byteLength).toBe(trailing.length);
+    }
+  });
+
   it("forwards input and validated terminal dimensions to the PTY", async () => {
     const { manager, processes } = fixture();
     await manager.ensure("session-a", "/project");

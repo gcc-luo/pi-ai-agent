@@ -8,6 +8,16 @@ const MAX_COLS = 300;
 const MIN_ROWS = 5;
 const MAX_ROWS = 100;
 
+function trimUtf8ToByteLimit(output: Buffer, maxBytes: number): Buffer {
+  if (output.byteLength <= maxBytes) return output;
+
+  let start = output.byteLength - maxBytes;
+  while (start < output.byteLength && (output[start]! & 0b1100_0000) === 0b1000_0000) {
+    start += 1;
+  }
+  return output.subarray(start);
+}
+
 export type TerminalExitMessage = {
   type: "exit";
   exitCode: number;
@@ -81,7 +91,7 @@ export class TerminalSessionManager {
     session.dataSubscription = pty.onData((data) => {
       if (session.closed || this.sessions.get(sessionId) !== session) return;
       const bytes = Buffer.from(data, "utf8");
-      session.output = Buffer.concat([session.output, bytes]).subarray(-MAX_REPLAY_BYTES);
+      session.output = trimUtf8ToByteLimit(Buffer.concat([session.output, bytes]), MAX_REPLAY_BYTES);
       for (const subscriber of session.subscribers) {
         try { subscriber.data(bytes); }
         catch (error) { this.options.logger.warn({ err: error, sessionId }, "terminal output subscriber failed"); }
