@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../api/client.js";
 import { useI18n } from "../../i18n/index.js";
 import FilePreviewError from "./FilePreviewError.vue";
@@ -17,37 +17,54 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const retryVersion = ref(0);
 const { t } = useI18n();
+let requestGeneration = 0;
 
 function retry() {
   retryVersion.value++;
 }
 
 async function load() {
+  const generation = ++requestGeneration;
+  const projectId = props.projectId;
+  const path = props.path;
+  const reloadKey = props.reloadKey;
+  const retry = retryVersion.value;
+  const isCurrent = () => generation === requestGeneration
+    && projectId === props.projectId
+    && path === props.path
+    && reloadKey === props.reloadKey
+    && retry === retryVersion.value;
   loading.value = true;
   error.value = null;
   sheets.value = [];
   try {
-    const res = await fetch(api.rawFileUrl(props.projectId, props.path));
+    const res = await fetch(api.rawFileUrl(projectId, path));
+    if (!isCurrent()) return;
     if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
     const buf = await res.arrayBuffer();
+    if (!isCurrent()) return;
     const XLSX = await import("xlsx");
+    if (!isCurrent()) return;
     const wb = XLSX.read(buf, { type: "array" });
-    sheets.value = wb.SheetNames.map((name) => {
+    const nextSheets = wb.SheetNames.map((name) => {
       const ws = wb.Sheets[name];
       if (!ws) return { name, html: "" };
       // render as HTML table; suppress inline styles for a clean look
       const html = XLSX.utils.sheet_to_html(ws, { id: `sheet-${name}`, editable: false });
       return { name, html };
     });
+    if (!isCurrent()) return;
+    sheets.value = nextSheets;
     activeSheet.value = 0;
   } catch (e: any) {
-    error.value = e?.message ?? String(e);
+    if (isCurrent()) error.value = e?.message ?? String(e);
   } finally {
-    loading.value = false;
+    if (isCurrent()) loading.value = false;
   }
 }
 
 watch(() => [props.projectId, props.path, props.reloadKey, retryVersion.value], load, { immediate: true });
+onBeforeUnmount(() => { requestGeneration++; });
 defineExpose({ retry });
 </script>
 

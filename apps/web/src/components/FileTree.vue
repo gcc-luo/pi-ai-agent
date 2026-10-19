@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, h, nextTick } from "vue";
+import { onBeforeUnmount, ref, watch, h, nextTick } from "vue";
 import { NTree, NModal, NInput, NRadioGroup, NRadio, NDropdown } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
@@ -22,6 +22,9 @@ const agent = useAgentStore();
 const treeData = ref<TreeOption[]>([]);
 const selectedKeys = ref<string[]>([]);
 const selectedNode = ref<FileNodeDto | null>(null);
+const loading = ref(false);
+const loadError = ref<string | null>(null);
+let listRequestGeneration = 0;
 
 const dirIcon = h("svg", { width: 14, height: 14, viewBox: "0 0 14 14", fill: "none" }, [
   h("path", {
@@ -129,18 +132,34 @@ async function onCtxMenuSelect(key: string) {
   }
 }
 
-async function load() {
+async function load(projectId = props.projectId) {
+  const generation = ++listRequestGeneration;
+  loading.value = true;
+  loadError.value = null;
   try {
-    const list = await api.listFiles(props.projectId, "/");
+    const list = await api.listFiles(projectId, "/");
+    if (generation !== listRequestGeneration || projectId !== props.projectId) return;
     treeData.value = toTree(list);
     emit("load-success");
   } catch (e) {
+    if (generation !== listRequestGeneration || projectId !== props.projectId) return;
+    loadError.value = e instanceof Error ? e.message : String(e);
     console.error("FileTree load failed", e);
-    emit("load-error", e instanceof Error ? e.message : String(e));
+    emit("load-error", loadError.value);
+  } finally {
+    if (generation === listRequestGeneration && projectId === props.projectId) loading.value = false;
   }
 }
 
-watch(() => props.projectId, load, { immediate: true });
+watch(() => props.projectId, (projectId) => {
+  listRequestGeneration++;
+  treeData.value = [];
+  selectedKeys.value = [];
+  selectedNode.value = null;
+  loadError.value = null;
+  loading.value = false;
+  void load(projectId);
+}, { immediate: true });
 
 // Push-based refresh: when Pi finishes a file-modifying tool (write/edit/bash),
 // the server emits `file_changed` → the agent store bumps lastFileChange.
@@ -149,6 +168,11 @@ let reloadTimer: number | null = null;
 watch(() => agent.lastFileChange, () => {
   if (reloadTimer) clearTimeout(reloadTimer);
   reloadTimer = window.setTimeout(() => load(), 250);
+});
+
+onBeforeUnmount(() => {
+  listRequestGeneration++;
+  if (reloadTimer) clearTimeout(reloadTimer);
 });
 
 function handleSelect(keys: string[]) {
@@ -313,7 +337,7 @@ async function handleDelete() {
   }
 }
 
-defineExpose({ startCreate, refresh: load });
+defineExpose({ startCreate, refresh: load, loading, loadError });
 </script>
 
 <template>

@@ -100,4 +100,76 @@ describe("FileTree read-only mode", () => {
     expect(wrapper.emitted("select-file")?.at(-1)).toEqual(["src/main.ts"]);
     wrapper.unmount();
   });
+
+  it("clears the previous project tree and ignores its late list response", async () => {
+    let rejectStale!: (reason: Error) => void;
+    let resolveCurrent!: (nodes: Array<{ name: string; path: string; type: string }>) => void;
+    const staleList = new Promise<Array<{ name: string; path: string; type: string }>>((_, reject) => {
+      rejectStale = reject;
+    });
+    const currentList = new Promise<Array<{ name: string; path: string; type: string }>>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    let projectOneCalls = 0;
+    vi.mocked(api.listFiles).mockImplementation((projectId) => {
+      if (projectId === "project-1") {
+        projectOneCalls++;
+        return (projectOneCalls === 1
+          ? Promise.resolve([{ name: "old.ts", path: "old.ts", type: "file" }])
+          : staleList) as never;
+      }
+      return currentList as never;
+    });
+    const wrapper = mountTree(true);
+    await flushPromises();
+    wrapper.getComponent(NTree).vm.$emit("update:selected-keys", ["old.ts"]);
+    await flushPromises();
+    void (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh();
+
+    await wrapper.setProps({ projectId: "project-2" });
+    await flushPromises();
+    expect(wrapper.getComponent(NTree).props("data")).toEqual([]);
+    expect(wrapper.getComponent(NTree).props("selectedKeys")).toEqual([]);
+    expect((wrapper.vm as unknown as { loading: boolean }).loading).toBe(true);
+    expect((wrapper.vm as unknown as { loadError: string | null }).loadError).toBeNull();
+
+    rejectStale(new Error("stale project failed"));
+    await flushPromises();
+    expect((wrapper.vm as unknown as { loading: boolean }).loading).toBe(true);
+    expect((wrapper.vm as unknown as { loadError: string | null }).loadError).toBeNull();
+    expect(wrapper.emitted("load-error")).toBeUndefined();
+
+    resolveCurrent([{ name: "new.ts", path: "new.ts", type: "file" }]);
+    await flushPromises();
+    expect((wrapper.getComponent(NTree).props("data") as Array<{ key: string }>)[0]?.key).toBe("new.ts");
+    expect((wrapper.vm as unknown as { loading: boolean }).loading).toBe(false);
+    expect((wrapper.vm as unknown as { loadError: string | null }).loadError).toBeNull();
+    expect((wrapper.getComponent(NTree).props("data") as Array<{ key: string }>)[0]?.key).toBe("new.ts");
+    wrapper.unmount();
+  });
+
+  it("clears the prior list error when the project changes", async () => {
+    let resolveProjectTwo!: (nodes: Array<{ name: string; path: string; type: string }>) => void;
+    const projectTwoList = new Promise<Array<{ name: string; path: string; type: string }>>((resolve) => {
+      resolveProjectTwo = resolve;
+    });
+    vi.mocked(api.listFiles)
+      .mockRejectedValueOnce(new Error("project one failed"))
+      .mockReturnValueOnce(projectTwoList as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const wrapper = mountTree(true);
+    await flushPromises();
+    expect((wrapper.vm as unknown as { loadError: string | null }).loadError).toBe("project one failed");
+
+    await wrapper.setProps({ projectId: "project-2" });
+    await flushPromises();
+    expect((wrapper.vm as unknown as { loadError: string | null }).loadError).toBeNull();
+    expect((wrapper.vm as unknown as { loading: boolean }).loading).toBe(true);
+
+    resolveProjectTwo([{ name: "new.ts", path: "new.ts", type: "file" }]);
+    await flushPromises();
+    expect((wrapper.vm as unknown as { loading: boolean }).loading).toBe(false);
+    wrapper.unmount();
+    consoleError.mockRestore();
+  });
 });

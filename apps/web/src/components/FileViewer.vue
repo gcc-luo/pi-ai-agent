@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { onBeforeUnmount, ref, watch, computed } from "vue";
 import { NSpin } from "naive-ui";
 import { api } from "../api/client.js";
 import { useI18n } from "../i18n/index.js";
@@ -24,6 +24,7 @@ const content = ref<string>("");
 const loading = ref(false);
 const error = ref<string | null>(null);
 const retryVersion = ref(0);
+let readGeneration = 0;
 
 function retry() {
   retryVersion.value++;
@@ -53,6 +54,16 @@ const unsupportedReason = computed(() => {
 watch(
   () => [props.projectId, props.path, props.reloadKey, retryVersion.value],
   async () => {
+    const generation = ++readGeneration;
+    const projectId = props.projectId;
+    const path = props.path;
+    const reloadKey = props.reloadKey;
+    const retry = retryVersion.value;
+    const isCurrent = () => generation === readGeneration
+      && projectId === props.projectId
+      && path === props.path
+      && reloadKey === props.reloadKey
+      && retry === retryVersion.value;
     content.value = "";
     error.value = null;
     // Only block on the text/markdown kinds — they need utf8 content. Other
@@ -62,22 +73,25 @@ watch(
       loading.value = false;
       return;
     }
-    if (!props.path) {
+    if (!path) {
       loading.value = false;
       return;
     }
     loading.value = true;
     try {
-      const r = await api.readFile(props.projectId, props.path);
+      const r = await api.readFile(projectId, path);
+      if (!isCurrent()) return;
       content.value = r.content;
     } catch (e: any) {
-      error.value = e.message;
+      if (isCurrent()) error.value = e.message;
     } finally {
-      loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => { readGeneration++; });
 
 defineExpose({ retry });
 
