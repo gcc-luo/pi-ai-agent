@@ -321,4 +321,28 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("allows the panel to reopen after closing all active browser resources", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [{ tabId: "t1" }] }), stderr: "" };
+      if (args.includes("stream") && args.includes("status")) return { stdout: JSON.stringify({ enabled: true, port: 44110 }), stderr: "" };
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await expect(manager.ensurePanelSession("session-disable-reenable")).resolves.toBe(44110);
+
+      await manager.closeAll();
+
+      await expect(manager.ensurePanelSession("session-disable-reenable")).resolves.toBe(44110);
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+      expect(calls.filter((args) => args[4] === "tab" && args[5] === "list")).toHaveLength(2);
+    } finally {
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

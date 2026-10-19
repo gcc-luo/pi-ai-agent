@@ -140,7 +140,7 @@ export class PluginManager {
   }
 
   async disableRuntime(pluginId: string): Promise<void> {
-    if (pluginId === BROWSER_PLUGIN_ID) await this.browser.shutdown();
+    if (pluginId === BROWSER_PLUGIN_ID) await this.browser.closeAll();
     if (pluginId === COMPUTER_PLUGIN_ID) await this.computer.shutdown();
   }
 

@@ -93,6 +93,7 @@ export class BrowserSessionManager {
   private readonly closingSessions = new Set<string>();
   private readonly terminalSessions = new Set<string>();
   private shuttingDown = false;
+  private closeAllDepth = 0;
   private readonly runCommand: CommandRunner;
   constructor(
     private readonly options: {
@@ -298,17 +299,27 @@ export class BrowserSessionManager {
     });
   }
 
+  /** Close current browser resources without preventing future panel sessions. */
+  async closeAll(): Promise<void> {
+    this.closeAllDepth += 1;
+    try {
+      await Promise.allSettled(
+        [...new Set([
+          ...this.states.keys(),
+          ...this.panelSessions,
+          ...this.panelBrowserSessions,
+          ...this.panelStarting.keys(),
+          ...this.sessionOperations.keys(),
+        ])].map((id) => this.close(id)),
+      );
+    } finally {
+      this.closeAllDepth -= 1;
+    }
+  }
+
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
-    await Promise.allSettled(
-      [...new Set([
-        ...this.states.keys(),
-        ...this.panelSessions,
-        ...this.panelBrowserSessions,
-        ...this.panelStarting.keys(),
-        ...this.sessionOperations.keys(),
-      ])].map((id) => this.close(id)),
-    );
+    await this.closeAll();
   }
 
   private async startPanelSession(sessionId: string): Promise<number> {
@@ -348,7 +359,12 @@ export class BrowserSessionManager {
   }
 
   private async ensurePanelSessionLocked(sessionId: string): Promise<number> {
-    if (this.shuttingDown || this.closingSessions.has(sessionId) || this.terminalSessions.has(sessionId)) {
+    if (
+      this.shuttingDown
+      || this.closeAllDepth > 0
+      || this.closingSessions.has(sessionId)
+      || this.terminalSessions.has(sessionId)
+    ) {
       throw new Error("browser session is closing");
     }
     const existingPort = this.panelPorts.get(sessionId);
