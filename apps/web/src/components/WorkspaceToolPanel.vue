@@ -30,6 +30,7 @@ const emit = defineEmits<{
 
 const store = useWorkspaceToolsStore();
 const { t } = useI18n();
+const closeError = ref("");
 const panel = computed(() => store.panels[props.sessionId] ?? null);
 const registeredTools = computed(() => WORKSPACE_TOOL_KINDS.filter((kind) => props.toolComponents[kind]));
 const availableTools = computed(() => registeredTools.value.filter((kind) => !panel.value?.tools.includes(kind)));
@@ -44,11 +45,19 @@ function openTool(kind: WorkspaceToolKind) {
 }
 
 async function closeTab(tab: WorkspaceTabId) {
+  closeError.value = "";
   if (tab === "preview") {
     store.closePreview(props.sessionId);
     return;
   }
-  await sessionViewRef.value?.disposeTool(tab);
+  try {
+    await sessionViewRef.value?.disposeTool(tab);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    closeError.value = `${t("workspaceTools.closeFailed")}: ${detail}`;
+    console.error("Failed to close workspace tool:", error);
+    return;
+  }
   store.closeTool(props.sessionId, tab);
 }
 
@@ -135,6 +144,8 @@ defineExpose({ disposeAll });
         {{ t(`workspaceTools.${kind}`) }}
       </button>
     </div>
+
+    <div v-if="closeError" class="workspace-tool-close-error" role="alert">{{ closeError }}</div>
 
     <WorkspaceToolSessionView
       v-if="panel"
@@ -307,6 +318,13 @@ defineExpose({ disposeAll });
 
 .workspace-tool-empty p {
   margin: 0 0 6px;
+}
+
+.workspace-tool-close-error {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  color: var(--rose);
+  font-size: 11px;
 }
 
 .workspace-tool-content {

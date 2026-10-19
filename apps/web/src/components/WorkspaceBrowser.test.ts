@@ -185,6 +185,9 @@ describe("workspace browser", () => {
       viewport.dispatchEvent(event);
     };
 
+    dispatch("pointerdown", { clientX: 250, clientY: 120, pointerType: "mouse", pointerId: 1, button: 0, buttons: 1, detail: 1 });
+    expect(socket.send).not.toHaveBeenCalled();
+
     dispatch("pointerdown", { clientX: 250, clientY: 220, pointerType: "mouse", pointerId: 1, button: 0, buttons: 1, detail: 1 });
     expect(JSON.parse(String(socket.send.mock.calls.at(-1)?.[0]))).toMatchObject({
       type: "input_mouse",

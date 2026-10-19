@@ -34,6 +34,7 @@ import type { NotificationNavigationTarget } from "./stores/desktop.js";
 import { useI18n } from "./i18n/index.js";
 import { clampSidebarWidth, getSidebarMaxWidth, SIDEBAR_MIN_WIDTH } from "./utils/sidebar-width.js";
 import { clampPreviewWidth, getPreviewMaxWidth, PREVIEW_MIN_WIDTH } from "./utils/preview-width.js";
+import { removeSessionAfterWorkspaceCleanup } from "./utils/session-deletion.js";
 import type { KbCitationMeta } from "./utils/kb-context.js";
 
 const projectStore = useProjectStore();
@@ -259,8 +260,11 @@ async function renameSession(id: string, title: string) {
 
 async function deleteSession(id: string) {
   try {
-    await workspacePanelRefs.get(id)?.disposeAll();
-    await sessionStore.remove(id);
+    await removeSessionAfterWorkspaceCleanup(
+      () => workspacePanelRefs.get(id)?.disposeAll() ?? Promise.resolve(),
+      () => sessionStore.remove(id),
+      (error) => console.error("Failed to dispose workspace tools before deleting session:", error),
+    );
     workspaceTools.removeSession(id);
     await notifications.refreshTotalUnread();
     if (selectedSessionId.value === id) {

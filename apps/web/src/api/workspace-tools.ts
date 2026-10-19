@@ -82,9 +82,9 @@ export function scaleBrowserPoint(
   rect: BrowserViewportRect,
   pixelWidth: number,
   pixelHeight: number,
-): { x: number; y: number } {
+): { x: number; y: number } | null {
   if (rect.width <= 0 || rect.height <= 0 || pixelWidth <= 0 || pixelHeight <= 0) {
-    return { x: 0, y: 0 };
+    return null;
   }
 
   const scale = Math.min(rect.width / pixelWidth, rect.height / pixelHeight);
@@ -92,8 +92,13 @@ export function scaleBrowserPoint(
   const displayedHeight = pixelHeight * scale;
   const offsetX = (rect.width - displayedWidth) / 2;
   const offsetY = (rect.height - displayedHeight) / 2;
-  const x = Math.round((clientX - rect.left - offsetX) / scale);
-  const y = Math.round((clientY - rect.top - offsetY) / scale);
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  if (localX < offsetX || localX >= offsetX + displayedWidth
+    || localY < offsetY || localY >= offsetY + displayedHeight) return null;
+
+  const x = Math.floor((localX - offsetX) / scale);
+  const y = Math.floor((localY - offsetY) / scale);
   return {
     x: Math.max(0, Math.min(pixelWidth - 1, x)),
     y: Math.max(0, Math.min(pixelHeight - 1, y)),

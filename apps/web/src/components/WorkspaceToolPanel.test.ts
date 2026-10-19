@@ -168,4 +168,98 @@ describe("workspace tool panel shell", () => {
     expect(wrapper.find('[data-tool="browser"]').exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it("keeps a tab open and reports an error when explicit cleanup fails", async () => {
+    const disposeBrowser = vi.fn()
+      .mockRejectedValueOnce(new Error("browser cleanup failed"))
+      .mockResolvedValue(undefined);
+    const browser = defineComponent({
+      name: "RejectingBrowserTool",
+      setup(_, { expose }) {
+        expose({ dispose: disposeBrowser });
+        return () => h("div", { "data-tool": "browser" }, "browser");
+      },
+    });
+    const store = useWorkspaceToolsStore();
+    store.openTool("session-1", "project-1", "browser");
+    const wrapper = mount(WorkspaceToolPanel, {
+      props: {
+        sessionId: "session-1",
+        projectId: "project-1",
+        active: true,
+        width: 420,
+        isResizing: false,
+        toolComponents: { browser },
+      },
+      global: { plugins: [pinia] },
+    });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await flushPromises();
+
+    await wrapper.get('[data-test="close-tab-browser"]').trigger("click");
+    await flushPromises();
+
+    expect(store.panels["session-1"]?.tools).toEqual(["browser"]);
+    expect(wrapper.get('[role="alert"]').text()).toContain("browser cleanup failed");
+    expect(logError).toHaveBeenCalled();
+    wrapper.unmount();
+    logError.mockRestore();
+  });
+
+  it("waits for every tool cleanup to settle when one cleanup rejects", async () => {
+    let finishTerminalCleanup: (() => void) | undefined;
+    let terminalCleanupComplete = false;
+    const disposeBrowser = vi.fn()
+      .mockRejectedValueOnce(new Error("browser cleanup failed"))
+      .mockResolvedValue(undefined);
+    const browser = defineComponent({
+      name: "RejectingBrowserTool",
+      setup(_, { expose }) {
+        expose({ dispose: disposeBrowser });
+        return () => h("div", { "data-tool": "browser" }, "browser");
+      },
+    });
+    const terminal = defineComponent({
+      name: "PendingTerminalTool",
+      setup(_, { expose }) {
+        expose({
+          dispose: () => terminalCleanupComplete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+              finishTerminalCleanup = () => {
+                terminalCleanupComplete = true;
+                resolve();
+              };
+            }),
+        });
+        return () => h("div", { "data-tool": "terminal" }, "terminal");
+      },
+    });
+    const store = useWorkspaceToolsStore();
+    store.openTool("session-1", "project-1", "browser");
+    store.openTool("session-1", "project-1", "terminal");
+    const wrapper = mount(WorkspaceToolPanel, {
+      props: {
+        sessionId: "session-1",
+        projectId: "project-1",
+        active: true,
+        width: 420,
+        isResizing: false,
+        toolComponents: { browser, terminal },
+      },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    let settled = false;
+    const dispose = (wrapper.vm as unknown as { disposeAll: () => Promise<void> }).disposeAll();
+    void dispose.finally(() => { settled = true; }).catch(() => {});
+    await flushPromises();
+    expect(settled).toBe(false);
+
+    finishTerminalCleanup?.();
+    await expect(dispose).rejects.toThrow("browser cleanup failed");
+    expect(settled).toBe(true);
+    wrapper.unmount();
+  });
 });

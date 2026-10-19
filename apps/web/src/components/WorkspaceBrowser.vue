@@ -41,6 +41,7 @@ let frameGeneration = 0;
 let disposed = false;
 let disposal: Promise<void> | undefined;
 const touchPointers = new Map<number, { x: number; y: number; force?: number }>();
+let lastMousePoint: { x: number; y: number } | null = null;
 
 function setError(message: string) {
   errorMessage.value = message;
@@ -55,6 +56,7 @@ function closeStream() {
     previous.close(1000, "browser panel inactive");
   }
   touchPointers.clear();
+  lastMousePoint = null;
 }
 
 function send(message: BrowserClientMessage) {
@@ -255,22 +257,23 @@ function modifiers(event: KeyboardEvent | PointerEvent | WheelEvent): number {
 
 function browserPoint(event: PointerEvent | WheelEvent) {
   const rect = viewportRef.value?.getBoundingClientRect();
-  if (!rect) return { x: 0, y: 0 };
+  if (!rect) return null;
   return scaleBrowserPoint(event.clientX, event.clientY, rect, frameSize.value.width, frameSize.value.height);
 }
 
 function onPointerDown(event: PointerEvent) {
   event.preventDefault();
+  const point = browserPoint(event);
+  if (!point) return;
   viewportRef.value?.focus();
   try { viewportRef.value?.setPointerCapture(event.pointerId); } catch {}
   if (event.pointerType === "touch") {
-    const point = browserPoint(event);
     touchPointers.set(event.pointerId, { ...point, force: event.pressure || undefined });
     send({ type: "input_touch", eventType: "touchStart", touchPoints: [...touchPointers.entries()].map(([id, position]) => ({ id, ...position })) });
     return;
   }
 
-  const point = browserPoint(event);
+  lastMousePoint = point;
   const button = mouseButton(event.button);
   send({ type: "input_mouse", eventType: "mousePressed", ...point, button, clickCount: Math.max(1, Math.min(10, event.detail || 1)), modifiers: modifiers(event) });
 }
@@ -279,12 +282,15 @@ function onPointerMove(event: PointerEvent) {
   if (event.pointerType === "touch") {
     if (!touchPointers.has(event.pointerId)) return;
     const point = browserPoint(event);
+    if (!point) return;
     touchPointers.set(event.pointerId, { ...point, force: event.pressure || undefined });
     send({ type: "input_touch", eventType: "touchMove", touchPoints: [...touchPointers.entries()].map(([id, position]) => ({ id, ...position })) });
     return;
   }
 
   const point = browserPoint(event);
+  if (!point) return;
+  lastMousePoint = point;
   const button = event.buttons & 1 ? "left" : event.buttons & 2 ? "right" : event.buttons & 4 ? "middle" : "none";
   send({ type: "input_mouse", eventType: "mouseMoved", ...point, button, modifiers: modifiers(event) });
 }
@@ -297,8 +303,10 @@ function onPointerUp(event: PointerEvent) {
     return;
   }
 
-  const point = browserPoint(event);
+  const point = browserPoint(event) ?? lastMousePoint;
+  if (!point) return;
   send({ type: "input_mouse", eventType: "mouseReleased", ...point, button: mouseButton(event.button), modifiers: modifiers(event) });
+  if (event.buttons === 0) lastMousePoint = null;
 }
 
 function onPointerCancel(event: PointerEvent) {
@@ -309,6 +317,7 @@ function onPointerCancel(event: PointerEvent) {
 
 function onWheel(event: WheelEvent) {
   const point = browserPoint(event);
+  if (!point) return;
   send({ type: "input_mouse", eventType: "mouseWheel", ...point, button: "none", deltaX: event.deltaX, deltaY: event.deltaY, modifiers: modifiers(event) });
 }
 

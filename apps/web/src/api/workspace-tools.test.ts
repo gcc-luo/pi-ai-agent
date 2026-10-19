@@ -52,6 +52,17 @@ describe("workspace browser helpers", () => {
     expect(point).toEqual({ x: 240, y: 72 });
   });
 
+  it("ignores all four letterbox edges but accepts an aspect-matched image", () => {
+    const wideImage = { left: 0, top: 0, width: 800, height: 600 };
+    expect(scaleBrowserPoint(400, 74, wideImage, 1280, 720)).toBeNull();
+    expect(scaleBrowserPoint(400, 526, wideImage, 1280, 720)).toBeNull();
+
+    const tallImage = { left: 0, top: 0, width: 800, height: 450 };
+    expect(scaleBrowserPoint(99, 225, tallImage, 640, 480)).toBeNull();
+    expect(scaleBrowserPoint(701, 225, tallImage, 640, 480)).toBeNull();
+    expect(scaleBrowserPoint(400, 225, tallImage, 1280, 720)).toEqual({ x: 640, y: 360 });
+  });
+
   it("accepts only known structured browser stream messages", () => {
     expect(parseBrowserServerMessage(JSON.stringify({ type: "url", url: "https://example.test" })))
       .toEqual({ type: "url", url: "https://example.test" });

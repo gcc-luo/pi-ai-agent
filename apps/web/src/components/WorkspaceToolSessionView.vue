@@ -48,7 +48,9 @@ function disposeTool(kind: WorkspaceToolKind): Promise<void> {
 }
 
 async function disposeAll(): Promise<void> {
-  await Promise.all([...instances.keys()].map((kind) => disposeTool(kind)));
+  const results = await Promise.allSettled([...instances.keys()].map((kind) => disposeTool(kind)));
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed) throw failed.reason;
 }
 
 onBeforeUnmount(() => {
