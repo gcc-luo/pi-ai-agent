@@ -345,4 +345,34 @@ describe("browser panel session manager", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("tracks and closes a daemon when opening a blank page times out after startup", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-browser-panel-"));
+    const calls: string[][] = [];
+    let daemonStarted = false;
+    const runCommand = vi.fn(async (_file: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("list")) return { stdout: JSON.stringify({ tabs: [] }), stderr: "" };
+      if (args[4] === "open") {
+        daemonStarted = true;
+        throw new Error("ETIMEDOUT: open command timed out");
+      }
+      if (args[4] === "close") daemonStarted = false;
+      return { stdout: "{}", stderr: "" };
+    });
+    const manager = new BrowserSessionManager({ logger: Fastify({ logger: false }).log, sessionRoot: root, runCommand } as never);
+    try {
+      await expect(manager.ensurePanelSession("session-open-timeout")).rejects.toThrow(/timed out/i);
+      expect(daemonStarted).toBe(true);
+      expect((manager as any).panelBrowserSessions.has("session-open-timeout")).toBe(true);
+
+      await manager.shutdown();
+
+      expect(calls.filter((args) => args[4] === "close")).toHaveLength(1);
+      expect(daemonStarted).toBe(false);
+    } finally {
+      await manager.shutdown();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

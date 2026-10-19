@@ -332,9 +332,16 @@ export class BrowserSessionManager {
       );
       const tabs = findTabs(parseJsonOutput(stdout, "tab list"));
       if (!tabs) throw new Error("agent-browser tab list 响应中缺少 tabs");
-      if (tabs.length === 0) await this.runForSession(sessionId, ["open", "about:blank"]);
+      if (tabs.length === 0) {
+        // The open command can time out after the daemon has already started.
+        this.panelBrowserSessions.add(sessionId);
+        await this.runForSession(sessionId, ["open", "about:blank"]);
+      }
     } catch (error) {
       if (!isBrowserNotRunning(error)) throw error;
+      // Track before opening because a failed response does not prove that the
+      // browser daemon failed to start.
+      this.panelBrowserSessions.add(sessionId);
       await this.runForSession(sessionId, ["open", "about:blank"]);
     }
     // Mark the daemon as a panel resource before enabling the stream so later
