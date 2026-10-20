@@ -95,8 +95,7 @@ export async function openNativeWorkspaceToolMenu(
   html: string,
 ): Promise<void> {
   if (!isTauri()) return;
-  const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-  await invoke("native_workspace_tool_menu_open", { sessionId, bounds, dataUrl });
+  await invoke("native_workspace_tool_menu_open", { sessionId, bounds, html });
 }
 
 export async function closeNativeWorkspaceToolMenu(sessionId: string): Promise<void> {

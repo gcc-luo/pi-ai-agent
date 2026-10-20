@@ -7,13 +7,26 @@ use std::{
 
 use serde::Serialize;
 use tauri::{
-    webview::{NewWindowResponse, Webview, WebviewBuilder},
+    webview::{NewWindowResponse, PageLoadEvent, Webview, WebviewBuilder},
     Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder, Window,
 };
 
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_SCRIPT_BYTES: usize = 64 * 1024;
 const MAX_NATIVE_BROWSER_VIEWS: usize = 5;
+
+// The shell plugin installs a body click listener in every webview and opens
+// target="_blank" links outside the app. Stop that listener for browser views
+// while allowing the link's normal WebView new-window request to reach us.
+const KEEP_BROWSER_LINKS_IN_PANEL: &str = r#"
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  const anchor = target instanceof Element ? target.closest('a[target="_blank"]') : null;
+  if (anchor && (anchor.href.startsWith('https://') || anchor.href.startsWith('http://'))) {
+    anchor.addEventListener('click', (click) => click.stopPropagation(), { once: true });
+  }
+}, true);
+"#;
 
 struct NativeBrowserEntry {
     label: String,
@@ -200,6 +213,7 @@ pub async fn native_browser_open(
     let popup_instance = instance_id.clone();
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(target_url))
         .focused(false)
+        .initialization_script(KEEP_BROWSER_LINKS_IN_PANEL)
         .on_navigation(move |url| {
             if !matches!(url.scheme(), "http" | "https") && url.as_str() != "about:blank" {
                 return false;
@@ -246,19 +260,23 @@ pub async fn native_browser_open(
 }
 
 #[tauri::command]
-pub fn native_workspace_tool_menu_open(
+pub async fn native_workspace_tool_menu_open(
     app: tauri::AppHandle,
     session_id: String,
     bounds: BrowserViewBounds,
-    data_url: String,
+    html: String,
 ) -> Result<(), String> {
     validate_identity(&session_id, "menu")?;
     validate_bounds(bounds)?;
-    if data_url.len() > 64 * 1024 || !data_url.starts_with("data:text/html;charset=utf-8,") {
+    if html.len() > 64 * 1024 || !html.starts_with("<!doctype html>") {
         return Err("invalid workspace tool menu content".into());
     }
-    let target_url = tauri::webview::Url::parse(&data_url)
-        .map_err(|_| "invalid workspace tool menu URL".to_owned())?;
+    let menu_script = format!(
+        "if (!document.querySelector('.menu')) document.write({});",
+        serde_json::to_string(&html).map_err(|error| error.to_string())?
+    );
+    let target_url = tauri::webview::Url::parse("about:blank")
+        .map_err(|error| error.to_string())?;
     let label = workspace_tool_menu_label(&session_id);
     if let Some(existing) = app.get_webview_window(&label) {
         existing.close().map_err(|error| error.to_string())?;
@@ -277,7 +295,13 @@ pub fn native_workspace_tool_menu_open(
     let event_session = session_id;
     let menu_app = app.clone();
     let menu_label = label.clone();
+    let load_script = menu_script.clone();
     let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(target_url))
+        .on_page_load(move |window, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                let _ = window.eval(&load_script);
+            }
+        })
         .focused(true)
         .transparent(true)
         .decorations(false)
@@ -287,7 +311,7 @@ pub fn native_workspace_tool_menu_open(
         .position(popup_x, popup_y)
         .inner_size(bounds.width, bounds.height)
         .on_navigation(move |url| {
-            if url.scheme() == "data" {
+            if url.as_str() == "about:blank" {
                 return true;
             }
             if url.scheme() != "pi-tool-menu" {
@@ -316,6 +340,7 @@ pub fn native_workspace_tool_menu_open(
             false
         });
     let popup = builder.build().map_err(|error| error.to_string())?;
+    popup.eval(&menu_script).map_err(|error| error.to_string())?;
     let dismiss_app = app.clone();
     let dismiss_label = label.clone();
     popup.on_window_event(move |event| {
