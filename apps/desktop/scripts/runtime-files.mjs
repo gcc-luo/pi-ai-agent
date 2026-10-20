@@ -1,5 +1,7 @@
 import {
   copyFileSync,
+  chmodSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -36,11 +38,11 @@ export function smokeTestNodePtyRuntime(nodePath, runtimeDir) {
           pty.kill();
         }
       });
-      pty.onExit(() => {
+      pty.onExit(({ exitCode, signal }) => {
         exitedAfterKill = markerReceived && killRequested;
         clearTimeout(timer);
         if (exitedAfterKill) resolve();
-        else reject(new Error('terminal shell exited without output: ' + output));
+        else reject(new Error('terminal shell exited without output (code ' + exitCode + ', signal ' + signal + '): ' + output));
       });
     });
     process.stdout.write(JSON.stringify({ markerReceived, killRequested, exitedAfterKill }));
@@ -48,7 +50,7 @@ export function smokeTestNodePtyRuntime(nodePath, runtimeDir) {
   const resultText = execFileSync(nodePath, ["--input-type=module", "--eval", smokeScript], {
     cwd: runtimeDir,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: ["ignore", "pipe", "pipe"],
     timeout: 20_000,
     windowsHide: true,
   });
@@ -82,6 +84,21 @@ export function copyRuntimeTree(sourceDir, destinationDir) {
     path.join(destinationDir, "node_modules"),
     sourceRoot,
   );
+  ensureRuntimeExecutables(destinationDir);
+}
+
+/** Ensure native PTY helpers remain executable after materializing pnpm links. */
+export function ensureRuntimeExecutables(runtimeDir, platform = process.platform) {
+  if (platform === "win32") return;
+
+  const prebuildsDir = path.join(runtimeDir, "node_modules", "node-pty", "prebuilds");
+  if (!existsSync(prebuildsDir)) return;
+
+  for (const entry of readdirSync(prebuildsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const helperPath = path.join(prebuildsDir, entry.name, "spawn-helper");
+    if (existsSync(helperPath)) chmodSync(helperPath, 0o755);
+  }
 }
 
 export function backupNativeArtifacts(sourceDir, backupDir) {

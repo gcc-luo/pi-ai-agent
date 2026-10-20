@@ -5,6 +5,8 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  chmodSync,
+  statSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -17,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import {
   backupNativeArtifacts,
   copyRuntimeTree,
+  ensureRuntimeExecutables,
   restoreNativeArtifacts,
   smokeTestNodePtyRuntime,
   smokeTestNodePtyRuntimeOrCleanup,
@@ -52,6 +55,26 @@ test("copies pnpm deployment links into real directories", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(output, { recursive: true, force: true });
+  }
+});
+
+test("restores executable permissions for packaged POSIX PTY helpers", (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX executable bits are not represented on Windows");
+    return;
+  }
+  const runtimeDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-pty-helper-"));
+  try {
+    const helperPath = path.join(runtimeDir, "node_modules", "node-pty", "prebuilds", "darwin-arm64", "spawn-helper");
+    mkdirSync(path.dirname(helperPath), { recursive: true });
+    writeFileSync(helperPath, "#!/bin/sh\nexit 0\n");
+    chmodSync(helperPath, 0o600);
+
+    ensureRuntimeExecutables(runtimeDir, "darwin");
+
+    assert.notEqual(statSync(helperPath).mode & 0o111, 0);
+  } finally {
+    rmSync(runtimeDir, { recursive: true, force: true });
   }
 });
 
