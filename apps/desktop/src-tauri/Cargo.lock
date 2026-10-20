@@ -2681,7 +2681,7 @@ dependencies = [
 
 [[package]]
 name = "pi-agent"
-version = "1.4.8"
+version = "1.4.11"
 dependencies = [
  "flate2",
  "log",
