@@ -31,13 +31,14 @@ import {
   restoreNativeArtifacts,
   smokeTestNodePtyRuntimeOrCleanup,
 } from "./runtime-files.mjs";
+import { createDeploymentDirectory } from "./deployment-directory.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const root = resolve(scriptDir, "../../..");
 const serverDir = resolve(root, "apps/server");
 const binariesDir = resolve(scriptDir, "../src-tauri/binaries");
 const resourcesDir = resolve(scriptDir, "../resources");
-const deployDir = mkdtempSync(path.join(os.tmpdir(), "pi-web-ui-deploy-"));
+const deployDir = createDeploymentDirectory(serverDir);
 const runtimeArchive = resolve(resourcesDir, "server-runtime.tar.gz");
 const runtimeChecksum = resolve(resourcesDir, "server-runtime.sha256");
 
