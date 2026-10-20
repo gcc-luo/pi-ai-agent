@@ -305,6 +305,7 @@ pub async fn native_workspace_tool_menu_open(
         .focused(true)
         .transparent(true)
         .decorations(false)
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)

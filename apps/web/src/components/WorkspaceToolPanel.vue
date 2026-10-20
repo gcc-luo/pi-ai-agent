@@ -60,34 +60,46 @@ let stopNativeMenuListener: (() => void) | undefined;
 let stopNativeMenuDismissListener: (() => void) | undefined;
 let nativeMenuGeneration = 0;
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character] ?? character);
-}
-
 function nativeMenuHtml(menu: HTMLElement): string {
-  const rootStyle = getComputedStyle(document.documentElement);
-  const color = (name: string, fallback: string) => (rootStyle.getPropertyValue(name).trim() || fallback)
-    .replace(/[^\w\s#(),.%'"-]/g, "");
-  const background = color("--bg-elevated", "#fffdf9");
-  const icons: Record<WorkspaceToolKind, string> = {
-    files: '<svg viewBox="0 0 16 16"><path d="M2 4.5h4l1.4 1.7H14v6.3H2zM2 4.5V3h4l1.4 1.5"/></svg>',
-    browser: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M2.3 6h11.4M2.3 10h11.4M8 2c1.5 1.6 2.2 3.6 2.2 6S9.5 12.4 8 14M8 2C6.5 3.6 5.8 5.6 5.8 8S6.5 12.4 8 14"/></svg>',
-    terminal: '<svg viewBox="0 0 16 16"><path d="m3 4 4 4-4 4M9 12h4"/></svg>',
+  // The native window hosts a snapshot of the same menu when a browser WebView
+  // would otherwise cover it. Keep its DOM and visual styles sourced here.
+  const clone = menu.cloneNode(true) as HTMLElement;
+  const styleProperties = [
+    "display", "box-sizing", "width", "height", "min-width", "min-height",
+    "padding", "margin", "border", "border-radius", "background-color",
+    "color", "font-family", "font-size", "font-weight", "line-height",
+    "text-align", "gap", "align-items", "justify-content", "grid-template-columns",
+    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+    "flex", "flex-shrink", "opacity", "cursor",
+  ];
+  const copyStyles = (source: Element, target: Element) => {
+    const computed = getComputedStyle(source);
+    const targetStyle = (target as HTMLElement | SVGElement).style;
+    for (const property of styleProperties) {
+      targetStyle.setProperty(property, computed.getPropertyValue(property));
+    }
+    Array.from(source.children).forEach((child, index) => {
+      const targetChild = target.children[index];
+      if (targetChild) copyStyles(child, targetChild);
+    });
   };
-  const options = availableTools.value.map((kind) =>
-    `<a href="pi-tool-menu://${kind}">${icons[kind]}<span>${escapeHtml(t(`workspaceTools.${kind}`))}</span></a>`,
-  ).join("");
+  copyStyles(menu, clone);
+  clone.classList.add("menu");
+  clone.style.position = "absolute";
+  clone.style.inset = "0";
+  clone.style.boxShadow = "none";
+  clone.style.visibility = "visible";
+  clone.querySelectorAll<HTMLButtonElement>("button[data-test-option]").forEach((button) => {
+    const kind = button.dataset.testOption;
+    if (kind && WORKSPACE_TOOL_KINDS.includes(kind as WorkspaceToolKind)) {
+      button.setAttribute("onclick", `location.href='pi-tool-menu://${kind}'`);
+    }
+  });
+  const hoverColor = getComputedStyle(document.documentElement).getPropertyValue("--bg-hover").trim();
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}
-    body{font-family:${color("--font-sans", "Arial,sans-serif")};font-size:14px;color:${color("--text-secondary", "#333")}}
-    .menu{position:absolute;left:10px;top:4px;width:${Math.ceil(menu.getBoundingClientRect().width)}px;padding:8px 6px 6px;border:1px solid ${color("--border-default", "#ddd")};border-radius:12px;background:${background};box-shadow:0 10px 28px rgba(0,0,0,.18)}
-    header{height:26px;padding:1px 10px 5px;color:${color("--text-muted", "#858585")};font-size:12px}
-    a{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;border-radius:8px;color:${color("--text-primary", "#222")};text-decoration:none;outline:none}
-    a:hover,a:focus{background:${color("--bg-hover", "#f2f2ef")}}
-    svg{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
-  </style></head><body onkeydown="if(event.key==='Escape')location.href='pi-tool-menu://dismiss'"><div class="menu"><header>${escapeHtml(t("workspaceTools.addTab"))}</header>${options}</div></body></html>`;
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}
+    .menu button:hover,.menu button:focus{background:${hoverColor || "#f2f2ef"}}
+  </style></head><body onkeydown="if(event.key==='Escape')location.href='pi-tool-menu://dismiss'">${clone.outerHTML}</body></html>`;
 }
 
 function closeNativeMenu() {
@@ -118,15 +130,14 @@ async function onAddMenuToggle() {
   const rect = menu.getBoundingClientRect();
   const activeTab = panel.value?.activeTab;
   if (!isTauri() || !activeTab || workspaceToolKind(activeTab) !== "browser") return;
-  const margin = 10;
   const generation = ++nativeMenuGeneration;
   menu.style.visibility = "hidden";
   try {
     await openNativeWorkspaceToolMenu(props.sessionId, {
-      x: Math.max(0, rect.left - margin),
-      y: Math.max(0, rect.top - 4),
-      width: Math.ceil(rect.width + margin * 2),
-      height: Math.ceil(rect.height + 8),
+      x: Math.max(0, rect.left),
+      y: Math.max(0, rect.top),
+      width: Math.ceil(rect.width),
+      height: Math.ceil(rect.height),
     }, nativeMenuHtml(menu));
     if (generation !== nativeMenuGeneration) closeNativeMenu();
   } catch (error) {
