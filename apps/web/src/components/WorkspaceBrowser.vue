@@ -26,6 +26,7 @@ import {
   setNativeBrowserVisible,
 } from "../api/native-browser.js";
 import { executeNativeBrowserAction } from "../api/native-browser-actions.js";
+import { useWorkspaceToolsStore } from "../stores/workspace-tools.js";
 import { useI18n } from "../i18n/index.js";
 import { isTauri } from "../utils/platform.js";
 
@@ -33,15 +34,21 @@ const props = withDefaults(defineProps<{
   sessionId: string;
   projectId: string;
   instanceId?: string;
+  initialUrl?: string;
   active: boolean;
-}>(), { instanceId: "browser" });
+}>(), { instanceId: "browser", initialUrl: "about:blank" });
+
+const emit = defineEmits<{
+  "state-change": [state: { url: string; title?: string; favicon?: string }];
+}>();
 
 type BrowserConnectionState = "disconnected" | "connecting" | "connected" | "error" | "missing";
 
 const { t } = useI18n();
+const workspaceTools = useWorkspaceToolsStore();
 const nativeHost = isTauri();
 const connectionState = ref<BrowserConnectionState>("disconnected");
-const address = ref("about:blank");
+const address = ref(props.initialUrl || "about:blank");
 const editingAddress = ref(false);
 const addressDraft = ref(address.value);
 const frameSource = ref<string | null>(null);
@@ -64,12 +71,35 @@ let viewportTimer: number | null = null;
 let lastViewport = "";
 let nativeBrowserOpened = false;
 let nativeNavigationUnlisten: (() => void) | null = null;
+let nativeNewTabUnlisten: (() => void) | null = null;
 const touchPointers = new Map<number, { x: number; y: number; force?: number }>();
 let lastMousePoint: { x: number; y: number } | null = null;
 
 function setError(message: string) {
   errorMessage.value = message;
   connectionState.value = "error";
+}
+
+function publishPageState(url: string) {
+  emit("state-change", { url, title: "", favicon: "" });
+  if (!isTauri()) return;
+  window.setTimeout(() => {
+    if (disposed || !props.active) return;
+    void runNativeBrowserScript<{ title?: string; favicon?: string }>(
+      props.sessionId,
+      props.instanceId,
+      "({ title: document.title, favicon: document.querySelector('link[rel~=\\\"icon\\\"]')?.href || '' })",
+    ).then((result) => {
+      const title = typeof result?.title === "string" ? result.title : "";
+      const rawFavicon = typeof result?.favicon === "string" ? result.favicon : "";
+      let favicon: string | undefined;
+      try {
+        const parsed = new URL(rawFavicon, url);
+        if (parsed.protocol === "https:" || parsed.protocol === "http:") favicon = parsed.href;
+      } catch { /* invalid favicon URLs use the globe fallback */ }
+      emit("state-change", { url, ...(title ? { title } : {}), ...(favicon ? { favicon } : {}) });
+    }).catch(() => undefined);
+  }, 350);
 }
 
 function closeStream() {
@@ -181,6 +211,23 @@ function startConnection() {
           if (event.payload.sessionId !== props.sessionId || event.payload.instanceId !== props.instanceId) return;
           address.value = event.payload.url;
           if (!editingAddress.value) addressDraft.value = event.payload.url;
+          publishPageState(event.payload.url);
+        });
+        nativeNewTabUnlisten?.();
+        nativeNewTabUnlisten = await listen<{
+          sessionId: string;
+          sourceInstanceId: string;
+          url: string;
+        }>("native-browser-new-tab", (event) => {
+          if (event.payload.sessionId !== props.sessionId || event.payload.sourceInstanceId !== props.instanceId) return;
+          const target = normalizeAddress(event.payload.url);
+          if (!target) return;
+          try {
+            const tabId = workspaceTools.openTool(props.sessionId, props.projectId, "browser");
+            workspaceTools.updateToolMeta(props.sessionId, tabId, { url: target });
+          } catch {
+            errorMessage.value = t("workspaceTools.maxTabsReached");
+          }
         });
         await openNativeBrowserView(
           props.sessionId,
@@ -371,6 +418,7 @@ async function navigate() {
     if (isTauri()) await navigateNativeBrowser(props.sessionId, props.instanceId, target);
     else await navigateBrowserPanel(props.sessionId, target, props.instanceId);
     address.value = target;
+    publishPageState(target);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -531,6 +579,8 @@ function dispose(): Promise<void> {
   closeStream();
   nativeNavigationUnlisten?.();
   nativeNavigationUnlisten = null;
+  nativeNewTabUnlisten?.();
+  nativeNewTabUnlisten = null;
   connectionState.value = "disconnected";
   if (isTauri()) {
     disposal = closeNativeBrowserView(props.sessionId, props.instanceId).then(() => undefined).catch((error: unknown) => {

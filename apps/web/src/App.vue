@@ -59,8 +59,16 @@ const workspaceToolComponents: Partial<Record<WorkspaceToolKind, Component>> = {
 const sidebarWidth = ref(320);
 const sidebarMaxWidth = ref(0);
 const isSidebarResizing = ref(false);
-const previewWidth = ref(480);
+const PREVIEW_WIDTH_KEY = "pi-web-ui:workspace-panel-width:v1";
+function readPreviewWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(PREVIEW_WIDTH_KEY));
+    return Number.isFinite(value) && value > 0 ? value : 480;
+  } catch { return 480; }
+}
+const previewWidth = ref(readPreviewWidth());
 const previewMaxWidth = ref(0);
+const isPreviewMaximized = ref(false);
 const isPreviewResizing = ref(false);
 const activeNav = ref<"chat" | "model" | "skill-store" | "plugins" | "connectors" | "knowledge-base" | "experts" | "scheduled-tasks" | "channels" | "trash">("chat");
 const showOnboardingProject = ref(false);
@@ -82,6 +90,7 @@ function syncSidebarWidthToViewport() {
 function syncPreviewWidthToViewport() {
   previewMaxWidth.value = getPreviewMaxWidth(window.innerWidth);
   previewWidth.value = clampPreviewWidth(previewWidth.value, window.innerWidth);
+  try { localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth.value)); } catch { /* storage may be unavailable */ }
 }
 
 function syncLayoutWidthsToViewport() {
@@ -142,6 +151,7 @@ function handlePreviewResize(event: PointerEvent) {
     previewResizeStartWidth + previewResizeStartX - event.clientX,
     window.innerWidth,
   );
+  try { localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth.value)); } catch { /* storage may be unavailable */ }
 }
 
 function stopPreviewResize() {
@@ -177,7 +187,16 @@ function setWorkspacePanelRef(sessionId: string, instance: ComponentPublicInstan
 
 function toggleWorkspacePanel() {
   if (!selectedSessionId.value || !selectedProjectId.value) return;
+  isPreviewMaximized.value = false;
   workspaceTools.togglePanel(selectedSessionId.value, selectedProjectId.value);
+}
+
+function closeWorkspacePanel() {
+  if (!selectedSessionId.value || !selectedProjectId.value) return;
+  isPreviewMaximized.value = false;
+  if (workspaceTools.panels[selectedSessionId.value]?.visible) {
+    workspaceTools.togglePanel(selectedSessionId.value, selectedProjectId.value);
+  }
 }
 
 let projectLoadPromise: Promise<void> = Promise.resolve();
@@ -227,6 +246,7 @@ watch(selectedProjectId, (id) => {
 }, { flush: "sync" });
 
 watch(selectedSessionId, (id) => {
+  isPreviewMaximized.value = false;
   sessionOpenPromise = (async () => {
     if (!id) return;
     await sessionStore.open(id);
@@ -470,6 +490,10 @@ function openKbCitation(citation: KbCitationMeta) {
                 <span class="session-tag" v-if="currentSession">
                   {{ currentSession.title ?? t('sidebar.newSession') }}
                 </span>
+                <span class="connection-status" :class="connection.status">
+                  <span class="conn-dot" />
+                  {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
+                </span>
               </div>
               <div class="header-right">
                 <button
@@ -479,12 +503,11 @@ function openKbCitation(citation: KbCitationMeta) {
                   :aria-pressed="currentWorkspacePanel?.visible ?? false"
                   @click="toggleWorkspacePanel"
                 >
-                  {{ t(currentWorkspacePanel?.visible ? 'workspaceTools.closePanel' : 'workspaceTools.openPanel') }}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.4" />
+                    <path d="M9.25 2.75v10.5" stroke="currentColor" stroke-width="1.4" />
+                  </svg>
                 </button>
-                <span class="connection-status" :class="connection.status">
-                  <span class="conn-dot" />
-                  {{ connection.status === "connected" ? t('sidebar.connected') : connection.status === "connecting" ? t('sidebar.connecting') : t('sidebar.disconnected') }}
-                </span>
               </div>
             </header>
           </template>
@@ -540,12 +563,15 @@ function openKbCitation(citation: KbCitationMeta) {
               :session-id="entry.sessionId"
               :project-id="entry.panel.projectId"
               :active="Boolean(hasWorkspace && selectedSessionId === entry.sessionId)"
-              :width="previewWidth"
+              :width="isPreviewMaximized ? previewMaxWidth : previewWidth"
               :min-width="PREVIEW_MIN_WIDTH"
               :max-width="previewMaxWidth"
+              :is-maximized="isPreviewMaximized"
               :is-resizing="isPreviewResizing"
               :tool-components="workspaceToolComponents"
               @resize-start="startPreviewResize"
+              @maximize-toggle="isPreviewMaximized = !isPreviewMaximized"
+              @close-panel="closeWorkspacePanel"
             >
               <template #preview="{ target, projectId }">
                 <WorkspacePreviewTab :target="target" :project-id="projectId" />
@@ -638,18 +664,21 @@ function openKbCitation(citation: KbCitationMeta) {
 }
 
 .workspace-panel-toggle {
-  padding: 6px 9px;
-  border: 1px solid var(--border-default);
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .workspace-panel-toggle:hover,
 .workspace-panel-toggle[aria-pressed="true"] {
-  border-color: var(--accent);
+  background: var(--bg-hover);
   color: var(--accent);
 }
 

@@ -33,6 +33,14 @@ function setToolRef(kind: WorkspaceTabId, value: unknown) {
   else instances.delete(kind);
 }
 
+function stateChangeListener(tabId: WorkspaceTabId) {
+  return {
+    "state-change": (state: { url?: string; title?: string; favicon?: string; path?: string | null }) => {
+      store.updateToolMeta(props.sessionId, tabId, state);
+    },
+  };
+}
+
 function disposeTool(kind: WorkspaceTabId): Promise<void> {
   const pending = disposePromises.get(kind);
   if (pending) return pending;
@@ -78,7 +86,10 @@ defineExpose({ disposeTool, disposeAll });
         :session-id="sessionId"
         :instance-id="tool.id"
         :project-id="panel?.projectId ?? projectId"
+        :initial-url="tool.kind === 'browser' ? panel?.tabMeta[tool.id]?.url ?? 'about:blank' : undefined"
+        :initial-path="tool.kind === 'files' ? panel?.tabMeta[tool.id]?.path ?? null : undefined"
         :active="active && Boolean(panel?.visible && panel?.activeTab === tool.id)"
+        v-on="tool.kind === 'terminal' ? {} : stateChangeListener(tool.id)"
       />
     </div>
     <div

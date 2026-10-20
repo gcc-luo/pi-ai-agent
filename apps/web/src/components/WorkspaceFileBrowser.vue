@@ -1,16 +1,64 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import FileTree from "./FileTree.vue";
 import FileViewer from "./FileViewer.vue";
 import { useI18n } from "../i18n/index.js";
 
-const props = defineProps<{ projectId: string }>();
+const props = withDefaults(defineProps<{ projectId: string; sessionId?: string; initialPath?: string | null }>(), { initialPath: null });
+const emit = defineEmits<{ "state-change": [state: { path: string | null }] }>();
 const { t } = useI18n();
 
 const fileTreeRef = ref<InstanceType<typeof FileTree> | null>(null);
-const selectedPath = ref<string | null>(null);
+const selectedPath = ref<string | null>(props.initialPath);
 const listError = ref("");
 const reloadKey = ref(0);
+const DEFAULT_TREE_WIDTH = 220;
+const treeWidth = ref(readTreeWidth());
+const bodyRef = ref<HTMLElement | null>(null);
+let dragStartX = 0;
+let dragStartWidth = treeWidth.value;
+
+function treeWidthKey() { return `pi-web-ui:file-tree-width:${props.sessionId ?? "default"}`; }
+
+function readTreeWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem(`pi-web-ui:file-tree-width:${props.sessionId ?? "default"}`));
+    return Number.isFinite(saved) && saved >= 140 ? saved : DEFAULT_TREE_WIDTH;
+  } catch { return DEFAULT_TREE_WIDTH; }
+}
+
+function setTreeWidth(width: number) {
+  const available = bodyRef.value?.clientWidth ?? 800;
+  treeWidth.value = Math.max(140, Math.min(500, available - 180, Math.round(width)));
+  try { localStorage.setItem(treeWidthKey(), String(treeWidth.value)); } catch { /* storage may be unavailable */ }
+}
+
+function startTreeResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  dragStartX = event.clientX;
+  dragStartWidth = treeWidth.value;
+  window.addEventListener("pointermove", onTreeResize);
+  window.addEventListener("pointerup", stopTreeResize, { once: true });
+  window.addEventListener("pointercancel", stopTreeResize, { once: true });
+}
+
+function onTreeResize(event: PointerEvent) {
+  setTreeWidth(dragStartWidth + dragStartX - event.clientX);
+}
+
+function stopTreeResize() {
+  window.removeEventListener("pointermove", onTreeResize);
+  window.removeEventListener("pointerup", stopTreeResize);
+  window.removeEventListener("pointercancel", stopTreeResize);
+}
+
+function resetTreeWidth() { setTreeWidth(DEFAULT_TREE_WIDTH); }
+
+function selectFile(path: string) {
+  selectedPath.value = path;
+  emit("state-change", { path });
+}
 
 function onListError(message: string) {
   listError.value = message;
@@ -32,9 +80,15 @@ async function refreshFiles() {
 
 watch(() => props.projectId, () => {
   selectedPath.value = null;
+  emit("state-change", { path: null });
   listError.value = "";
   reloadKey.value++;
 });
+
+watch(() => props.initialPath, (path) => { selectedPath.value = path ?? null; });
+
+watch(() => props.sessionId, () => { treeWidth.value = readTreeWidth(); });
+onBeforeUnmount(stopTreeResize);
 
 defineExpose({ refresh: refreshFiles });
 </script>
@@ -55,7 +109,25 @@ defineExpose({ refresh: refreshFiles });
       </button>
     </header>
 
-    <div class="workspace-file-browser-body">
+    <div ref="bodyRef" class="workspace-file-browser-body" :style="{ '--tree-width': `${treeWidth}px` }">
+      <div class="file-browser-preview-pane">
+        <FileViewer
+          :key="`${projectId}:${reloadKey}`"
+          :project-id="projectId"
+          :path="selectedPath"
+          :reload-key="reloadKey"
+          hide-header
+        />
+      </div>
+      <div
+        class="file-browser-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        :aria-valuenow="treeWidth"
+        :aria-label="t('workspaceTools.fileTreeWidth')"
+        @pointerdown="startTreeResize"
+        @dblclick="resetTreeWidth"
+      />
       <aside class="file-browser-tree-pane">
         <div v-if="listError" class="file-browser-error" role="alert">
           <span>{{ listError }}</span>
@@ -67,20 +139,11 @@ defineExpose({ refresh: refreshFiles });
           ref="fileTreeRef"
           :project-id="projectId"
           :read-only="true"
-          @select-file="selectedPath = $event"
+          @select-file="selectFile"
           @load-error="onListError"
           @load-success="onListSuccess"
         />
       </aside>
-      <div class="file-browser-preview-pane">
-        <FileViewer
-          :key="`${projectId}:${reloadKey}`"
-          :project-id="projectId"
-          :path="selectedPath"
-          :reload-key="reloadKey"
-          hide-header
-        />
-      </div>
     </div>
   </section>
 </template>
@@ -141,7 +204,7 @@ defineExpose({ refresh: refreshFiles });
   flex: 1;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(140px, 34%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 4px minmax(140px, var(--tree-width));
   overflow: hidden;
 }
 
@@ -151,8 +214,17 @@ defineExpose({ refresh: refreshFiles });
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border-right: 1px solid var(--border-subtle);
 }
+
+.file-browser-splitter {
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--border-default);
+}
+
+.file-browser-splitter:hover { background: var(--accent); }
 
 .file-browser-tree-pane :deep(.file-tree) {
   min-height: 0;
@@ -207,5 +279,7 @@ defineExpose({ refresh: refreshFiles });
   .file-browser-preview-pane {
     flex: 1;
   }
+
+  .file-browser-splitter { display: none; }
 }
 </style>

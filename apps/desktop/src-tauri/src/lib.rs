@@ -173,7 +173,9 @@ pub fn run() {
             native_browser::native_browser_navigate,
             native_browser::native_browser_reload,
             native_browser::native_browser_eval,
-            native_browser::native_browser_close
+            native_browser::native_browser_close,
+            native_browser::native_workspace_tool_menu_open,
+            native_browser::native_workspace_tool_menu_close
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
