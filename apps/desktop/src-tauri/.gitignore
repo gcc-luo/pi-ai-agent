@@ -1,5 +1,4 @@
 /target
-/Cargo.lock
 /binaries/*
 /gen/
 # Tauri icon generator outputs not used by the current desktop-only bundle.

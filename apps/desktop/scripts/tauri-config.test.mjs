@@ -88,10 +88,15 @@ test("bundles a verified PortableGit runtime for the Windows shell fallback", ()
   assert.doesNotMatch(tauriBuildScript, /File::create/);
 });
 
-test("uses a short temporary path for pnpm deployment on Windows", () => {
+test("keeps the pnpm deployment destination on the workspace volume", () => {
   const sidecarRuntimeScript = readFileSync(sidecarRuntimeScriptPath, "utf8");
+  const deploymentDirectoryScript = readFileSync(
+    new URL("./deployment-directory.mjs", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-deploy-"\)\)/);
+  assert.match(sidecarRuntimeScript, /createDeploymentDirectory\(serverDir\)/);
+  assert.match(deploymentDirectoryScript, /path\.join\(serverDir, "node_modules"\)/);
   assert.match(sidecarRuntimeScript, /mkdtempSync\(path\.join\(os\.tmpdir\(\), "pi-web-ui-native-"\)\)/);
   assert.match(sidecarRuntimeScript, /smokeTestNodePtyRuntimeOrCleanup\(nodeSidecarPath, runtimeDir\)/);
 });
