@@ -19,7 +19,9 @@ PI AI Agent 是一个基于 [pi-coding-agent](https://github.com/earendil-works/
 
 ## 界面预览
 
-![PI AI Agent 主界面](docs/images/main.png)
+![PI AI Agent 主界面]
+<img width="1988" height="1245" alt="image" src="https://github.com/user-attachments/assets/ee0f6a0e-f2a3-4861-ad2b-cb73adebccdc" />
+
 
 ## 技术栈
 
