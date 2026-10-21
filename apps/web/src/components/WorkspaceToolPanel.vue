@@ -95,10 +95,17 @@ function nativeMenuHtml(menu: HTMLElement): string {
       button.setAttribute("onclick", `location.href='pi-tool-menu://${kind}'`);
     }
   });
-  const hoverColor = getComputedStyle(document.documentElement).getPropertyValue("--bg-hover").trim();
+  const firstButton = menu.querySelector<HTMLButtonElement>("button[data-test-option]");
+  firstButton?.classList.add("workspace-tool-highlight");
+  const highlightedStyle = firstButton ? getComputedStyle(firstButton) : null;
+  const hoverColor = highlightedStyle?.backgroundColor ?? "#e9f8f4";
+  const hoverTextColor = highlightedStyle?.color ?? "#18b89a";
+  const hoverShadow = highlightedStyle?.boxShadow ?? "none";
+  firstButton?.classList.remove("workspace-tool-highlight");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
     html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}
-    .menu button:hover,.menu button:focus{background:${hoverColor || "#f2f2ef"}}
+    .menu button{transition:background-color .12s ease,color .12s ease,box-shadow .12s ease}
+    .menu button:hover,.menu button:focus-visible{background-color:${hoverColor}!important;color:${hoverTextColor}!important;box-shadow:${hoverShadow}!important}
   </style></head><body onkeydown="if(event.key==='Escape')location.href='pi-tool-menu://dismiss'">${clone.outerHTML}</body></html>`;
 }
 
@@ -703,9 +710,19 @@ defineExpose({ disposeAll });
   cursor: pointer;
 }
 
-.workspace-tool-add-menu button { min-height: 40px; }
+.workspace-tool-add-menu button {
+  min-height: 40px;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
 
 .workspace-tool-add-menu button:hover,
+.workspace-tool-add-menu button:focus-visible,
+.workspace-tool-add-menu button.workspace-tool-highlight {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-elevated));
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .workspace-tool-empty button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
